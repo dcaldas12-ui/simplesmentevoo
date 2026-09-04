@@ -513,7 +513,14 @@ function HistoricoDocumentos() {
                         )}
                       </span>
                       <div className="min-w-0 flex-1">
-                        <p className="truncate font-medium">{d.nome}</p>
+                        <button
+                          type="button"
+                          onClick={() => void verFicheiro(d)}
+                          className="block max-w-full truncate rounded text-left font-medium underline-offset-4 hover:underline focus-visible:underline"
+                          aria-label={`Ver o ficheiro original ${d.nome}`}
+                        >
+                          {d.nome}
+                        </button>
                         <p className="mt-0.5 text-xs text-muted-foreground">
                           {dataCurta(d.created_at)}
                           {tamanho(d.tamanho_bytes) ? ` · ${tamanho(d.tamanho_bytes)}` : ""}
