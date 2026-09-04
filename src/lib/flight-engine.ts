@@ -17,7 +17,14 @@ export type PesquisaInput = {
   destino: string;
   dataPartida: string; // YYYY-MM-DD
   dataRegresso?: string | null;
-  flexibilidade: number; // dias (0-7)
+  /** Dias aceites antes/depois da data de ida escolhida (0-7). */
+  idaAntes: number;
+  idaDepois: number;
+  /** Dias aceites antes/depois da data de regresso escolhida (0-7). */
+  regressoAntes: number;
+  regressoDepois: number;
+  /** Duração máxima da viagem em noites (opcional). */
+  duracaoMaxima?: number | null;
   passageiros: number;
   apenasDiretos: boolean;
 };
@@ -46,6 +53,7 @@ export type ResultadoPesquisa = {
   ofertas: Oferta[];
   combinacoesGeradas: number;
   combinacoesValidas: number;
+  criterios: string[];
   precoMinimo: number | null;
   precoMediano: number | null;
   fonte: "demo" | "api";
