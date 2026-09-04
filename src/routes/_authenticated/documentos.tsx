@@ -8,6 +8,7 @@ import {
   FileText,
   Loader2,
   Mail,
+  Maximize2,
   Pencil,
   QrCode,
   RefreshCw,
