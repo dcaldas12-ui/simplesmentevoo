@@ -46,17 +46,34 @@ export type Oferta = {
   moeda: string;
   bagagemIncluida: boolean;
   reservavel: boolean;
+  /** Ligação de reserva do fornecedor real, quando existir. */
+  deeplink?: string | null;
+  /** Verdadeiro quando o fornecedor não devolveu preço para esta opção. */
+  precoIndisponivel?: boolean;
   fonte: "demo" | "api";
 };
+
+export type EstadoFornecedorPesquisa =
+  | "demo"
+  | "ativo"
+  | "nao_configurado"
+  | "erro"
+  | "limite";
 
 export type ResultadoPesquisa = {
   ofertas: Oferta[];
   combinacoesGeradas: number;
   combinacoesValidas: number;
+  /** Combinações efetivamente consultadas ao fornecedor. */
+  combinacoesConsultadas: number;
   criterios: string[];
   precoMinimo: number | null;
   precoMediano: number | null;
   fonte: "demo" | "api";
+  fornecedor: string;
+  estadoFornecedor: EstadoFornecedorPesquisa;
+  /** O que falta para ativar o fornecedor real (ex.: nomes de chaves). */
+  emFalta?: string[];
   aviso?: string | undefined;
 };
 
@@ -65,6 +82,7 @@ export interface FlightProvider {
   fonte: "demo" | "api";
   procurar(input: PesquisaInput, combos: Combinacao[]): Promise<Oferta[]>;
 }
+
 
 export type Combinacao = { partida: string; regresso: string | null; noites: number | null };
 
