@@ -587,10 +587,28 @@ function HistoricoDocumentos() {
                         </Button>
                       ) : null}
                       {d.ficheiro_path ? (
-                        <Button size="sm" variant="ghost" onClick={() => void abrir(d)}>
-                          <Download className="size-4" /> Abrir
+                        <>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => void verFicheiro(d, true)}
+                          >
+                            <Maximize2 className="size-4" /> Ler em ecrã inteiro
+                          </Button>
+                          <Button size="sm" variant="ghost" onClick={() => void abrir(d)}>
+                            <Download className="size-4" /> Abrir
+                          </Button>
+                        </>
+                      ) : (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled
+                          title="Este registo não tem ficheiro original guardado."
+                        >
+                          <Maximize2 className="size-4" /> Sem ficheiro para ler
                         </Button>
-                      ) : null}
+                      )}
                       <Button
                         size="sm"
                         variant="ghost"
