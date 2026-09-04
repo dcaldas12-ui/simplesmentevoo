@@ -20,6 +20,7 @@ import { toast } from "sonner";
 
 import { AppShell } from "@/components/AppShell";
 import { EmptyState } from "@/components/EmptyState";
+import { VisualizadorDocumento } from "@/components/VisualizadorDocumento";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -162,6 +163,12 @@ function HistoricoDocumentos() {
   const [editar, setEditar] = useState<DocRow | null>(null);
   const [etapaAtual, setEtapaAtual] = useState<Estado | null>(null);
   const [nomeAEnviar, setNomeAEnviar] = useState("");
+  const [visualizar, setVisualizar] = useState<{
+    doc: DocRow;
+    url: string | null;
+    aCarregar: boolean;
+    erro: string | null;
+  } | null>(null);
 
   const { data: docs, isLoading } = useQuery({
     queryKey: ["historico-documentos"],
@@ -319,6 +326,28 @@ function HistoricoDocumentos() {
       await processar(d.id, { nome: d.nome, texto: d.qr_conteudo, imagem }, false);
     },
   });
+
+  async function verFicheiro(d: DocRow) {
+    if (!d.ficheiro_path) {
+      setVisualizar({
+        doc: d,
+        url: null,
+        aCarregar: false,
+        erro: "Este registo não tem ficheiro guardado para visualizar.",
+      });
+      return;
+    }
+    setVisualizar({ doc: d, url: null, aCarregar: true, erro: null });
+    const { data, error } = await supabase.storage
+      .from("documentos")
+      .createSignedUrl(d.ficheiro_path, 300);
+    setVisualizar({
+      doc: d,
+      url: data?.signedUrl ?? null,
+      aCarregar: false,
+      erro: error || !data ? "Não foi possível abrir este ficheiro." : null,
+    });
+  }
 
   async function abrir(d: DocRow) {
     if (!d.ficheiro_path) return;
@@ -484,7 +513,14 @@ function HistoricoDocumentos() {
                         )}
                       </span>
                       <div className="min-w-0 flex-1">
-                        <p className="truncate font-medium">{d.nome}</p>
+                        <button
+                          type="button"
+                          onClick={() => void verFicheiro(d)}
+                          className="block max-w-full truncate rounded text-left font-medium underline-offset-4 hover:underline focus-visible:underline"
+                          aria-label={`Ver o ficheiro original ${d.nome}`}
+                        >
+                          {d.nome}
+                        </button>
                         <p className="mt-0.5 text-xs text-muted-foreground">
                           {dataCurta(d.created_at)}
                           {tamanho(d.tamanho_bytes) ? ` · ${tamanho(d.tamanho_bytes)}` : ""}
@@ -558,6 +594,16 @@ function HistoricoDocumentos() {
           )}
         </div>
       </div>
+
+      <VisualizadorDocumento
+        aberto={visualizar !== null}
+        nome={visualizar?.doc.nome ?? ""}
+        url={visualizar?.url ?? null}
+        mimeType={visualizar?.doc.mime_type ?? null}
+        aCarregar={visualizar?.aCarregar}
+        erro={visualizar?.erro ?? null}
+        onFechar={() => setVisualizar(null)}
+      />
 
       <DetalheDialog doc={detalhe} onFechar={() => setDetalhe(null)} viagem={tituloViagem} />
       <EditarDialog
