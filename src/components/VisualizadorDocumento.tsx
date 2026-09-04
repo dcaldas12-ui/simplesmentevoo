@@ -8,8 +8,8 @@ type Props = {
   nome: string;
   url: string | null;
   mimeType: string | null;
-  aCarregar?: boolean;
-  erro?: string | null;
+  aCarregar?: boolean | undefined;
+  erro?: string | null | undefined;
   onFechar: () => void;
 };
 
