@@ -23,7 +23,7 @@ type Busca = {
 };
 
 export const Route = createFileRoute("/pesquisa")({
-  validateSearch: (search: Record<string, unknown>): Busca => ({
+  validateSearch: (search: Partial<Record<keyof Busca, unknown>>): Busca => ({
     origem: String(search["origem"] ?? "LIS").toUpperCase(),
     destino: String(search["destino"] ?? "BCN").toUpperCase(),
     dataPartida: String(search["dataPartida"] ?? ""),

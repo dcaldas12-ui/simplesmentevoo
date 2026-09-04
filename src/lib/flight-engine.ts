@@ -49,7 +49,7 @@ export type ResultadoPesquisa = {
   precoMinimo: number | null;
   precoMediano: number | null;
   fonte: "demo" | "api";
-  aviso?: string;
+  aviso?: string | undefined;
 };
 
 export interface FlightProvider {
