@@ -313,7 +313,7 @@ function HistoricoDocumentos() {
       const uid = userData.user?.id;
       if (!uid) throw new Error("Sessão expirada. Volte a entrar.");
 
-      const nomeSeguro = file.name.normalize("NFD").replace(/[^\w.\-]+/g, "_");
+      const nomeSeguro = file.name.normalize("NFD").replace(/[^\w.-]+/g, "_");
       const path = `${uid}/historico/${Date.now()}-${nomeSeguro}`;
       const { data: upload, error: erroUpload } = await supabase.storage
         .from("documentos")
