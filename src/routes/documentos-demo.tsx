@@ -107,28 +107,37 @@ function DocumentosDemo() {
     setDocs((atuais) => atuais.map((d) => (d.id === id ? muda(d) : d)));
   }
 
-  async function correrAnalise(
-    id: string,
-    entrada: { nome: string; texto?: string | null; imagem?: string | null },
-  ) {
+  type EntradaAnalise = { nome: string; texto?: string | null; imagem?: string | null };
+  const entradas = useRef<Map<string, EntradaAnalise>>(new Map());
+
+  async function correrAnalise(id: string, entrada: EntradaAnalise) {
+    entradas.current.set(id, entrada);
+    atualizar(id, ({ notaAnalise: _n, ...d }) => ({ ...d, estadoAnalise: "a_analisar" }));
     try {
       const r = await analisar({ data: entrada });
+      const vazio = Object.values(r.ficha).every((v) => !String(v ?? "").trim());
       atualizar(id, (d) => ({
         ...d,
         ficha: { ...d.ficha, ...r.ficha },
         seccao: r.ficha.tipoDocumento ? seccaoSugerida(r.ficha.tipoDocumento) : d.seccao,
-        estadoAnalise: "concluida",
-        notaAnalise: r.nota,
+        estadoAnalise: vazio ? "erro" : "concluida",
+        notaAnalise: vazio
+          ? "O ficheiro foi guardado, mas não conseguimos ler dados. Pode preencher a ficha à mão."
+          : r.nota,
       }));
-      toast.success(r.porIa ? "Documento lido automaticamente." : r.nota);
-      setFichaAberta(id);
+      if (vazio) {
+        toast.warning("Ficheiro guardado. Não foi possível ler dados — complete a ficha quando quiser.");
+      } else {
+        toast.success("Documento analisado e guardado nesta viagem.");
+      }
     } catch {
       atualizar(id, (d) => ({
         ...d,
         estadoAnalise: "erro",
-        notaAnalise: "Não foi possível ler o documento. Preencha a ficha à mão.",
+        notaAnalise:
+          "O ficheiro ficou guardado, mas a leitura falhou. Tente de novo ou preencha a ficha à mão.",
       }));
-      toast.error("Não foi possível ler o documento. Preencha a ficha à mão.");
+      toast.error("Ficheiro guardado. A leitura automática falhou — pode tentar de novo.");
     }
   }
 
@@ -144,17 +153,29 @@ function DocumentosDemo() {
   }
 
   async function aoEscolherFicheiro(ficheiro: File) {
+    const tipoOk =
+      ficheiro.type === "application/pdf" || ficheiro.type.startsWith("image/");
+    if (!tipoOk) {
+      toast.error("Formato não suportado. Escolha um PDF ou uma imagem.");
+      return;
+    }
+    if (ficheiro.size > 20 * 1024 * 1024) {
+      toast.error("Ficheiro demasiado grande (máximo 20 MB).");
+      return;
+    }
     const eImagem = ficheiro.type.startsWith("image/");
     let imagem: string | null = null;
     if (eImagem) {
-      imagem = await new Promise<string>((resolve) => {
+      imagem = await new Promise<string | null>((resolve) => {
         const leitor = new FileReader();
         leitor.onload = () => resolve(String(leitor.result));
+        leitor.onerror = () => resolve(null);
         leitor.readAsDataURL(ficheiro);
       });
     }
     novoDocumento(ficheiro.name, eImagem ? "imagem" : "pdf", "bilhetes", { imagem });
   }
+
 
   function guardarFicha(id: string, ficha: FichaDocumento, destacar: boolean) {
     atualizar(id, (d) => ({
@@ -184,11 +205,13 @@ function DocumentosDemo() {
           </span>
           <div className="min-w-0 flex-1">
             <p className="truncate font-medium">{d.nome}</p>
-            <p className="mt-0.5 truncate text-xs text-muted-foreground">
+            <p className="mt-0.5 text-xs text-muted-foreground">
               {d.estadoAnalise === "a_analisar"
-                ? "A ler o documento…"
-                : [d.ficha.fornecedor, d.ficha.referencia].filter(Boolean).join(" · ") ||
-                  "Sem dados extraídos"}
+                ? "A processar o documento…"
+                : d.estadoAnalise === "erro"
+                  ? (d.notaAnalise ?? "Ficheiro guardado, sem dados lidos.")
+                  : [d.ficha.fornecedor, d.ficha.referencia].filter(Boolean).join(" · ") ||
+                    "Guardado nesta viagem"}
             </p>
             <p className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
               <Clock className="size-3.5" /> {formatarDataHora(d.ficha.dataHora)}
@@ -197,6 +220,16 @@ function DocumentosDemo() {
               <span className="rounded-full bg-secondary px-2 py-0.5 text-[11px] text-secondary-foreground">
                 {etiquetaTipo(d.tipo)}
               </span>
+              {d.estadoAnalise === "a_analisar" ? (
+                <span className="rounded-full bg-secondary px-2 py-0.5 text-[11px] text-secondary-foreground">
+                  A analisar
+                </span>
+              ) : null}
+              {d.estadoAnalise === "concluida" ? (
+                <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[11px] text-primary">
+                  Guardado
+                </span>
+              ) : null}
               {d.ficha.tipoDocumento ? (
                 <span className="rounded-full bg-secondary px-2 py-0.5 text-[11px] text-secondary-foreground">
                   {d.ficha.tipoDocumento}
@@ -212,12 +245,35 @@ function DocumentosDemo() {
         </div>
 
         <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-border/70 pt-3">
-          <Button size="sm" variant="outline" onClick={() => setFichaAberta(d.id)}>
-            <Pencil className="size-4" /> Ficha
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={d.estadoAnalise === "a_analisar"}
+            onClick={() => setFichaAberta(d.id)}
+          >
+            <Pencil className="size-4" /> Ver detalhes
           </Button>
-          <Button size="sm" variant="outline" onClick={() => setWalletAberta(d.id)}>
-            <Wallet className="size-4" /> Adicionar à Wallet
-          </Button>
+          {d.estadoAnalise === "erro" ? (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                const entrada = entradas.current.get(d.id) ?? { nome: d.nome };
+                void correrAnalise(d.id, entrada);
+              }}
+            >
+              <Sparkles className="size-4" /> Tentar ler de novo
+            </Button>
+          ) : (
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={d.estadoAnalise === "a_analisar"}
+              onClick={() => setWalletAberta(d.id)}
+            >
+              <Wallet className="size-4" /> Adicionar à Wallet
+            </Button>
+          )}
           <label className="ml-auto flex items-center gap-2 text-xs text-muted-foreground">
             Destacar
             <Switch
@@ -227,6 +283,7 @@ function DocumentosDemo() {
             />
           </label>
         </div>
+
       </li>
     );
   }
@@ -242,10 +299,11 @@ function DocumentosDemo() {
           Documentos da viagem
         </h1>
         <p className="mt-2 max-w-2xl text-muted-foreground">
-          Carregue um ficheiro e a leitura automática tenta preencher tipo, fornecedor, passageiro,
-          local, referência, data/hora e código. Depois é só confirmar na ficha — tudo fica ligado a
-          esta viagem.
+          Carregue um ficheiro: mostramos o estado de processamento, lemos tipo, fornecedor,
+          passageiro, local, referência, data/hora e código, e guardamos tudo automaticamente nesta
+          viagem. Os detalhes só abrem se carregar em “Ver detalhes”.
         </p>
+
 
         <div className="mt-6 rounded-2xl border border-border bg-card p-5">
           <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
@@ -307,9 +365,10 @@ function DocumentosDemo() {
             </Button>
           </div>
           <p className="mt-3 flex items-center gap-2 text-xs text-muted-foreground">
-            <Sparkles className="size-3.5 text-primary" /> A leitura automática nunca substitui a
-            sua confirmação: todos os campos ficam editáveis.
+            <Sparkles className="size-3.5 text-primary" /> Nada é inventado: se a leitura falhar, o
+            ficheiro fica na mesma guardado e pode corrigir os campos quando quiser.
           </p>
+
         </div>
 
         <div className="mt-6">
