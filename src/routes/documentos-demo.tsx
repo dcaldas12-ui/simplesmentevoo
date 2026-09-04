@@ -23,6 +23,7 @@ import { OfflineCard } from "@/components/OfflineCard";
 import { AppShell } from "@/components/AppShell";
 import { DocumentoFicha } from "@/components/DocumentoFicha";
 import { EmptyState } from "@/components/EmptyState";
+import { VisualizadorDocumento } from "@/components/VisualizadorDocumento";
 import { WalletDialog } from "@/components/WalletDialog";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
@@ -99,6 +100,8 @@ function DocumentosDemo() {
   const [fichaAberta, setFichaAberta] = useState<string | null>(null);
   const [walletAberta, setWalletAberta] = useState<string | null>(null);
   const inputFicheiro = useRef<HTMLInputElement>(null);
+  const [visualizar, setVisualizar] = useState<string | null>(null);
+  const ficheirosLocais = useRef<Map<string, { url: string; mime: string }>>(new Map());
   const analisar = useServerFn(analisarDocumento);
 
   const emBreve = paraUsarEmBreve(docs);
@@ -150,6 +153,7 @@ function DocumentosDemo() {
     const novo = doc({ nome, tipo, seccao, estadoAnalise: "a_analisar", destacar: true });
     setDocs((atuais) => [...atuais, novo]);
     void correrAnalise(novo.id, { nome, ...entrada });
+    return novo.id;
   }
 
   async function aoEscolherFicheiro(ficheiro: File) {
@@ -173,7 +177,11 @@ function DocumentosDemo() {
         leitor.readAsDataURL(ficheiro);
       });
     }
-    novoDocumento(ficheiro.name, eImagem ? "imagem" : "pdf", "bilhetes", { imagem });
+    const id = novoDocumento(ficheiro.name, eImagem ? "imagem" : "pdf", "bilhetes", { imagem });
+    ficheirosLocais.current.set(id, {
+      url: URL.createObjectURL(ficheiro),
+      mime: ficheiro.type,
+    });
   }
 
 
@@ -187,6 +195,9 @@ function DocumentosDemo() {
     setFichaAberta(null);
     toast.success("Ficha guardada nesta viagem (demonstração).");
   }
+
+  const docVisualizar = docs.find((d) => d.id === visualizar) ?? null;
+  const ficheiroVisualizar = visualizar ? (ficheirosLocais.current.get(visualizar) ?? null) : null;
 
   const docFicha = docs.find((d) => d.id === fichaAberta) ?? null;
   const docWallet = docs.find((d) => d.id === walletAberta) ?? null;
@@ -204,7 +215,14 @@ function DocumentosDemo() {
             )}
           </span>
           <div className="min-w-0 flex-1">
-            <p className="truncate font-medium">{d.nome}</p>
+            <button
+              type="button"
+              onClick={() => setVisualizar(d.id)}
+              className="block max-w-full cursor-pointer truncate rounded text-left font-medium text-primary underline underline-offset-4 hover:opacity-80"
+              aria-label={`Ver o ficheiro original ${d.nome}`}
+            >
+              {d.nome}
+            </button>
             <p className="mt-0.5 text-xs text-muted-foreground">
               {d.estadoAnalise === "a_analisar"
                 ? "A processar o documento…"
@@ -488,6 +506,19 @@ function DocumentosDemo() {
           </Button>
         </div>
       </div>
+
+      <VisualizadorDocumento
+        aberto={docVisualizar !== null}
+        nome={docVisualizar?.nome ?? ""}
+        url={ficheiroVisualizar?.url ?? null}
+        mimeType={ficheiroVisualizar?.mime ?? null}
+        erro={
+          docVisualizar && !ficheiroVisualizar
+            ? "Este é um documento de exemplo, sem ficheiro original. Carregue um PDF ou uma imagem para ver o visualizador com o ficheiro real."
+            : null
+        }
+        onFechar={() => setVisualizar(null)}
+      />
 
       <DocumentoFicha
         documento={docFicha}

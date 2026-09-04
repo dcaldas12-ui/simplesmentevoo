@@ -151,11 +151,11 @@ export function VisualizadorDocumento({
             <Button size="sm" variant="outline" onClick={() => void sairLeitura()}>
               <Minimize2 className="size-4" /> Sair do modo leitura
             </Button>
-          ) : (
-            <Button size="sm" variant="outline" onClick={() => void entrarLeitura()}>
+          ) : url && !aCarregar ? (
+            <Button size="sm" onClick={() => void entrarLeitura()}>
               <Maximize2 className="size-4" /> Ler em ecrã inteiro
             </Button>
-          )}
+          ) : null}
           <Button size="sm" variant="ghost" aria-label="Fechar visualizador" onClick={onFechar}>
             <X className="size-4" />
           </Button>
