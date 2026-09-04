@@ -299,10 +299,11 @@ function DocumentosDemo() {
           Documentos da viagem
         </h1>
         <p className="mt-2 max-w-2xl text-muted-foreground">
-          Carregue um ficheiro e a leitura automática tenta preencher tipo, fornecedor, passageiro,
-          local, referência, data/hora e código. Depois é só confirmar na ficha — tudo fica ligado a
-          esta viagem.
+          Carregue um ficheiro: mostramos o estado de processamento, lemos tipo, fornecedor,
+          passageiro, local, referência, data/hora e código, e guardamos tudo automaticamente nesta
+          viagem. Os detalhes só abrem se carregar em “Ver detalhes”.
         </p>
+
 
         <div className="mt-6 rounded-2xl border border-border bg-card p-5">
           <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
