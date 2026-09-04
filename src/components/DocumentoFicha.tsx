@@ -22,6 +22,7 @@ const campos: Array<{ chave: keyof FichaDocumento; rotulo: string; tipo?: string
   { chave: "local", rotulo: "Local" },
   { chave: "referencia", rotulo: "Referência" },
   { chave: "dataHora", rotulo: "Data e hora", tipo: "datetime-local" },
+  { chave: "dataHoraFim", rotulo: "Fim (ex.: check-out)", tipo: "datetime-local" },
   { chave: "codigo", rotulo: "Código / QR" },
 ];
 

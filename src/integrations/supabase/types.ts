@@ -14,6 +14,69 @@ export type Database = {
   }
   public: {
     Tables: {
+      avisos: {
+        Row: {
+          antecipacao_min: number
+          ativo: boolean
+          created_at: string
+          documento_id: string | null
+          id: string
+          local: string | null
+          origem: string | null
+          quando: string
+          tipo: string
+          titulo: string
+          updated_at: string
+          user_id: string
+          viagem_id: string | null
+        }
+        Insert: {
+          antecipacao_min?: number
+          ativo?: boolean
+          created_at?: string
+          documento_id?: string | null
+          id?: string
+          local?: string | null
+          origem?: string | null
+          quando: string
+          tipo?: string
+          titulo: string
+          updated_at?: string
+          user_id?: string
+          viagem_id?: string | null
+        }
+        Update: {
+          antecipacao_min?: number
+          ativo?: boolean
+          created_at?: string
+          documento_id?: string | null
+          id?: string
+          local?: string | null
+          origem?: string | null
+          quando?: string
+          tipo?: string
+          titulo?: string
+          updated_at?: string
+          user_id?: string
+          viagem_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "avisos_documento_id_fkey"
+            columns: ["documento_id"]
+            isOneToOne: false
+            referencedRelation: "documentos"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "avisos_viagem_id_fkey"
+            columns: ["viagem_id"]
+            isOneToOne: false
+            referencedRelation: "viagens"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       documentos: {
         Row: {
           created_at: string
@@ -73,6 +136,33 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      preferencias_avisos: {
+        Row: {
+          antecipacao_padrao_min: number
+          avisos_ativos: boolean
+          created_at: string
+          push_ativado: boolean
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          antecipacao_padrao_min?: number
+          avisos_ativos?: boolean
+          created_at?: string
+          push_ativado?: boolean
+          updated_at?: string
+          user_id?: string
+        }
+        Update: {
+          antecipacao_padrao_min?: number
+          avisos_ativos?: boolean
+          created_at?: string
+          push_ativado?: boolean
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
       }
       profiles: {
         Row: {

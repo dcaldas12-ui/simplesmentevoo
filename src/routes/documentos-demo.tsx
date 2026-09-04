@@ -26,6 +26,7 @@ import { WalletDialog } from "@/components/WalletDialog";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { analisarDocumento } from "@/lib/documentos-ia.functions";
+import { criarDocumento, documentosDemo } from "@/lib/documentos-demo";
 import {
   etiquetaTipo,
   fichaVazia,
@@ -65,97 +66,8 @@ export const Route = createFileRoute("/documentos-demo")({
 
 const iconePorTipo = { pdf: FileText, qr: QrCode, email: Mail, imagem: FileText } as const;
 
-function doc(
-  parcial: Partial<DocumentoViagem> & { nome: string; tipo: TipoFicheiro; seccao: SeccaoDocumento },
-): DocumentoViagem {
-  return {
-    id: crypto.randomUUID(),
-    ficha: { ...fichaVazia },
-    destacar: true,
-    wallet: "nao",
-    estadoAnalise: "concluida",
-    ...parcial,
-  };
-}
+const doc = criarDocumento;
 
-function emDias(dias: number, hora: string) {
-  const d = new Date();
-  d.setDate(d.getDate() + dias);
-  return `${d.toISOString().slice(0, 10)}T${hora}`;
-}
-
-const documentosIniciais: DocumentoViagem[] = [
-  doc({
-    nome: "Cartão de embarque — LIS → BCN",
-    tipo: "pdf",
-    seccao: "bilhetes",
-    ficha: {
-      tipoDocumento: "Cartão de embarque",
-      fornecedor: "TAP Air Portugal",
-      passageiro: "Diogo Caldas",
-      local: "Lisboa (LIS) → Barcelona (BCN)",
-      referencia: "TP1042",
-      dataHora: emDias(1, "07:45"),
-      codigo: "M1CALDAS/DIOGO TP1042 LISBCN",
-    },
-    wallet: "ligado",
-  }),
-  doc({
-    nome: "Transfer aeroporto → centro",
-    tipo: "qr",
-    seccao: "vouchers",
-    ficha: {
-      tipoDocumento: "Voucher de transfer",
-      fornecedor: "Barcelona Shuttle",
-      passageiro: "2 pessoas",
-      local: "Aeroporto El Prat",
-      referencia: "BS-77120",
-      dataHora: emDias(1, "11:30"),
-      codigo: "QR:BS-77120",
-    },
-  }),
-  doc({
-    nome: "Reserva do hotel Gòtic",
-    tipo: "email",
-    seccao: "vouchers",
-    ficha: {
-      tipoDocumento: "Reserva de hotel",
-      fornecedor: "Hotel Gòtic",
-      passageiro: "Diogo Caldas",
-      local: "Carrer dels Banys Nous, Barcelona",
-      referencia: "HG-88213",
-      dataHora: emDias(1, "15:00"),
-      codigo: "",
-    },
-  }),
-  doc({
-    nome: "Cartão de embarque — BCN → LIS",
-    tipo: "qr",
-    seccao: "bilhetes",
-    ficha: {
-      tipoDocumento: "Cartão de embarque",
-      fornecedor: "TAP Air Portugal",
-      passageiro: "Diogo Caldas",
-      local: "Barcelona (BCN) → Lisboa (LIS)",
-      referencia: "TP1049",
-      dataHora: emDias(5, "19:20"),
-      codigo: "M1CALDAS/DIOGO TP1049 BCNLIS",
-    },
-  }),
-  doc({
-    nome: "Seguro de viagem",
-    tipo: "pdf",
-    seccao: "outros",
-    destacar: false,
-    ficha: {
-      ...fichaVazia,
-      tipoDocumento: "Seguro de viagem",
-      fornecedor: "Fidelidade",
-      passageiro: "Diogo Caldas",
-      referencia: "88213-A",
-    },
-  }),
-];
 
 const seccoes = [
   {
@@ -182,7 +94,7 @@ const seccoes = [
 ];
 
 function DocumentosDemo() {
-  const [docs, setDocs] = useState<DocumentoViagem[]>(documentosIniciais);
+  const [docs, setDocs] = useState<DocumentoViagem[]>(() => documentosDemo());
   const [fichaAberta, setFichaAberta] = useState<string | null>(null);
   const [walletAberta, setWalletAberta] = useState<string | null>(null);
   const inputFicheiro = useRef<HTMLInputElement>(null);
@@ -399,12 +311,19 @@ function DocumentosDemo() {
         </div>
 
         <section className="mt-8">
-          <h2 className="flex items-center gap-2 font-display text-xl font-semibold">
-            <Star className="size-5 text-primary" /> Para usar em breve
-          </h2>
-          <p className="text-sm text-muted-foreground">
-            Documentos destacados, ordenados pela data e hora mais próximas.
-          </p>
+          <div className="flex flex-wrap items-end justify-between gap-3">
+            <div>
+              <h2 className="flex items-center gap-2 font-display text-xl font-semibold">
+                <Star className="size-5 text-primary" /> Para usar em breve
+              </h2>
+              <p className="text-sm text-muted-foreground">
+                Documentos destacados, ordenados pela data e hora mais próximas.
+              </p>
+            </div>
+            <Button asChild size="sm" variant="outline">
+              <Link to="/avisos">Ver próximos avisos</Link>
+            </Button>
+          </div>
           <div className="mt-4">
             {emBreve.length === 0 ? (
               <EmptyState

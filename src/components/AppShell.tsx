@@ -1,5 +1,5 @@
 import { Link, useNavigate } from "@tanstack/react-router";
-import { FileText, LogOut, Luggage, Plane, Search } from "lucide-react";
+import { BellRing, FileText, LogOut, Luggage, Plane, Search } from "lucide-react";
 import type { ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -43,6 +43,11 @@ export function AppShell({ children }: { children: ReactNode }) {
             <Button asChild variant="ghost" size="sm">
               <Link to="/documentos-demo">
                 <FileText className="size-4" /> Documentos
+              </Link>
+            </Button>
+            <Button asChild variant="ghost" size="sm">
+              <Link to="/avisos">
+                <BellRing className="size-4" /> Avisos
               </Link>
             </Button>
             {session ? (

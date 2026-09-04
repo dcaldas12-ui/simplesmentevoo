@@ -8,6 +8,13 @@
       "when": 1788549875805,
       "tag": "0000_create_travel_schema",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1788556370184,
+      "tag": "0001_create_avisos",
+      "breakpoints": true
     }
   ]
 }

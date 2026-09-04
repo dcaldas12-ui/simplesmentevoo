@@ -13,6 +13,8 @@ export type FichaDocumento = {
   referencia: string;
   /** ISO local: "2026-10-03T07:45" */
   dataHora: string;
+  /** Fim relevante (ex.: check-out do hotel), quando existir. */
+  dataHoraFim: string;
   codigo: string;
 };
 
@@ -23,6 +25,7 @@ export const fichaVazia: FichaDocumento = {
   local: "",
   referencia: "",
   dataHora: "",
+  dataHoraFim: "",
   codigo: "",
 };
 

@@ -46,6 +46,11 @@ const ESQUEMA = {
       type: "string",
       description: "data/hora relevante em formato AAAA-MM-DDTHH:MM, ou vazio",
     },
+    dataHoraFim: {
+      type: "string",
+      description:
+        "data/hora de fim quando existir (ex.: check-out do hotel), AAAA-MM-DDTHH:MM, ou vazio",
+    },
     codigo: { type: "string", description: "conteúdo do código de barras/QR, ou vazio" },
   },
   required: [
@@ -55,6 +60,7 @@ const ESQUEMA = {
     "local",
     "referencia",
     "dataHora",
+    "dataHoraFim",
     "codigo",
   ],
   additionalProperties: false,
@@ -90,6 +96,7 @@ function limpar(bruto: unknown): FichaDocumento {
     local: txt("local"),
     referencia: txt("referencia"),
     dataHora: txt("dataHora"),
+    dataHoraFim: txt("dataHoraFim"),
     codigo: txt("codigo"),
   };
 }
