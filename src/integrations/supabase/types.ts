@@ -185,6 +185,90 @@ export type Database = {
         }
         Relationships: []
       }
+      reservas: {
+        Row: {
+          companhia: string | null
+          confirmada_em: string | null
+          created_at: string
+          data_partida: string | null
+          data_regresso: string | null
+          deeplink: string | null
+          destino: string
+          estado: string
+          fornecedor: string
+          id: string
+          moeda: string
+          notas: string | null
+          numero_voo: string | null
+          origem: string
+          preco: number | null
+          referencia: string | null
+          updated_at: string
+          user_id: string
+          viagem_id: string | null
+          voo_id: string | null
+        }
+        Insert: {
+          companhia?: string | null
+          confirmada_em?: string | null
+          created_at?: string
+          data_partida?: string | null
+          data_regresso?: string | null
+          deeplink?: string | null
+          destino: string
+          estado?: string
+          fornecedor?: string
+          id?: string
+          moeda?: string
+          notas?: string | null
+          numero_voo?: string | null
+          origem: string
+          preco?: number | null
+          referencia?: string | null
+          updated_at?: string
+          user_id?: string
+          viagem_id?: string | null
+          voo_id?: string | null
+        }
+        Update: {
+          companhia?: string | null
+          confirmada_em?: string | null
+          created_at?: string
+          data_partida?: string | null
+          data_regresso?: string | null
+          deeplink?: string | null
+          destino?: string
+          estado?: string
+          fornecedor?: string
+          id?: string
+          moeda?: string
+          notas?: string | null
+          numero_voo?: string | null
+          origem?: string
+          preco?: number | null
+          referencia?: string | null
+          updated_at?: string
+          user_id?: string
+          viagem_id?: string | null
+          voo_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "reservas_viagem_id_fkey"
+            columns: ["viagem_id"]
+            isOneToOne: false
+            referencedRelation: "viagens"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "reservas_voo_id_fkey"
+            columns: ["voo_id"]
+            isOneToOne: false
+            referencedRelation: "voos"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       viagens: {
         Row: {
           created_at: string
