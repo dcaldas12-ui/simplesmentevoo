@@ -106,10 +106,19 @@ function paraUTC(data: Date) {
   );
 }
 
-/** Converte uma hora "de parede" (a hora escrita no bilhete) para UTC no fuso indicado. */
+/** Converte uma hora "de parede" (a hora escrita no bilhete) para o instante
+ * correto no fuso indicado. */
 function paredeParaUTC(iso: string, fuso: string) {
   const base = new Date(iso);
   if (Number.isNaN(base.getTime())) return base;
+  const palpite = Date.UTC(
+    base.getFullYear(),
+    base.getMonth(),
+    base.getDate(),
+    base.getHours(),
+    base.getMinutes(),
+    base.getSeconds(),
+  );
   try {
     const fmt = new Intl.DateTimeFormat("en-US", {
       timeZone: fuso,
@@ -122,9 +131,9 @@ function paredeParaUTC(iso: string, fuso: string) {
       second: "2-digit",
     });
     const partes = Object.fromEntries(
-      fmt.formatToParts(base).map((p) => [p.type, p.value]),
+      fmt.formatToParts(new Date(palpite)).map((parte) => [parte.type, parte.value]),
     ) as Record<string, string>;
-    const comoUTC = Date.UTC(
+    const comoSeUTC = Date.UTC(
       Number(partes["year"]),
       Number(partes["month"]) - 1,
       Number(partes["day"]),
@@ -132,9 +141,8 @@ function paredeParaUTC(iso: string, fuso: string) {
       Number(partes["minute"]),
       Number(partes["second"]),
     );
-    const desvio = comoUTC - base.getTime();
-    // A hora escrita no documento é a hora local do destino: retiramos o desvio.
-    return new Date(base.getTime() - desvio + (base.getTimezoneOffset() * 60_000 - base.getTimezoneOffset() * 60_000));
+    const desvio = comoSeUTC - palpite;
+    return new Date(palpite - desvio);
   } catch {
     return base;
   }
