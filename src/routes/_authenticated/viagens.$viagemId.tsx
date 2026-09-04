@@ -5,17 +5,19 @@ import {
   Download,
   FileText,
   Mail,
+  Maximize2,
   Plane,
   Plus,
   QrCode,
   Trash2,
   Upload,
 } from "lucide-react";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { AppShell } from "@/components/AppShell";
 import { EmptyState } from "@/components/EmptyState";
+import { VisualizadorDocumento } from "@/components/VisualizadorDocumento";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -379,6 +381,7 @@ type Documento = {
   qr_conteudo: string | null;
   remetente_email: string | null;
   recebido_em: string | null;
+  mime_type: string | null;
 };
 
 function DocumentosPainel({
@@ -391,31 +394,88 @@ function DocumentosPainel({
   onDone: () => Promise<void>;
 }) {
   const fileRef = useRef<HTMLInputElement>(null);
+  const urlVisualizacaoRef = useRef<string | null>(null);
   const [aEnviar, setAEnviar] = useState(false);
+  const [visualizar, setVisualizar] = useState<{
+    doc: Documento;
+    url: string | null;
+    aCarregar: boolean;
+    erro: string | null;
+    leitura: boolean;
+  } | null>(null);
+
+  useEffect(
+    () => () => {
+      if (urlVisualizacaoRef.current) URL.revokeObjectURL(urlVisualizacaoRef.current);
+    },
+    [],
+  );
+
+  function mensagemLeitura(error: unknown) {
+    const detalhe =
+      error && typeof error === "object" && "message" in error
+        ? String(error.message).toLowerCase()
+        : "";
+    if (detalhe.includes("jwt") || detalhe.includes("unauthorized") || detalhe.includes("401")) {
+      return "A sessão expirou. Atualize a página e volte a entrar.";
+    }
+    if (detalhe.includes("forbidden") || detalhe.includes("403")) {
+      return "O acesso foi recusado. Confirme que está na conta que carregou o ficheiro.";
+    }
+    if (detalhe.includes("not found") || detalhe.includes("404")) {
+      return "O registo existe, mas o ficheiro original não foi encontrado.";
+    }
+    return "Não foi possível transferir o ficheiro. Verifique a ligação e tente novamente.";
+  }
 
   async function enviarFicheiro(file: File) {
+    if (file.type !== "application/pdf" && !file.type.startsWith("image/")) {
+      toast.error("Formato não suportado. Escolha um PDF ou uma imagem.");
+      return;
+    }
+    if (file.size > 20 * 1024 * 1024) {
+      toast.error("Ficheiro demasiado grande (máximo 20 MB).");
+      return;
+    }
     setAEnviar(true);
+    let pathGuardado: string | null = null;
     try {
       const { data: userData } = await supabase.auth.getUser();
       const uid = userData.user?.id;
       if (!uid) throw new Error("Sessão expirada.");
-      const path = `${uid}/${viagemId}/${Date.now()}-${file.name}`;
-      const { error: erroUpload } = await supabase.storage
+      const nomeSeguro = file.name.normalize("NFD").replace(/[^\w.-]+/g, "_");
+      const path = `${uid}/${viagemId}/${Date.now()}-${nomeSeguro}`;
+      const { data: upload, error: erroUpload } = await supabase.storage
         .from("documentos")
-        .upload(path, file);
+        .upload(path, file, {
+          contentType: file.type || "application/octet-stream",
+          upsert: false,
+        });
       if (erroUpload) throw erroUpload;
+      pathGuardado = upload?.path ?? null;
+      if (!pathGuardado || pathGuardado.split("/")[0] !== uid) {
+        throw new Error("O armazenamento não confirmou o caminho seguro do ficheiro.");
+      }
+
+      const { error: erroLeitura } = await supabase.storage
+        .from("documentos")
+        .download(pathGuardado);
+      if (erroLeitura) throw new Error(mensagemLeitura(erroLeitura));
 
       const { error } = await supabase.from("documentos").insert({
         viagem_id: viagemId,
         nome: file.name,
         tipo: file.type.includes("pdf") ? "pdf" : "ficheiro",
         origem: "upload",
-        ficheiro_path: path,
+        ficheiro_path: pathGuardado,
+        mime_type: file.type,
+        tamanho_bytes: file.size,
       });
       if (error) throw error;
       await onDone();
       toast.success("Documento carregado.");
     } catch (err) {
+      if (pathGuardado) await supabase.storage.from("documentos").remove([pathGuardado]);
       toast.error(err instanceof Error ? err.message : "Não foi possível carregar o documento.");
     } finally {
       setAEnviar(false);
@@ -423,16 +483,25 @@ function DocumentosPainel({
     }
   }
 
-  async function abrir(doc: Documento) {
+  async function abrir(doc: Documento, leitura = false) {
     if (!doc.ficheiro_path) return;
-    const { data, error } = await supabase.storage
-      .from("documentos")
-      .createSignedUrl(doc.ficheiro_path, 60);
+    if (urlVisualizacaoRef.current) URL.revokeObjectURL(urlVisualizacaoRef.current);
+    setVisualizar({ doc, url: null, aCarregar: true, erro: null, leitura });
+    const { data, error } = await supabase.storage.from("documentos").download(doc.ficheiro_path);
     if (error || !data) {
-      toast.error("Não foi possível abrir o documento.");
+      setVisualizar({
+        doc,
+        url: null,
+        aCarregar: false,
+        erro: mensagemLeitura(error),
+        leitura: false,
+      });
       return;
     }
-    window.open(data.signedUrl, "_blank", "noopener");
+    const blob = data.type || !doc.mime_type ? data : new Blob([data], { type: doc.mime_type });
+    const objectUrl = URL.createObjectURL(blob);
+    urlVisualizacaoRef.current = objectUrl;
+    setVisualizar({ doc, url: objectUrl, aCarregar: false, erro: null, leitura });
   }
 
   async function remover(doc: Documento) {
@@ -487,7 +556,18 @@ function DocumentosPainel({
                 )}
               </span>
               <div className="flex-1">
-                <p className="font-medium">{d.nome}</p>
+                {d.ficheiro_path ? (
+                  <button
+                    type="button"
+                    className="cursor-pointer text-left font-medium text-primary underline underline-offset-4"
+                    aria-label={`Ver o ficheiro original ${d.nome}`}
+                    onClick={() => void abrir(d)}
+                  >
+                    {d.nome}
+                  </button>
+                ) : (
+                  <p className="font-medium">{d.nome}</p>
+                )}
                 <p className="text-xs text-muted-foreground">
                   {d.origem === "email"
                     ? `Recebido de ${d.remetente_email ?? "email"}`
@@ -503,9 +583,14 @@ function DocumentosPainel({
               </div>
               <Badge variant="outline">{d.tipo}</Badge>
               {d.ficheiro_path ? (
-                <Button variant="ghost" size="icon" aria-label="Abrir" onClick={() => void abrir(d)}>
-                  <Download className="size-4" />
-                </Button>
+                <>
+                  <Button variant="outline" size="sm" onClick={() => void abrir(d, true)}>
+                    <Maximize2 className="size-4" /> Ler em ecrã inteiro
+                  </Button>
+                  <Button variant="ghost" size="icon" aria-label="Abrir" onClick={() => void abrir(d)}>
+                    <Download className="size-4" />
+                  </Button>
+                </>
               ) : null}
               <Button
                 variant="ghost"
@@ -519,6 +604,22 @@ function DocumentosPainel({
           ))}
         </ul>
       )}
+      <VisualizadorDocumento
+        aberto={visualizar !== null}
+        nome={visualizar?.doc.nome ?? ""}
+        url={visualizar?.url ?? null}
+        mimeType={visualizar?.doc.mime_type ?? null}
+        aCarregar={visualizar?.aCarregar}
+        erro={visualizar?.erro ?? null}
+        iniciarLeitura={visualizar?.leitura ?? false}
+        onFechar={() => {
+          if (urlVisualizacaoRef.current) {
+            URL.revokeObjectURL(urlVisualizacaoRef.current);
+            urlVisualizacaoRef.current = null;
+          }
+          setVisualizar(null);
+        }}
+      />
     </div>
   );
 }
