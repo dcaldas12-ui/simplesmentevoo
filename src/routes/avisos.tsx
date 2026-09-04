@@ -15,6 +15,7 @@ import { toast } from "sonner";
 
 import { AppShell } from "@/components/AppShell";
 import { EmptyState } from "@/components/EmptyState";
+import { PreferenciasPushCard } from "@/components/PreferenciasPushCard";
 import { PushCard } from "@/components/PushCard";
 import { Button } from "@/components/ui/button";
 import {
@@ -139,6 +140,7 @@ function PaginaAvisos() {
 
         <div className="mt-6">
           <PushCard />
+          <PreferenciasPushCard />
         </div>
 
         <div className="mt-6 flex flex-col gap-3 rounded-2xl border border-border bg-secondary/50 p-5 sm:flex-row sm:items-center sm:justify-between">
