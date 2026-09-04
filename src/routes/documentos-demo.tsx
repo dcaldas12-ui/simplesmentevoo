@@ -7,6 +7,7 @@ import {
   Link2,
   Loader2,
   Mail,
+  Maximize2,
   MapPin,
   Pencil,
   QrCode,
@@ -101,6 +102,7 @@ function DocumentosDemo() {
   const [walletAberta, setWalletAberta] = useState<string | null>(null);
   const inputFicheiro = useRef<HTMLInputElement>(null);
   const [visualizar, setVisualizar] = useState<string | null>(null);
+  const [visualizarLeitura, setVisualizarLeitura] = useState(false);
   const ficheirosLocais = useRef<Map<string, { url: string; mime: string }>>(new Map());
   const analisar = useServerFn(analisarDocumento);
 
@@ -217,7 +219,10 @@ function DocumentosDemo() {
           <div className="min-w-0 flex-1">
             <button
               type="button"
-              onClick={() => setVisualizar(d.id)}
+              onClick={() => {
+                setVisualizarLeitura(false);
+                setVisualizar(d.id);
+              }}
               className="block max-w-full cursor-pointer truncate rounded text-left font-medium text-primary underline underline-offset-4 hover:opacity-80"
               aria-label={`Ver o ficheiro original ${d.nome}`}
             >
@@ -290,6 +295,27 @@ function DocumentosDemo() {
               onClick={() => setWalletAberta(d.id)}
             >
               <Wallet className="size-4" /> Adicionar à Wallet
+            </Button>
+          )}
+          {ficheirosLocais.current.has(d.id) ? (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                setVisualizarLeitura(true);
+                setVisualizar(d.id);
+              }}
+            >
+              <Maximize2 className="size-4" /> Ler em ecrã inteiro
+            </Button>
+          ) : (
+            <Button
+              size="sm"
+              variant="outline"
+              disabled
+              title="Documento de exemplo sem ficheiro original. Carregue um PDF ou imagem."
+            >
+              <Maximize2 className="size-4" /> Sem ficheiro para ler
             </Button>
           )}
           <label className="ml-auto flex items-center gap-2 text-xs text-muted-foreground">
@@ -517,7 +543,11 @@ function DocumentosDemo() {
             ? "Este é um documento de exemplo, sem ficheiro original. Carregue um PDF ou uma imagem para ver o visualizador com o ficheiro real."
             : null
         }
-        onFechar={() => setVisualizar(null)}
+        iniciarLeitura={visualizarLeitura}
+        onFechar={() => {
+          setVisualizarLeitura(false);
+          setVisualizar(null);
+        }}
       />
 
       <DocumentoFicha
