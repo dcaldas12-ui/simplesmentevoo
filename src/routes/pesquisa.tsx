@@ -4,7 +4,6 @@ import { useServerFn } from "@tanstack/react-start";
 import {
   CalendarRange,
   ChevronDown,
-  ExternalLink,
   Info,
   PlaneTakeoff,
   SearchX,
@@ -16,6 +15,7 @@ import { useMemo, useState } from "react";
 import { AppShell } from "@/components/AppShell";
 import { EmptyState } from "@/components/EmptyState";
 import { GuardarOfertaDialog } from "@/components/GuardarOfertaDialog";
+import { ReservarParceiroDialog } from "@/components/ReservarParceiroDialog";
 import { SearchForm } from "@/components/SearchForm";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -338,13 +338,7 @@ function CartaoOferta({
           )}
         </div>
         <div className="flex items-center gap-2">
-          {oferta.deeplink ? (
-            <Button asChild size="sm" variant="outline">
-              <a href={oferta.deeplink} target="_blank" rel="noopener noreferrer">
-                Reservar <ExternalLink className="size-4" />
-              </a>
-            </Button>
-          ) : null}
+          <ReservarParceiroDialog oferta={oferta} />
           <GuardarOfertaDialog oferta={oferta} />
         </div>
       </div>

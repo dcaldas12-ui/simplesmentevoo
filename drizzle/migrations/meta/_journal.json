@@ -15,6 +15,13 @@
       "when": 1788556370184,
       "tag": "0001_create_avisos",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1788557450096,
+      "tag": "0002_create_reservas",
+      "breakpoints": true
     }
   ]
 }

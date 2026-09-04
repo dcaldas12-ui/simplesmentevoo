@@ -15,6 +15,7 @@ import { Route as AuthRouteImport } from './routes/auth'
 import { Route as AvisosRouteImport } from './routes/avisos'
 import { Route as DocumentosDemoRouteImport } from './routes/documentos-demo'
 import { Route as PesquisaRouteImport } from './routes/pesquisa'
+import { Route as AuthenticatedReservasRouteImport } from './routes/_authenticated/reservas'
 import { Route as AuthenticatedViagensIndexRouteImport } from './routes/_authenticated/viagens.index'
 import { Route as AuthenticatedViagensViagemIdRouteImport } from './routes/_authenticated/viagens.$viagemId'
 
@@ -47,6 +48,11 @@ const PesquisaRoute = PesquisaRouteImport.update({
   path: '/pesquisa',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AuthenticatedReservasRoute = AuthenticatedReservasRouteImport.update({
+  id: '/reservas',
+  path: '/reservas',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
 const AuthenticatedViagensIndexRoute =
   AuthenticatedViagensIndexRouteImport.update({
     id: '/viagens/',
@@ -66,6 +72,7 @@ export interface FileRoutesByFullPath {
   '/avisos': typeof AvisosRoute
   '/documentos-demo': typeof DocumentosDemoRoute
   '/pesquisa': typeof PesquisaRoute
+  '/reservas': typeof AuthenticatedReservasRoute
   '/viagens/$viagemId': typeof AuthenticatedViagensViagemIdRoute
   '/viagens/': typeof AuthenticatedViagensIndexRoute
 }
@@ -75,6 +82,7 @@ export interface FileRoutesByTo {
   '/avisos': typeof AvisosRoute
   '/documentos-demo': typeof DocumentosDemoRoute
   '/pesquisa': typeof PesquisaRoute
+  '/reservas': typeof AuthenticatedReservasRoute
   '/viagens/$viagemId': typeof AuthenticatedViagensViagemIdRoute
   '/viagens': typeof AuthenticatedViagensIndexRoute
 }
@@ -86,6 +94,7 @@ export interface FileRoutesById {
   '/avisos': typeof AvisosRoute
   '/documentos-demo': typeof DocumentosDemoRoute
   '/pesquisa': typeof PesquisaRoute
+  '/_authenticated/reservas': typeof AuthenticatedReservasRoute
   '/_authenticated/viagens/$viagemId': typeof AuthenticatedViagensViagemIdRoute
   '/_authenticated/viagens/': typeof AuthenticatedViagensIndexRoute
 }
@@ -97,6 +106,7 @@ export interface FileRouteTypes {
     | '/avisos'
     | '/documentos-demo'
     | '/pesquisa'
+    | '/reservas'
     | '/viagens/$viagemId'
     | '/viagens/'
   fileRoutesByTo: FileRoutesByTo
@@ -106,6 +116,7 @@ export interface FileRouteTypes {
     | '/avisos'
     | '/documentos-demo'
     | '/pesquisa'
+    | '/reservas'
     | '/viagens/$viagemId'
     | '/viagens'
   id:
@@ -116,6 +127,7 @@ export interface FileRouteTypes {
     | '/avisos'
     | '/documentos-demo'
     | '/pesquisa'
+    | '/_authenticated/reservas'
     | '/_authenticated/viagens/$viagemId'
     | '/_authenticated/viagens/'
   fileRoutesById: FileRoutesById
@@ -173,6 +185,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PesquisaRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/_authenticated/reservas': {
+      id: '/_authenticated/reservas'
+      path: '/reservas'
+      fullPath: '/reservas'
+      preLoaderRoute: typeof AuthenticatedReservasRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/viagens/': {
       id: '/_authenticated/viagens/'
       path: '/viagens'
@@ -191,11 +210,13 @@ declare module '@tanstack/react-router' {
 }
 
 interface AuthenticatedRouteRouteChildren {
+  AuthenticatedReservasRoute: typeof AuthenticatedReservasRoute
   AuthenticatedViagensViagemIdRoute: typeof AuthenticatedViagensViagemIdRoute
   AuthenticatedViagensIndexRoute: typeof AuthenticatedViagensIndexRoute
 }
 
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
+  AuthenticatedReservasRoute: AuthenticatedReservasRoute,
   AuthenticatedViagensViagemIdRoute: AuthenticatedViagensViagemIdRoute,
   AuthenticatedViagensIndexRoute: AuthenticatedViagensIndexRoute,
 }
