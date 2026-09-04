@@ -77,12 +77,25 @@ function duracao(min: number) {
 function PesquisaPage() {
   const busca = Route.useSearch();
   const procurar = useServerFn(pesquisarVoos);
+  const [flexVisiveis, setFlexVisiveis] = useState(3);
 
   const { data, isFetching, error } = useQuery({
     queryKey: ["voos", busca],
     queryFn: () => procurar({ data: busca }),
     enabled: Boolean(busca.dataPartida),
   });
+
+  const { exatas, flexiveis } = useMemo(() => {
+    const todas = data?.ofertas ?? [];
+    const regressoPedido = busca.dataRegresso === "" ? null : busca.dataRegresso;
+    const exatas = todas.filter(
+      (o) => o.dataPartida === busca.dataPartida && (o.dataRegresso ?? null) === regressoPedido,
+    );
+    const flexiveis = todas.filter((o) => !exatas.includes(o));
+    return { exatas: exatas.slice(0, 5), flexiveis };
+  }, [data, busca.dataPartida, busca.dataRegresso]);
+
+  const melhorExata = exatas[0]?.precoTotal ?? null;
 
   return (
     <AppShell>
@@ -138,13 +151,85 @@ function PesquisaPage() {
               />
             </div>
 
-            <ul className="space-y-3">
-              {data.ofertas.map((oferta, i) => (
-                <li key={oferta.id}>
-                  <CartaoOferta oferta={oferta} melhor={i === 0} />
-                </li>
-              ))}
-            </ul>
+            <section className="space-y-3">
+              <div>
+                <h2 className="font-display text-lg font-semibold">Nas datas que pediu</h2>
+                <p className="text-sm text-muted-foreground">
+                  As 5 opções mais baratas para {formatarData(busca.dataPartida)}
+                  {busca.dataRegresso ? ` · regresso ${formatarData(busca.dataRegresso)}` : ""}.
+                </p>
+              </div>
+
+              {exatas.length === 0 ? (
+                <div className="rounded-2xl border border-dashed border-border p-4 text-sm text-muted-foreground">
+                  Não encontrámos voos exactamente nestas datas. Veja as alternativas em baixo.
+                </div>
+              ) : (
+                <ul className="space-y-3">
+                  {exatas.map((oferta, i) => (
+                    <li key={oferta.id}>
+                      <CartaoOferta oferta={oferta} melhor={i === 0} />
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+
+            {flexiveis.length > 0 ? (
+              <section className="space-y-3 rounded-2xl border border-border bg-secondary/30 p-4 sm:p-5">
+                <div className="flex flex-col gap-1">
+                  <h2 className="flex items-center gap-2 font-display text-lg font-semibold">
+                    <CalendarRange className="size-5" /> Datas flexíveis: opções mais baratas
+                  </h2>
+                  <p className="text-sm text-muted-foreground">
+                    Alternativas dentro de ±{busca.flexibilidade} dias, ordenadas pelo preço.
+                  </p>
+                </div>
+
+                <ul className="space-y-3">
+                  {flexiveis.slice(0, flexVisiveis).map((oferta) => (
+                    <li key={oferta.id}>
+                      <CartaoOferta
+                        oferta={oferta}
+                        melhor={false}
+                        pedido={{
+                          partida: busca.dataPartida,
+                          regresso: busca.dataRegresso === "" ? null : busca.dataRegresso,
+                        }}
+                        {...(melhorExata !== null ? { referencia: melhorExata } : {})}
+                      />
+                    </li>
+                  ))}
+                </ul>
+
+                {flexVisiveis < flexiveis.length ? (
+                  <div className="flex flex-col gap-2 sm:flex-row">
+                    <Button
+                      variant="outline"
+                      className="w-full sm:w-auto"
+                      onClick={() => setFlexVisiveis((n) => n + 5)}
+                    >
+                      <ChevronDown className="size-4" /> Ver mais opções
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      className="w-full sm:w-auto"
+                      onClick={() => setFlexVisiveis(flexiveis.length)}
+                    >
+                      Ver todos os preços ({flexiveis.length})
+                    </Button>
+                  </div>
+                ) : (
+                  <Button
+                    variant="ghost"
+                    className="w-full sm:w-auto"
+                    onClick={() => setFlexVisiveis(3)}
+                  >
+                    Mostrar menos
+                  </Button>
+                )}
+              </section>
+            ) : null}
           </>
         )}
       </div>
