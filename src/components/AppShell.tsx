@@ -40,6 +40,11 @@ export function AppShell({ children }: { children: ReactNode }) {
                 <Luggage className="size-4" /> Minhas viagens
               </Link>
             </Button>
+            <Button asChild variant="ghost" size="sm">
+              <Link to="/documentos-demo">
+                <FileText className="size-4" /> Documentos
+              </Link>
+            </Button>
             {session ? (
               <Button variant="outline" size="sm" onClick={() => void sair()}>
                 <LogOut className="size-4" /> Sair
