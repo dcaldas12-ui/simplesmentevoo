@@ -180,6 +180,8 @@ function HistoricoDocumentos() {
     }
   }
 
+  useEffect(() => () => libertarUrlVisualizacao(), []);
+
   function mensagemLeitura(error: unknown) {
     const detalhe = error && typeof error === "object" && "message" in error
       ? String(error.message).toLowerCase()
@@ -415,14 +417,15 @@ function HistoricoDocumentos() {
 
   async function abrir(d: DocRow) {
     if (!d.ficheiro_path) return;
-    const { data, error } = await supabase.storage
-      .from("documentos")
-      .createSignedUrl(d.ficheiro_path, 60);
+    const { data, error } = await supabase.storage.from("documentos").download(d.ficheiro_path);
     if (error || !data) {
-      toast.error("Não foi possível abrir o ficheiro.");
+      toast.error(mensagemLeitura(error));
       return;
     }
-    window.open(data.signedUrl, "_blank", "noopener");
+    const blob = data.type || !d.mime_type ? data : new Blob([data], { type: d.mime_type });
+    const objectUrl = URL.createObjectURL(blob);
+    window.open(objectUrl, "_blank", "noopener");
+    window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
   }
 
   async function eliminar(d: DocRow) {
