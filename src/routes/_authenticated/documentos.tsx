@@ -492,7 +492,7 @@ function HistoricoDocumentos() {
                         <p className="mt-1 text-xs text-muted-foreground">
                           {estado === "falhou"
                             ? (d.erro_processamento ?? "A análise falhou.")
-                            : (d.resumo ?? resumoDe(ficha(d)) || "Sem dados extraídos.")}
+                            : d.resumo || resumoDe(ficha(d)) || "Sem dados extraídos."}
                         </p>
                         <div className="mt-2 flex flex-wrap items-center gap-1.5">
                           <span
