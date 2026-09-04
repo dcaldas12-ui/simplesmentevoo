@@ -10,6 +10,8 @@ type Props = {
   mimeType: string | null;
   aCarregar?: boolean | undefined;
   erro?: string | null | undefined;
+  /** Entra automaticamente em modo de leitura assim que o ficheiro estiver pronto. */
+  iniciarLeitura?: boolean | undefined;
   onFechar: () => void;
 };
 
