@@ -20,6 +20,7 @@ import { toast } from "sonner";
 
 import { AppShell } from "@/components/AppShell";
 import { EmptyState } from "@/components/EmptyState";
+import { VisualizadorDocumento } from "@/components/VisualizadorDocumento";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
