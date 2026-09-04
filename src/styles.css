@@ -167,12 +167,31 @@
     select,
     textarea {
       font-size: 16px;
+      min-height: 44px;
+    }
+
+    input[type="checkbox"],
+    input[type="radio"] {
+      min-height: 0;
     }
 
     button,
     [role="button"],
-    a[role="button"] {
+    [role="switch"],
+    a[role="button"],
+    a[data-slot="button"],
+    button[data-slot="button"] {
       min-height: 44px;
     }
+
+    [role="switch"] {
+      min-width: 44px;
+    }
+  }
+
+  /* Foco sempre visível, também no teclado do telemóvel */
+  :focus-visible {
+    outline: 2px solid var(--color-ring);
+    outline-offset: 2px;
   }
 }
