@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/route'
+import { Route as AjudaRouteImport } from './routes/ajuda'
 import { Route as AuthRouteImport } from './routes/auth'
 import { Route as AvisosRouteImport } from './routes/avisos'
 import { Route as DocumentosDemoRouteImport } from './routes/documentos-demo'
@@ -27,6 +28,11 @@ const IndexRoute = IndexRouteImport.update({
 } as any)
 const AuthenticatedRouteRoute = AuthenticatedRouteRouteImport.update({
   id: '/_authenticated',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AjudaRoute = AjudaRouteImport.update({
+  id: '/ajuda',
+  path: '/ajuda',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AuthRoute = AuthRouteImport.update({
@@ -74,6 +80,7 @@ const AuthenticatedViagensViagemIdRoute =
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/ajuda': typeof AjudaRoute
   '/auth': typeof AuthRoute
   '/avisos': typeof AvisosRoute
   '/documentos-demo': typeof DocumentosDemoRoute
@@ -85,6 +92,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/ajuda': typeof AjudaRoute
   '/auth': typeof AuthRoute
   '/avisos': typeof AvisosRoute
   '/documentos-demo': typeof DocumentosDemoRoute
@@ -98,6 +106,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/_authenticated': typeof AuthenticatedRouteRouteWithChildren
+  '/ajuda': typeof AjudaRoute
   '/auth': typeof AuthRoute
   '/avisos': typeof AvisosRoute
   '/documentos-demo': typeof DocumentosDemoRoute
@@ -111,6 +120,7 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/ajuda'
     | '/auth'
     | '/avisos'
     | '/documentos-demo'
@@ -122,6 +132,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/ajuda'
     | '/auth'
     | '/avisos'
     | '/documentos-demo'
@@ -134,6 +145,7 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/_authenticated'
+    | '/ajuda'
     | '/auth'
     | '/avisos'
     | '/documentos-demo'
@@ -147,6 +159,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AuthenticatedRouteRoute: typeof AuthenticatedRouteRouteWithChildren
+  AjudaRoute: typeof AjudaRoute
   AuthRoute: typeof AuthRoute
   AvisosRoute: typeof AvisosRoute
   DocumentosDemoRoute: typeof DocumentosDemoRoute
@@ -168,6 +181,13 @@ declare module '@tanstack/react-router' {
       path: ''
       fullPath: '/'
       preLoaderRoute: typeof AuthenticatedRouteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/ajuda': {
+      id: '/ajuda'
+      path: '/ajuda'
+      fullPath: '/ajuda'
+      preLoaderRoute: typeof AjudaRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/auth': {
@@ -247,6 +267,7 @@ const AuthenticatedRouteRouteWithChildren =
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AuthenticatedRouteRoute: AuthenticatedRouteRouteWithChildren,
+  AjudaRoute: AjudaRoute,
   AuthRoute: AuthRoute,
   AvisosRoute: AvisosRoute,
   DocumentosDemoRoute: DocumentosDemoRoute,

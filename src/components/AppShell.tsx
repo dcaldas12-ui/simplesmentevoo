@@ -1,5 +1,5 @@
 import { Link, useNavigate } from "@tanstack/react-router";
-import { BellRing, FileText, LogOut, Luggage, Plane, Search, Ticket } from "lucide-react";
+import { BellRing, CircleHelp, FileText, LogOut, Luggage, Plane, Search, Ticket } from "lucide-react";
 import type { ReactNode } from "react";
 
 import { InstallHint } from "@/components/InstallHint";
@@ -41,7 +41,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           </Link>
 
           <nav className="ml-auto hidden items-center gap-1 md:flex">
-            {ligacoes.map((l) => (
+            {[...ligacoes, { to: "/ajuda" as const, icon: CircleHelp, label: "Ajuda", search: undefined }].map((l) => (
               <Button key={l.to} asChild variant="ghost" size="sm">
                 {l.search ? (
                   <Link to={l.to} search={l.search}>
@@ -81,7 +81,10 @@ export function AppShell({ children }: { children: ReactNode }) {
       </main>
 
       <footer className="hidden border-t border-border/70 py-6 text-center text-sm text-muted-foreground md:block">
-        Simplesmente voo — encontre as melhores datas e preços, sem complicações.
+        Simplesmente voo — encontre as melhores datas e preços, sem complicações. ·{" "}
+        <Link to="/ajuda" className="underline underline-offset-4">
+          Ajuda e instalação
+        </Link>
       </footer>
 
       <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-border/70 bg-background/95 pb-[env(safe-area-inset-bottom)] backdrop-blur md:hidden">

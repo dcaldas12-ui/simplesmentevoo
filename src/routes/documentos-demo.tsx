@@ -19,6 +19,7 @@ import {
 import { useRef, useState } from "react";
 import { toast } from "sonner";
 
+import { OfflineCard } from "@/components/OfflineCard";
 import { AppShell } from "@/components/AppShell";
 import { DocumentoFicha } from "@/components/DocumentoFicha";
 import { EmptyState } from "@/components/EmptyState";
@@ -310,6 +311,15 @@ function DocumentosDemo() {
             sua confirmação: todos os campos ficam editáveis.
           </p>
         </div>
+
+        <div className="mt-6">
+          <OfflineCard
+            documentos={docs}
+            viagem={{ titulo: "Férias em Barcelona", periodo: "5 dias · Barcelona, Espanha" }}
+          />
+        </div>
+
+
 
         <section className="mt-8">
           <div className="flex flex-wrap items-end justify-between gap-3">
