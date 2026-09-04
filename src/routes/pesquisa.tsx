@@ -164,23 +164,6 @@ function PesquisaPage() {
               />
             </div>
 
-            {data.criterios.length > 0 ? (
-              <div className="rounded-2xl border border-border bg-card p-4">
-                <p className="text-xs uppercase tracking-wide text-muted-foreground">
-                  Critérios aplicados
-                </p>
-                <ul className="mt-2 flex flex-wrap gap-2">
-                  {data.criterios.map((c) => (
-                    <li key={c}>
-                      <Badge variant="secondary" className="whitespace-normal text-left">
-                        {c}
-                      </Badge>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ) : null}
-
             <section className="space-y-3">
               <div>
                 <h2 className="font-display text-lg font-semibold">Nas datas que pediu</h2>
