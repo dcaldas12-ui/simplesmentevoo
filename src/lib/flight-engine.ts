@@ -17,7 +17,14 @@ export type PesquisaInput = {
   destino: string;
   dataPartida: string; // YYYY-MM-DD
   dataRegresso?: string | null;
-  flexibilidade: number; // dias (0-7)
+  /** Dias aceites antes/depois da data de ida escolhida (0-7). */
+  idaAntes: number;
+  idaDepois: number;
+  /** Dias aceites antes/depois da data de regresso escolhida (0-7). */
+  regressoAntes: number;
+  regressoDepois: number;
+  /** Duração máxima da viagem em noites (opcional). */
+  duracaoMaxima?: number | null;
   passageiros: number;
   apenasDiretos: boolean;
 };
@@ -46,6 +53,7 @@ export type ResultadoPesquisa = {
   ofertas: Oferta[];
   combinacoesGeradas: number;
   combinacoesValidas: number;
+  criterios: string[];
   precoMinimo: number | null;
   precoMediano: number | null;
   fonte: "demo" | "api";
@@ -115,35 +123,64 @@ function hoje(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-/** Gera todas as combinações de datas dentro da margem e aplica as regras. */
+function limite(n: unknown): number {
+  return Math.max(0, Math.min(7, Math.round(Number(n) || 0)));
+}
+
+/** Descreve, em português, os critérios aplicados à pesquisa. */
+export function descreverCriterios(input: PesquisaInput): string[] {
+  const c: string[] = [];
+  const ida = `Ida ${input.dataPartida}: até ${limite(input.idaAntes)} dia(s) antes e ${limite(input.idaDepois)} dia(s) depois`;
+  c.push(ida);
+  if (input.dataRegresso) {
+    c.push(
+      `Regresso ${input.dataRegresso}: até ${limite(input.regressoAntes)} dia(s) antes e ${limite(input.regressoDepois)} dia(s) depois`,
+    );
+    if (input.duracaoMaxima != null && input.duracaoMaxima > 0) {
+      c.push(`Duração máxima da viagem: ${input.duracaoMaxima} dia(s)`);
+    }
+  } else {
+    c.push("Só ida (sem data de regresso)");
+  }
+  c.push("Datas passadas e regressos anteriores à ida são excluídos");
+  if (input.apenasDiretos) c.push("Apenas voos diretos");
+  return c;
+}
+
+/** Gera todas as combinações de datas dentro das margens e aplica as regras. */
 export function gerarCombinacoes(input: PesquisaInput): {
   combos: Combinacao[];
   geradas: number;
 } {
-  const flex = Math.max(0, Math.min(7, Math.round(input.flexibilidade)));
-  const combos: Combinacao[] = [];
-  let geradas = 0;
-  const duracaoBase =
-    input.dataRegresso != null && input.dataRegresso !== ""
-      ? diffDays(input.dataPartida, input.dataRegresso)
+  const idaAntes = limite(input.idaAntes);
+  const idaDepois = limite(input.idaDepois);
+  const regAntes = limite(input.regressoAntes);
+  const regDepois = limite(input.regressoDepois);
+  const duracaoMax =
+    input.duracaoMaxima != null && input.duracaoMaxima > 0
+      ? Math.round(input.duracaoMaxima)
       : null;
 
-  for (let dp = -flex; dp <= flex; dp++) {
+  const combos: Combinacao[] = [];
+  let geradas = 0;
+  const temRegresso = input.dataRegresso != null && input.dataRegresso !== "";
+
+  for (let dp = -idaAntes; dp <= idaDepois; dp++) {
     const partida = addDays(input.dataPartida, dp);
-    if (duracaoBase === null) {
+    if (!temRegresso) {
       geradas++;
       if (partida < hoje()) continue;
       combos.push({ partida, regresso: null, noites: null });
       continue;
     }
-    for (let dr = -flex; dr <= flex; dr++) {
+    for (let dr = -regAntes; dr <= regDepois; dr++) {
       geradas++;
       const regresso = addDays(input.dataRegresso!, dr);
       // Regras: não permitir datas passadas nem regresso antes da partida.
       if (partida < hoje()) continue;
       const noites = diffDays(partida, regresso);
       if (noites < 1) continue;
-      if (duracaoBase >= 1 && Math.abs(noites - duracaoBase) > flex + 1) continue;
+      if (duracaoMax !== null && noites > duracaoMax) continue;
       combos.push({ partida, regresso, noites });
     }
   }
@@ -236,6 +273,7 @@ export async function pesquisar(input: PesquisaInput): Promise<ResultadoPesquisa
       ofertas: [],
       combinacoesGeradas: geradas,
       combinacoesValidas: 0,
+      criterios: descreverCriterios(input),
       precoMinimo: null,
       precoMediano: null,
       fonte: provider.fonte,
@@ -252,6 +290,7 @@ export async function pesquisar(input: PesquisaInput): Promise<ResultadoPesquisa
     ofertas,
     combinacoesGeradas: geradas,
     combinacoesValidas: combos.length,
+    criterios: descreverCriterios(input),
     precoMinimo: precos.length ? precos[0]! : null,
     precoMediano: precos.length ? precos[Math.floor(precos.length / 2)]! : null,
     fonte: provider.fonte,
