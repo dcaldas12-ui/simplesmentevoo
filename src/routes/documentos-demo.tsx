@@ -507,6 +507,19 @@ function DocumentosDemo() {
         </div>
       </div>
 
+      <VisualizadorDocumento
+        aberto={docVisualizar !== null}
+        nome={docVisualizar?.nome ?? ""}
+        url={ficheiroVisualizar?.url ?? null}
+        mimeType={ficheiroVisualizar?.mime ?? null}
+        erro={
+          docVisualizar && !ficheiroVisualizar
+            ? "Este é um documento de exemplo, sem ficheiro original. Carregue um PDF ou uma imagem para ver o visualizador com o ficheiro real."
+            : null
+        }
+        onFechar={() => setVisualizar(null)}
+      />
+
       <DocumentoFicha
         documento={docFicha}
         aberto={docFicha !== null}
