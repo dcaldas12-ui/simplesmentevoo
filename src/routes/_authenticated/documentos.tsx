@@ -633,6 +633,7 @@ function HistoricoDocumentos() {
         mimeType={visualizar?.doc.mime_type ?? null}
         aCarregar={visualizar?.aCarregar}
         erro={visualizar?.erro ?? null}
+        iniciarLeitura={visualizar?.leitura ?? false}
         onFechar={() => setVisualizar(null)}
       />
 
