@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/route'
 import { Route as AuthRouteImport } from './routes/auth'
+import { Route as AvisosRouteImport } from './routes/avisos'
 import { Route as DocumentosDemoRouteImport } from './routes/documentos-demo'
 import { Route as PesquisaRouteImport } from './routes/pesquisa'
 import { Route as AuthenticatedViagensIndexRouteImport } from './routes/_authenticated/viagens.index'
@@ -29,6 +30,11 @@ const AuthenticatedRouteRoute = AuthenticatedRouteRouteImport.update({
 const AuthRoute = AuthRouteImport.update({
   id: '/auth',
   path: '/auth',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AvisosRoute = AvisosRouteImport.update({
+  id: '/avisos',
+  path: '/avisos',
   getParentRoute: () => rootRouteImport,
 } as any)
 const DocumentosDemoRoute = DocumentosDemoRouteImport.update({
@@ -57,6 +63,7 @@ const AuthenticatedViagensViagemIdRoute =
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
+  '/avisos': typeof AvisosRoute
   '/documentos-demo': typeof DocumentosDemoRoute
   '/pesquisa': typeof PesquisaRoute
   '/viagens/$viagemId': typeof AuthenticatedViagensViagemIdRoute
@@ -65,6 +72,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
+  '/avisos': typeof AvisosRoute
   '/documentos-demo': typeof DocumentosDemoRoute
   '/pesquisa': typeof PesquisaRoute
   '/viagens/$viagemId': typeof AuthenticatedViagensViagemIdRoute
@@ -75,6 +83,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/_authenticated': typeof AuthenticatedRouteRouteWithChildren
   '/auth': typeof AuthRoute
+  '/avisos': typeof AvisosRoute
   '/documentos-demo': typeof DocumentosDemoRoute
   '/pesquisa': typeof PesquisaRoute
   '/_authenticated/viagens/$viagemId': typeof AuthenticatedViagensViagemIdRoute
@@ -85,6 +94,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/auth'
+    | '/avisos'
     | '/documentos-demo'
     | '/pesquisa'
     | '/viagens/$viagemId'
@@ -93,6 +103,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/auth'
+    | '/avisos'
     | '/documentos-demo'
     | '/pesquisa'
     | '/viagens/$viagemId'
@@ -102,6 +113,7 @@ export interface FileRouteTypes {
     | '/'
     | '/_authenticated'
     | '/auth'
+    | '/avisos'
     | '/documentos-demo'
     | '/pesquisa'
     | '/_authenticated/viagens/$viagemId'
@@ -112,6 +124,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AuthenticatedRouteRoute: typeof AuthenticatedRouteRouteWithChildren
   AuthRoute: typeof AuthRoute
+  AvisosRoute: typeof AvisosRoute
   DocumentosDemoRoute: typeof DocumentosDemoRoute
   PesquisaRoute: typeof PesquisaRoute
 }
@@ -137,6 +150,13 @@ declare module '@tanstack/react-router' {
       path: '/auth'
       fullPath: '/auth'
       preLoaderRoute: typeof AuthRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/avisos': {
+      id: '/avisos'
+      path: '/avisos'
+      fullPath: '/avisos'
+      preLoaderRoute: typeof AvisosRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/documentos-demo': {
@@ -187,6 +207,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AuthenticatedRouteRoute: AuthenticatedRouteRouteWithChildren,
   AuthRoute: AuthRoute,
+  AvisosRoute: AvisosRoute,
   DocumentosDemoRoute: DocumentosDemoRoute,
   PesquisaRoute: PesquisaRoute,
 }
