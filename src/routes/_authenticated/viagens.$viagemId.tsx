@@ -32,6 +32,7 @@ import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
+import { valoresIniciais } from "@/components/SearchForm";
 import { supabase } from "@/integrations/supabase/client";
 
 export const Route = createFileRoute("/_authenticated/viagens/$viagemId")({
@@ -188,7 +189,7 @@ function DetalheViagem() {
                 descricao="Adicione um voo manualmente ou guarde um resultado da pesquisa."
               >
                 <Button asChild variant="outline">
-                  <Link to="/pesquisa" search={{}}>Pesquisar voos</Link>
+                  <Link to="/pesquisa" search={{ ...valoresIniciais }}>Pesquisar voos</Link>
                 </Button>
               </EmptyState>
             ) : (

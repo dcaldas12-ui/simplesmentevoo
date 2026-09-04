@@ -3,6 +3,7 @@ import { LogOut, Luggage, Plane, Search } from "lucide-react";
 import type { ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
+import { valoresIniciais } from "@/components/SearchForm";
 import { supabase } from "@/integrations/supabase/client";
 import { useSession } from "@/lib/auth";
 
@@ -30,7 +31,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 
           <nav className="ml-auto flex items-center gap-1">
             <Button asChild variant="ghost" size="sm">
-              <Link to="/pesquisa" search={{}}>
+              <Link to="/pesquisa" search={{ ...valoresIniciais }}>
                 <Search className="size-4" /> Pesquisar
               </Link>
             </Button>

@@ -19,6 +19,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
+import { valoresIniciais } from "@/components/SearchForm";
 import { supabase } from "@/integrations/supabase/client";
 
 export const Route = createFileRoute("/_authenticated/viagens/")({
@@ -195,7 +196,7 @@ function ViagensPage() {
                   <Plus className="size-4" /> Criar viagem
                 </Button>
                 <Button asChild variant="outline">
-                  <Link to="/pesquisa" search={{}}>Pesquisar voos</Link>
+                  <Link to="/pesquisa" search={{ ...valoresIniciais }}>Pesquisar voos</Link>
                 </Button>
               </div>
             </EmptyState>
