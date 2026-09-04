@@ -23,9 +23,12 @@ export function AppShell({ children }: { children: ReactNode }) {
     ...(session
       ? [{ to: "/reservas" as const, icon: Ticket, label: "Reservas" }]
       : []),
-    { to: "/documentos-demo" as const, icon: FileText, label: "Documentos" },
+    session
+      ? { to: "/documentos" as const, icon: FileText, label: "Documentos" }
+      : { to: "/documentos-demo" as const, icon: FileText, label: "Documentos" },
     { to: "/avisos" as const, icon: BellRing, label: "Avisos" },
   ];
+
 
   return (
     <div className="flex min-h-screen flex-col bg-background">

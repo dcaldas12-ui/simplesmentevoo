@@ -17,6 +17,7 @@ import { Route as AvisosRouteImport } from './routes/avisos'
 import { Route as DocumentosDemoRouteImport } from './routes/documentos-demo'
 import { Route as OfflineRouteImport } from './routes/offline'
 import { Route as PesquisaRouteImport } from './routes/pesquisa'
+import { Route as AuthenticatedDocumentosRouteImport } from './routes/_authenticated/documentos'
 import { Route as AuthenticatedReservasRouteImport } from './routes/_authenticated/reservas'
 import { Route as AuthenticatedViagensIndexRouteImport } from './routes/_authenticated/viagens.index'
 import { Route as AuthenticatedViagensViagemIdRouteImport } from './routes/_authenticated/viagens.$viagemId'
@@ -60,6 +61,11 @@ const PesquisaRoute = PesquisaRouteImport.update({
   path: '/pesquisa',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AuthenticatedDocumentosRoute = AuthenticatedDocumentosRouteImport.update({
+  id: '/documentos',
+  path: '/documentos',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
 const AuthenticatedReservasRoute = AuthenticatedReservasRouteImport.update({
   id: '/reservas',
   path: '/reservas',
@@ -86,6 +92,7 @@ export interface FileRoutesByFullPath {
   '/documentos-demo': typeof DocumentosDemoRoute
   '/offline': typeof OfflineRoute
   '/pesquisa': typeof PesquisaRoute
+  '/documentos': typeof AuthenticatedDocumentosRoute
   '/reservas': typeof AuthenticatedReservasRoute
   '/viagens/$viagemId': typeof AuthenticatedViagensViagemIdRoute
   '/viagens/': typeof AuthenticatedViagensIndexRoute
@@ -98,6 +105,7 @@ export interface FileRoutesByTo {
   '/documentos-demo': typeof DocumentosDemoRoute
   '/offline': typeof OfflineRoute
   '/pesquisa': typeof PesquisaRoute
+  '/documentos': typeof AuthenticatedDocumentosRoute
   '/reservas': typeof AuthenticatedReservasRoute
   '/viagens/$viagemId': typeof AuthenticatedViagensViagemIdRoute
   '/viagens': typeof AuthenticatedViagensIndexRoute
@@ -112,6 +120,7 @@ export interface FileRoutesById {
   '/documentos-demo': typeof DocumentosDemoRoute
   '/offline': typeof OfflineRoute
   '/pesquisa': typeof PesquisaRoute
+  '/_authenticated/documentos': typeof AuthenticatedDocumentosRoute
   '/_authenticated/reservas': typeof AuthenticatedReservasRoute
   '/_authenticated/viagens/$viagemId': typeof AuthenticatedViagensViagemIdRoute
   '/_authenticated/viagens/': typeof AuthenticatedViagensIndexRoute
@@ -126,6 +135,7 @@ export interface FileRouteTypes {
     | '/documentos-demo'
     | '/offline'
     | '/pesquisa'
+    | '/documentos'
     | '/reservas'
     | '/viagens/$viagemId'
     | '/viagens/'
@@ -138,6 +148,7 @@ export interface FileRouteTypes {
     | '/documentos-demo'
     | '/offline'
     | '/pesquisa'
+    | '/documentos'
     | '/reservas'
     | '/viagens/$viagemId'
     | '/viagens'
@@ -151,6 +162,7 @@ export interface FileRouteTypes {
     | '/documentos-demo'
     | '/offline'
     | '/pesquisa'
+    | '/_authenticated/documentos'
     | '/_authenticated/reservas'
     | '/_authenticated/viagens/$viagemId'
     | '/_authenticated/viagens/'
@@ -225,6 +237,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PesquisaRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/_authenticated/documentos': {
+      id: '/_authenticated/documentos'
+      path: '/documentos'
+      fullPath: '/documentos'
+      preLoaderRoute: typeof AuthenticatedDocumentosRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/reservas': {
       id: '/_authenticated/reservas'
       path: '/reservas'
@@ -250,12 +269,14 @@ declare module '@tanstack/react-router' {
 }
 
 interface AuthenticatedRouteRouteChildren {
+  AuthenticatedDocumentosRoute: typeof AuthenticatedDocumentosRoute
   AuthenticatedReservasRoute: typeof AuthenticatedReservasRoute
   AuthenticatedViagensViagemIdRoute: typeof AuthenticatedViagensViagemIdRoute
   AuthenticatedViagensIndexRoute: typeof AuthenticatedViagensIndexRoute
 }
 
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
+  AuthenticatedDocumentosRoute: AuthenticatedDocumentosRoute,
   AuthenticatedReservasRoute: AuthenticatedReservasRoute,
   AuthenticatedViagensViagemIdRoute: AuthenticatedViagensViagemIdRoute,
   AuthenticatedViagensIndexRoute: AuthenticatedViagensIndexRoute,
