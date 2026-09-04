@@ -28,6 +28,7 @@ export function VisualizadorDocumento({
   mimeType,
   aCarregar,
   erro,
+  iniciarLeitura,
   onFechar,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
