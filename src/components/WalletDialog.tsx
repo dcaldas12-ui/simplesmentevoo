@@ -1,4 +1,5 @@
-import { Apple, BellRing, CalendarPlus, Smartphone, Wallet } from "lucide-react";
+import { Apple, BellRing, CalendarPlus, Clock3, Smartphone, Wallet } from "lucide-react";
+import { useState } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -12,7 +13,13 @@ import {
 } from "@/components/ui/dialog";
 import type { DocumentoViagem } from "@/lib/documentos";
 import { formatarDataHora } from "@/lib/documentos";
-import { avaliarWallet, descarregarICS, type ItemWallet } from "@/lib/wallet";
+import {
+  avaliarWallet,
+  descarregarICS,
+  determinarFuso,
+  LEMBRETES_WALLET,
+  type ItemWallet,
+} from "@/lib/wallet";
 
 export function WalletDialog({
   documento,
@@ -25,6 +32,7 @@ export function WalletDialog({
   onFechar: () => void;
   onLigar: (id: string) => void;
 }) {
+  const [lembretes, setLembretes] = useState<number[]>([120]);
   if (!documento) return null;
   const jaLigado = documento.wallet === "ligado";
 
@@ -39,6 +47,13 @@ export function WalletDialog({
     ...(documento.ficha.referencia ? { referencia: documento.ficha.referencia } : {}),
   };
   const prontidao = avaliarWallet(item);
+  const fuso = determinarFuso(item);
+
+  function alternarLembrete(min: number) {
+    setLembretes((atuais) =>
+      atuais.includes(min) ? atuais.filter((v) => v !== min) : [...atuais, min].sort((a, b) => a - b),
+    );
+  }
 
   return (
     <Dialog open={aberto} onOpenChange={(v) => (v ? null : onFechar())}>
@@ -82,14 +97,45 @@ export function WalletDialog({
           <p className="text-sm font-medium">Disponível agora</p>
           <p className="mt-1 text-sm text-muted-foreground">
             {prontidao.podeGerarCalendario
-              ? "Criamos um evento com lembrete 2 horas antes, que o iPhone e o Android abrem diretamente no calendário."
+              ? "Criamos um evento que o iPhone e o Android abrem diretamente no calendário, com os lembretes que escolher."
               : prontidao.motivo}
           </p>
+
+          {prontidao.podeGerarCalendario ? (
+            <fieldset className="mt-3">
+              <legend className="text-sm font-medium">Lembretes</legend>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {LEMBRETES_WALLET.map((l) => {
+                  const ativo = lembretes.includes(l.valor);
+                  return (
+                    <button
+                      key={l.valor}
+                      type="button"
+                      aria-pressed={ativo}
+                      onClick={() => alternarLembrete(l.valor)}
+                      className={`min-h-11 rounded-full border px-3 text-sm transition-colors ${
+                        ativo
+                          ? "border-primary bg-primary/10 text-primary"
+                          : "border-border text-muted-foreground"
+                      }`}
+                    >
+                      {l.rotulo}
+                    </button>
+                  );
+                })}
+              </div>
+              <p className="mt-2 flex items-start gap-2 text-xs text-muted-foreground">
+                <Clock3 className="mt-0.5 size-3.5 shrink-0" aria-hidden />
+                {fuso.explicacao}
+              </p>
+            </fieldset>
+          ) : null}
+
           <Button
             className="mt-3 min-h-11 w-full sm:w-auto"
-            disabled={!prontidao.podeGerarCalendario}
+            disabled={!prontidao.podeGerarCalendario || lembretes.length === 0}
             onClick={() => {
-              descarregarICS(item);
+              descarregarICS(item, lembretes);
               toast.success("Evento criado", {
                 description: "Abra o ficheiro para o guardar no calendário do telemóvel.",
               });
