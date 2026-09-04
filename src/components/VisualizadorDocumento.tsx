@@ -2,6 +2,7 @@ import { Loader2, Maximize2, Minimize2, RefreshCw, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { PdfInterno } from "@/components/PdfInterno";
 
 type Props = {
   aberto: boolean;
@@ -223,11 +224,7 @@ export function VisualizadorDocumento({
               />
             </div>
           ) : éPdf ? (
-            <iframe
-              src={`${url}#view=FitH`}
-              title={`Pré-visualização do documento ${nome}`}
-              className="h-full min-h-[70vh] w-full border-0 bg-white"
-            />
+            <PdfInterno url={url} nome={nome} onErro={onTentarNovamente} />
           ) : (
             <div className="flex min-h-64 flex-col items-center justify-center gap-4 p-6 text-center">
               <p className="max-w-md text-sm text-destructive" role="alert">
