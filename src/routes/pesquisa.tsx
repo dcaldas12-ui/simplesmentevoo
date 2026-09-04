@@ -1,7 +1,16 @@
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
-import { CalendarRange, ChevronDown, Info, PlaneTakeoff, SearchX, Timer } from "lucide-react";
+import {
+  CalendarRange,
+  ChevronDown,
+  ExternalLink,
+  Info,
+  PlaneTakeoff,
+  SearchX,
+  Timer,
+} from "lucide-react";
+
 import { useMemo, useState } from "react";
 
 import { AppShell } from "@/components/AppShell";
