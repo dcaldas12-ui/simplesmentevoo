@@ -26,6 +26,7 @@ import { WalletDialog } from "@/components/WalletDialog";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { analisarDocumento } from "@/lib/documentos-ia.functions";
+import { criarDocumento, documentosDemo } from "@/lib/documentos-demo";
 import {
   etiquetaTipo,
   fichaVazia,
