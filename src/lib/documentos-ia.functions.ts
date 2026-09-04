@@ -96,6 +96,7 @@ function limpar(bruto: unknown): FichaDocumento {
     local: txt("local"),
     referencia: txt("referencia"),
     dataHora: txt("dataHora"),
+    dataHoraFim: txt("dataHoraFim"),
     codigo: txt("codigo"),
   };
 }
