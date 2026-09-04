@@ -16,7 +16,7 @@ import {
   Trash2,
   Upload,
 } from "lucide-react";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { AppShell } from "@/components/AppShell";
@@ -116,9 +116,10 @@ function estadoDe(d: DocRow): Estado {
 
 function ficha(d: DocRow): FichaDocumento {
   const o = (d.dados_extraidos ?? {}) as Record<string, unknown>;
-  return { ...fichaVazia, ...Object.fromEntries(
-    Object.keys(fichaVazia).map((k) => [k, String(o[k] ?? "")]),
-  ) } as FichaDocumento;
+  return {
+    ...fichaVazia,
+    ...Object.fromEntries(Object.keys(fichaVazia).map((k) => [k, String(o[k] ?? "")])),
+  } as FichaDocumento;
 }
 
 function resumoDe(f: FichaDocumento) {
@@ -157,6 +158,7 @@ function HistoricoDocumentos() {
   const queryClient = useQueryClient();
   const analisar = useServerFn(analisarDocumento);
   const inputFicheiro = useRef<HTMLInputElement>(null);
+  const urlVisualizacaoRef = useRef<string | null>(null);
 
   const [procura, setProcura] = useState("");
   const [filtro, setFiltro] = useState<"todos" | Estado>("todos");
@@ -171,6 +173,40 @@ function HistoricoDocumentos() {
     erro: string | null;
     leitura: boolean;
   } | null>(null);
+
+  function libertarUrlVisualizacao() {
+    if (urlVisualizacaoRef.current) {
+      URL.revokeObjectURL(urlVisualizacaoRef.current);
+      urlVisualizacaoRef.current = null;
+    }
+  }
+
+  useEffect(() => () => libertarUrlVisualizacao(), []);
+
+  function mensagemLeitura(error: unknown) {
+    const detalhe =
+      error && typeof error === "object" && "message" in error
+        ? String(error.message).toLowerCase()
+        : "";
+    if (detalhe.includes("jwt") || detalhe.includes("unauthorized") || detalhe.includes("401")) {
+      return "A sessão já não permite ler este ficheiro. Atualize a página e volte a entrar.";
+    }
+    if (
+      detalhe.includes("row-level security") ||
+      detalhe.includes("forbidden") ||
+      detalhe.includes("403")
+    ) {
+      return "O acesso ao ficheiro foi recusado. Confirme que está na conta que o carregou.";
+    }
+    if (
+      detalhe.includes("not found") ||
+      detalhe.includes("object not found") ||
+      detalhe.includes("404")
+    ) {
+      return "O registo existe, mas o ficheiro original não foi encontrado no armazenamento.";
+    }
+    return "Não foi possível transferir o ficheiro. Verifique a ligação e tente novamente.";
+  }
 
   const { data: docs, isLoading } = useQuery({
     queryKey: ["historico-documentos"],
@@ -250,8 +286,7 @@ function HistoricoDocumentos() {
       });
       toast.success("Documento analisado e guardado.");
     } catch (err) {
-      const msg =
-        err instanceof Error ? err.message : "Não foi possível analisar este documento.";
+      const msg = err instanceof Error ? err.message : "Não foi possível analisar este documento.";
       await marcar("falhou", { erro_processamento: msg });
       toast.error(`${msg} O ficheiro ficou guardado — pode voltar a processar.`);
     } finally {
@@ -278,9 +313,9 @@ function HistoricoDocumentos() {
       const uid = userData.user?.id;
       if (!uid) throw new Error("Sessão expirada. Volte a entrar.");
 
-      const nomeSeguro = file.name.normalize("NFD").replace(/[^\w.\-]+/g, "_");
+      const nomeSeguro = file.name.normalize("NFD").replace(/[^\w.-]+/g, "_");
       const path = `${uid}/historico/${Date.now()}-${nomeSeguro}`;
-      const { error: erroUpload } = await supabase.storage
+      const { data: upload, error: erroUpload } = await supabase.storage
         .from("documentos")
         .upload(path, file, {
           contentType: file.type || "application/octet-stream",
@@ -288,20 +323,40 @@ function HistoricoDocumentos() {
         });
       if (erroUpload) throw erroUpload;
 
+      const pathGuardado = upload?.path;
+      if (!pathGuardado || pathGuardado.split("/")[0] !== uid) {
+        throw new Error("O armazenamento não confirmou o caminho seguro do ficheiro.");
+      }
+
+      // Confirma uma leitura autenticada antes de criar o registo. Assim nunca mostramos como
+      // guardado um ficheiro que a própria conta não consegue voltar a obter.
+      const { error: erroLeitura } = await supabase.storage
+        .from("documentos")
+        .download(pathGuardado);
+      if (erroLeitura) {
+        await supabase.storage.from("documentos").remove([pathGuardado]);
+        throw new Error(
+          `O ficheiro foi enviado, mas não pôde ser confirmado: ${mensagemLeitura(erroLeitura)}`,
+        );
+      }
+
       const { data: inserido, error } = await supabase
         .from("documentos")
         .insert({
           nome: file.name,
           tipo: file.type.startsWith("image/") ? "imagem" : "pdf",
           origem: "upload",
-          ficheiro_path: path,
+          ficheiro_path: pathGuardado,
           mime_type: file.type,
           tamanho_bytes: file.size,
           estado_processamento: "extracao",
         })
         .select("id")
         .single();
-      if (error) throw error;
+      if (error) {
+        await supabase.storage.from("documentos").remove([pathGuardado]);
+        throw error;
+      }
       id = inserido.id;
       await invalidar();
 
@@ -346,32 +401,42 @@ function HistoricoDocumentos() {
       });
       return;
     }
+    libertarUrlVisualizacao();
     setVisualizar({ doc: d, url: null, aCarregar: true, erro: null, leitura });
-    const { data, error } = await supabase.storage
-      .from("documentos")
-      .createSignedUrl(d.ficheiro_path, 300);
+    const { data, error } = await supabase.storage.from("documentos").download(d.ficheiro_path);
+    if (error || !data) {
+      setVisualizar({
+        doc: d,
+        url: null,
+        aCarregar: false,
+        leitura: false,
+        erro: mensagemLeitura(error),
+      });
+      return;
+    }
+    const blob = data.type || !d.mime_type ? data : new Blob([data], { type: d.mime_type });
+    const objectUrl = URL.createObjectURL(blob);
+    urlVisualizacaoRef.current = objectUrl;
     setVisualizar({
       doc: d,
-      url: data?.signedUrl ?? null,
+      url: objectUrl,
       aCarregar: false,
       leitura,
-      erro:
-        error || !data?.signedUrl
-          ? `Não foi possível abrir este ficheiro.${error?.message ? ` (${error.message})` : ""}`
-          : null,
+      erro: null,
     });
   }
 
   async function abrir(d: DocRow) {
     if (!d.ficheiro_path) return;
-    const { data, error } = await supabase.storage
-      .from("documentos")
-      .createSignedUrl(d.ficheiro_path, 60);
+    const { data, error } = await supabase.storage.from("documentos").download(d.ficheiro_path);
     if (error || !data) {
-      toast.error("Não foi possível abrir o ficheiro.");
+      toast.error(mensagemLeitura(error));
       return;
     }
-    window.open(data.signedUrl, "_blank", "noopener");
+    const blob = data.type || !d.mime_type ? data : new Blob([data], { type: d.mime_type });
+    const objectUrl = URL.createObjectURL(blob);
+    window.open(objectUrl, "_blank", "noopener");
+    window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
   }
 
   async function eliminar(d: DocRow) {
@@ -438,19 +503,27 @@ function HistoricoDocumentos() {
         </div>
 
         <div className="mt-3 flex flex-wrap gap-2" role="group" aria-label="Filtrar por estado">
-          {(["todos", "pendente", "extracao", "analise", "validacao", "concluido", "falhou"] as const).map(
-            (f) => (
-              <Button
-                key={f}
-                size="sm"
-                variant={filtro === f ? "default" : "outline"}
-                aria-pressed={filtro === f}
-                onClick={() => setFiltro(f)}
-              >
-                {f === "todos" ? "Todos" : estadoInfo[f].rotulo}
-              </Button>
-            ),
-          )}
+          {(
+            [
+              "todos",
+              "pendente",
+              "extracao",
+              "analise",
+              "validacao",
+              "concluido",
+              "falhou",
+            ] as const
+          ).map((f) => (
+            <Button
+              key={f}
+              size="sm"
+              variant={filtro === f ? "default" : "outline"}
+              aria-pressed={filtro === f}
+              onClick={() => setFiltro(f)}
+            >
+              {f === "todos" ? "Todos" : estadoInfo[f].rotulo}
+            </Button>
+          ))}
         </div>
 
         {etapaAtual ? (
@@ -511,7 +584,8 @@ function HistoricoDocumentos() {
             <ul className="space-y-3">
               {lista.map((d) => {
                 const estado = estadoDe(d);
-                const emCurso = estado === "extracao" || estado === "analise" || estado === "validacao";
+                const emCurso =
+                  estado === "extracao" || estado === "analise" || estado === "validacao";
                 const Icone = d.origem === "email" ? Mail : d.tipo === "qr" ? QrCode : FileText;
                 return (
                   <li key={d.id} className="rounded-2xl border border-border bg-card p-4">
@@ -555,15 +629,14 @@ function HistoricoDocumentos() {
                           <Badge variant="outline">{d.tipo}</Badge>
                           {d.viagem_id ? (
                             <Button asChild size="sm" variant="ghost" className="h-6 px-2 text-xs">
-                              <Link
-                                to="/viagens/$viagemId"
-                                params={{ viagemId: d.viagem_id }}
-                              >
+                              <Link to="/viagens/$viagemId" params={{ viagemId: d.viagem_id }}>
                                 {tituloViagem(d.viagem_id)}
                               </Link>
                             </Button>
                           ) : (
-                            <span className="text-[11px] text-muted-foreground">Sem viagem associada</span>
+                            <span className="text-[11px] text-muted-foreground">
+                              Sem viagem associada
+                            </span>
                           )}
                         </div>
                       </div>
@@ -634,7 +707,10 @@ function HistoricoDocumentos() {
         aCarregar={visualizar?.aCarregar}
         erro={visualizar?.erro ?? null}
         iniciarLeitura={visualizar?.leitura ?? false}
-        onFechar={() => setVisualizar(null)}
+        onFechar={() => {
+          libertarUrlVisualizacao();
+          setVisualizar(null);
+        }}
       />
 
       <DetalheDialog doc={detalhe} onFechar={() => setDetalhe(null)} viagem={tituloViagem} />
@@ -688,7 +764,10 @@ function DetalheDialog({
         ) : null}
         <dl className="grid gap-2 text-sm">
           {linhas.map(([rotulo, valor]) => (
-            <div key={rotulo} className="flex flex-wrap justify-between gap-2 border-b border-border/60 pb-2">
+            <div
+              key={rotulo}
+              className="flex flex-wrap justify-between gap-2 border-b border-border/60 pb-2"
+            >
               <dt className="text-muted-foreground">{rotulo}</dt>
               <dd className="text-right font-medium">{valor || "—"}</dd>
             </div>
@@ -766,7 +845,12 @@ function EditarDialog({
         </DialogHeader>
         <div>
           <Label htmlFor="edit-nome">Nome do ficheiro</Label>
-          <Input id="edit-nome" value={nome} onChange={(e) => setNome(e.target.value)} className="mt-1" />
+          <Input
+            id="edit-nome"
+            value={nome}
+            onChange={(e) => setNome(e.target.value)}
+            className="mt-1"
+          />
         </div>
         <div className="grid gap-3 sm:grid-cols-2">
           {campos.map(([chave, rotulo]) => (
