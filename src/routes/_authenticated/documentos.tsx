@@ -116,9 +116,10 @@ function estadoDe(d: DocRow): Estado {
 
 function ficha(d: DocRow): FichaDocumento {
   const o = (d.dados_extraidos ?? {}) as Record<string, unknown>;
-  return { ...fichaVazia, ...Object.fromEntries(
-    Object.keys(fichaVazia).map((k) => [k, String(o[k] ?? "")]),
-  ) } as FichaDocumento;
+  return {
+    ...fichaVazia,
+    ...Object.fromEntries(Object.keys(fichaVazia).map((k) => [k, String(o[k] ?? "")])),
+  } as FichaDocumento;
 }
 
 function resumoDe(f: FichaDocumento) {
@@ -183,16 +184,25 @@ function HistoricoDocumentos() {
   useEffect(() => () => libertarUrlVisualizacao(), []);
 
   function mensagemLeitura(error: unknown) {
-    const detalhe = error && typeof error === "object" && "message" in error
-      ? String(error.message).toLowerCase()
-      : "";
+    const detalhe =
+      error && typeof error === "object" && "message" in error
+        ? String(error.message).toLowerCase()
+        : "";
     if (detalhe.includes("jwt") || detalhe.includes("unauthorized") || detalhe.includes("401")) {
       return "A sessão já não permite ler este ficheiro. Atualize a página e volte a entrar.";
     }
-    if (detalhe.includes("row-level security") || detalhe.includes("forbidden") || detalhe.includes("403")) {
+    if (
+      detalhe.includes("row-level security") ||
+      detalhe.includes("forbidden") ||
+      detalhe.includes("403")
+    ) {
       return "O acesso ao ficheiro foi recusado. Confirme que está na conta que o carregou.";
     }
-    if (detalhe.includes("not found") || detalhe.includes("object not found") || detalhe.includes("404")) {
+    if (
+      detalhe.includes("not found") ||
+      detalhe.includes("object not found") ||
+      detalhe.includes("404")
+    ) {
       return "O registo existe, mas o ficheiro original não foi encontrado no armazenamento.";
     }
     return "Não foi possível transferir o ficheiro. Verifique a ligação e tente novamente.";
@@ -276,8 +286,7 @@ function HistoricoDocumentos() {
       });
       toast.success("Documento analisado e guardado.");
     } catch (err) {
-      const msg =
-        err instanceof Error ? err.message : "Não foi possível analisar este documento.";
+      const msg = err instanceof Error ? err.message : "Não foi possível analisar este documento.";
       await marcar("falhou", { erro_processamento: msg });
       toast.error(`${msg} O ficheiro ficou guardado — pode voltar a processar.`);
     } finally {
@@ -326,7 +335,9 @@ function HistoricoDocumentos() {
         .download(pathGuardado);
       if (erroLeitura) {
         await supabase.storage.from("documentos").remove([pathGuardado]);
-        throw new Error(`O ficheiro foi enviado, mas não pôde ser confirmado: ${mensagemLeitura(erroLeitura)}`);
+        throw new Error(
+          `O ficheiro foi enviado, mas não pôde ser confirmado: ${mensagemLeitura(erroLeitura)}`,
+        );
       }
 
       const { data: inserido, error } = await supabase
@@ -492,19 +503,27 @@ function HistoricoDocumentos() {
         </div>
 
         <div className="mt-3 flex flex-wrap gap-2" role="group" aria-label="Filtrar por estado">
-          {(["todos", "pendente", "extracao", "analise", "validacao", "concluido", "falhou"] as const).map(
-            (f) => (
-              <Button
-                key={f}
-                size="sm"
-                variant={filtro === f ? "default" : "outline"}
-                aria-pressed={filtro === f}
-                onClick={() => setFiltro(f)}
-              >
-                {f === "todos" ? "Todos" : estadoInfo[f].rotulo}
-              </Button>
-            ),
-          )}
+          {(
+            [
+              "todos",
+              "pendente",
+              "extracao",
+              "analise",
+              "validacao",
+              "concluido",
+              "falhou",
+            ] as const
+          ).map((f) => (
+            <Button
+              key={f}
+              size="sm"
+              variant={filtro === f ? "default" : "outline"}
+              aria-pressed={filtro === f}
+              onClick={() => setFiltro(f)}
+            >
+              {f === "todos" ? "Todos" : estadoInfo[f].rotulo}
+            </Button>
+          ))}
         </div>
 
         {etapaAtual ? (
@@ -565,7 +584,8 @@ function HistoricoDocumentos() {
             <ul className="space-y-3">
               {lista.map((d) => {
                 const estado = estadoDe(d);
-                const emCurso = estado === "extracao" || estado === "analise" || estado === "validacao";
+                const emCurso =
+                  estado === "extracao" || estado === "analise" || estado === "validacao";
                 const Icone = d.origem === "email" ? Mail : d.tipo === "qr" ? QrCode : FileText;
                 return (
                   <li key={d.id} className="rounded-2xl border border-border bg-card p-4">
@@ -609,15 +629,14 @@ function HistoricoDocumentos() {
                           <Badge variant="outline">{d.tipo}</Badge>
                           {d.viagem_id ? (
                             <Button asChild size="sm" variant="ghost" className="h-6 px-2 text-xs">
-                              <Link
-                                to="/viagens/$viagemId"
-                                params={{ viagemId: d.viagem_id }}
-                              >
+                              <Link to="/viagens/$viagemId" params={{ viagemId: d.viagem_id }}>
                                 {tituloViagem(d.viagem_id)}
                               </Link>
                             </Button>
                           ) : (
-                            <span className="text-[11px] text-muted-foreground">Sem viagem associada</span>
+                            <span className="text-[11px] text-muted-foreground">
+                              Sem viagem associada
+                            </span>
                           )}
                         </div>
                       </div>
@@ -745,7 +764,10 @@ function DetalheDialog({
         ) : null}
         <dl className="grid gap-2 text-sm">
           {linhas.map(([rotulo, valor]) => (
-            <div key={rotulo} className="flex flex-wrap justify-between gap-2 border-b border-border/60 pb-2">
+            <div
+              key={rotulo}
+              className="flex flex-wrap justify-between gap-2 border-b border-border/60 pb-2"
+            >
               <dt className="text-muted-foreground">{rotulo}</dt>
               <dd className="text-right font-medium">{valor || "—"}</dd>
             </div>
@@ -823,7 +845,12 @@ function EditarDialog({
         </DialogHeader>
         <div>
           <Label htmlFor="edit-nome">Nome do ficheiro</Label>
-          <Input id="edit-nome" value={nome} onChange={(e) => setNome(e.target.value)} className="mt-1" />
+          <Input
+            id="edit-nome"
+            value={nome}
+            onChange={(e) => setNome(e.target.value)}
+            className="mt-1"
+          />
         </div>
         <div className="grid gap-3 sm:grid-cols-2">
           {campos.map(([chave, rotulo]) => (

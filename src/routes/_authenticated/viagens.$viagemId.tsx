@@ -191,7 +191,9 @@ function DetalheViagem() {
                 descricao="Adicione um voo manualmente ou guarde um resultado da pesquisa."
               >
                 <Button asChild variant="outline">
-                  <Link to="/pesquisa" search={{ ...valoresIniciais }}>Pesquisar voos</Link>
+                  <Link to="/pesquisa" search={{ ...valoresIniciais }}>
+                    Pesquisar voos
+                  </Link>
                 </Button>
               </EmptyState>
             ) : (
@@ -587,7 +589,12 @@ function DocumentosPainel({
                   <Button variant="outline" size="sm" onClick={() => void abrir(d, true)}>
                     <Maximize2 className="size-4" /> Ler em ecrã inteiro
                   </Button>
-                  <Button variant="ghost" size="icon" aria-label="Abrir" onClick={() => void abrir(d)}>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    aria-label="Abrir"
+                    onClick={() => void abrir(d)}
+                  >
                     <Download className="size-4" />
                   </Button>
                 </>
