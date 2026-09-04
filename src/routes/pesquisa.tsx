@@ -320,7 +320,7 @@ function CartaoOferta({
       </div>
 
 
-      <div className="flex items-center justify-between gap-4 sm:flex-col sm:items-end">
+      <div className="flex flex-wrap items-center justify-between gap-3 sm:flex-col sm:items-end">
         <div className="text-right">
           {oferta.precoIndisponivel ? (
             <p className="font-display text-base font-semibold text-muted-foreground">
