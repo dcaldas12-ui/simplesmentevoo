@@ -107,28 +107,37 @@ function DocumentosDemo() {
     setDocs((atuais) => atuais.map((d) => (d.id === id ? muda(d) : d)));
   }
 
-  async function correrAnalise(
-    id: string,
-    entrada: { nome: string; texto?: string | null; imagem?: string | null },
-  ) {
+  type EntradaAnalise = { nome: string; texto?: string | null; imagem?: string | null };
+  const entradas = useRef<Map<string, EntradaAnalise>>(new Map());
+
+  async function correrAnalise(id: string, entrada: EntradaAnalise) {
+    entradas.current.set(id, entrada);
+    atualizar(id, (d) => ({ ...d, estadoAnalise: "a_analisar", notaAnalise: undefined }));
     try {
       const r = await analisar({ data: entrada });
+      const vazio = Object.values(r.ficha).every((v) => !String(v ?? "").trim());
       atualizar(id, (d) => ({
         ...d,
         ficha: { ...d.ficha, ...r.ficha },
         seccao: r.ficha.tipoDocumento ? seccaoSugerida(r.ficha.tipoDocumento) : d.seccao,
-        estadoAnalise: "concluida",
-        notaAnalise: r.nota,
+        estadoAnalise: vazio ? "erro" : "concluida",
+        notaAnalise: vazio
+          ? "O ficheiro foi guardado, mas não conseguimos ler dados. Pode preencher a ficha à mão."
+          : r.nota,
       }));
-      toast.success(r.porIa ? "Documento lido automaticamente." : r.nota);
-      setFichaAberta(id);
+      if (vazio) {
+        toast.warning("Ficheiro guardado. Não foi possível ler dados — complete a ficha quando quiser.");
+      } else {
+        toast.success("Documento analisado e guardado nesta viagem.");
+      }
     } catch {
       atualizar(id, (d) => ({
         ...d,
         estadoAnalise: "erro",
-        notaAnalise: "Não foi possível ler o documento. Preencha a ficha à mão.",
+        notaAnalise:
+          "O ficheiro ficou guardado, mas a leitura falhou. Tente de novo ou preencha a ficha à mão.",
       }));
-      toast.error("Não foi possível ler o documento. Preencha a ficha à mão.");
+      toast.error("Ficheiro guardado. A leitura automática falhou — pode tentar de novo.");
     }
   }
 
@@ -144,17 +153,29 @@ function DocumentosDemo() {
   }
 
   async function aoEscolherFicheiro(ficheiro: File) {
+    const tipoOk =
+      ficheiro.type === "application/pdf" || ficheiro.type.startsWith("image/");
+    if (!tipoOk) {
+      toast.error("Formato não suportado. Escolha um PDF ou uma imagem.");
+      return;
+    }
+    if (ficheiro.size > 20 * 1024 * 1024) {
+      toast.error("Ficheiro demasiado grande (máximo 20 MB).");
+      return;
+    }
     const eImagem = ficheiro.type.startsWith("image/");
     let imagem: string | null = null;
     if (eImagem) {
-      imagem = await new Promise<string>((resolve) => {
+      imagem = await new Promise<string | null>((resolve) => {
         const leitor = new FileReader();
         leitor.onload = () => resolve(String(leitor.result));
+        leitor.onerror = () => resolve(null);
         leitor.readAsDataURL(ficheiro);
       });
     }
     novoDocumento(ficheiro.name, eImagem ? "imagem" : "pdf", "bilhetes", { imagem });
   }
+
 
   function guardarFicha(id: string, ficha: FichaDocumento, destacar: boolean) {
     atualizar(id, (d) => ({
