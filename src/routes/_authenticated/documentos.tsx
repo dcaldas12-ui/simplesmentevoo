@@ -157,6 +157,7 @@ function HistoricoDocumentos() {
   const queryClient = useQueryClient();
   const analisar = useServerFn(analisarDocumento);
   const inputFicheiro = useRef<HTMLInputElement>(null);
+  const urlVisualizacaoRef = useRef<string | null>(null);
 
   const [procura, setProcura] = useState("");
   const [filtro, setFiltro] = useState<"todos" | Estado>("todos");
@@ -171,6 +172,29 @@ function HistoricoDocumentos() {
     erro: string | null;
     leitura: boolean;
   } | null>(null);
+
+  function libertarUrlVisualizacao() {
+    if (urlVisualizacaoRef.current) {
+      URL.revokeObjectURL(urlVisualizacaoRef.current);
+      urlVisualizacaoRef.current = null;
+    }
+  }
+
+  function mensagemLeitura(error: unknown) {
+    const detalhe = error && typeof error === "object" && "message" in error
+      ? String(error.message).toLowerCase()
+      : "";
+    if (detalhe.includes("jwt") || detalhe.includes("unauthorized") || detalhe.includes("401")) {
+      return "A sessão já não permite ler este ficheiro. Atualize a página e volte a entrar.";
+    }
+    if (detalhe.includes("row-level security") || detalhe.includes("forbidden") || detalhe.includes("403")) {
+      return "O acesso ao ficheiro foi recusado. Confirme que está na conta que o carregou.";
+    }
+    if (detalhe.includes("not found") || detalhe.includes("object not found") || detalhe.includes("404")) {
+      return "O registo existe, mas o ficheiro original não foi encontrado no armazenamento.";
+    }
+    return "Não foi possível transferir o ficheiro. Verifique a ligação e tente novamente.";
+  }
 
   const { data: docs, isLoading } = useQuery({
     queryKey: ["historico-documentos"],
@@ -280,7 +304,7 @@ function HistoricoDocumentos() {
 
       const nomeSeguro = file.name.normalize("NFD").replace(/[^\w.\-]+/g, "_");
       const path = `${uid}/historico/${Date.now()}-${nomeSeguro}`;
-      const { error: erroUpload } = await supabase.storage
+      const { data: upload, error: erroUpload } = await supabase.storage
         .from("documentos")
         .upload(path, file, {
           contentType: file.type || "application/octet-stream",
@@ -288,20 +312,38 @@ function HistoricoDocumentos() {
         });
       if (erroUpload) throw erroUpload;
 
+      const pathGuardado = upload?.path;
+      if (!pathGuardado || pathGuardado.split("/")[0] !== uid) {
+        throw new Error("O armazenamento não confirmou o caminho seguro do ficheiro.");
+      }
+
+      // Confirma uma leitura autenticada antes de criar o registo. Assim nunca mostramos como
+      // guardado um ficheiro que a própria conta não consegue voltar a obter.
+      const { error: erroLeitura } = await supabase.storage
+        .from("documentos")
+        .download(pathGuardado);
+      if (erroLeitura) {
+        await supabase.storage.from("documentos").remove([pathGuardado]);
+        throw new Error(`O ficheiro foi enviado, mas não pôde ser confirmado: ${mensagemLeitura(erroLeitura)}`);
+      }
+
       const { data: inserido, error } = await supabase
         .from("documentos")
         .insert({
           nome: file.name,
           tipo: file.type.startsWith("image/") ? "imagem" : "pdf",
           origem: "upload",
-          ficheiro_path: path,
+          ficheiro_path: pathGuardado,
           mime_type: file.type,
           tamanho_bytes: file.size,
           estado_processamento: "extracao",
         })
         .select("id")
         .single();
-      if (error) throw error;
+      if (error) {
+        await supabase.storage.from("documentos").remove([pathGuardado]);
+        throw error;
+      }
       id = inserido.id;
       await invalidar();
 
@@ -346,19 +388,28 @@ function HistoricoDocumentos() {
       });
       return;
     }
+    libertarUrlVisualizacao();
     setVisualizar({ doc: d, url: null, aCarregar: true, erro: null, leitura });
-    const { data, error } = await supabase.storage
-      .from("documentos")
-      .createSignedUrl(d.ficheiro_path, 300);
+    const { data, error } = await supabase.storage.from("documentos").download(d.ficheiro_path);
+    if (error || !data) {
+      setVisualizar({
+        doc: d,
+        url: null,
+        aCarregar: false,
+        leitura: false,
+        erro: mensagemLeitura(error),
+      });
+      return;
+    }
+    const blob = data.type || !d.mime_type ? data : new Blob([data], { type: d.mime_type });
+    const objectUrl = URL.createObjectURL(blob);
+    urlVisualizacaoRef.current = objectUrl;
     setVisualizar({
       doc: d,
-      url: data?.signedUrl ?? null,
+      url: objectUrl,
       aCarregar: false,
       leitura,
-      erro:
-        error || !data?.signedUrl
-          ? `Não foi possível abrir este ficheiro.${error?.message ? ` (${error.message})` : ""}`
-          : null,
+      erro: null,
     });
   }
 
@@ -634,7 +685,10 @@ function HistoricoDocumentos() {
         aCarregar={visualizar?.aCarregar}
         erro={visualizar?.erro ?? null}
         iniciarLeitura={visualizar?.leitura ?? false}
-        onFechar={() => setVisualizar(null)}
+        onFechar={() => {
+          libertarUrlVisualizacao();
+          setVisualizar(null);
+        }}
       />
 
       <DetalheDialog doc={detalhe} onFechar={() => setDetalhe(null)} viagem={tituloViagem} />
