@@ -163,6 +163,12 @@ function HistoricoDocumentos() {
   const [editar, setEditar] = useState<DocRow | null>(null);
   const [etapaAtual, setEtapaAtual] = useState<Estado | null>(null);
   const [nomeAEnviar, setNomeAEnviar] = useState("");
+  const [visualizar, setVisualizar] = useState<{
+    doc: DocRow;
+    url: string | null;
+    aCarregar: boolean;
+    erro: string | null;
+  } | null>(null);
 
   const { data: docs, isLoading } = useQuery({
     queryKey: ["historico-documentos"],
