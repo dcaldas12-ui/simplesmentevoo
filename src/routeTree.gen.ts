@@ -14,6 +14,7 @@ import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/
 import { Route as AuthRouteImport } from './routes/auth'
 import { Route as AvisosRouteImport } from './routes/avisos'
 import { Route as DocumentosDemoRouteImport } from './routes/documentos-demo'
+import { Route as OfflineRouteImport } from './routes/offline'
 import { Route as PesquisaRouteImport } from './routes/pesquisa'
 import { Route as AuthenticatedReservasRouteImport } from './routes/_authenticated/reservas'
 import { Route as AuthenticatedViagensIndexRouteImport } from './routes/_authenticated/viagens.index'
@@ -41,6 +42,11 @@ const AvisosRoute = AvisosRouteImport.update({
 const DocumentosDemoRoute = DocumentosDemoRouteImport.update({
   id: '/documentos-demo',
   path: '/documentos-demo',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const OfflineRoute = OfflineRouteImport.update({
+  id: '/offline',
+  path: '/offline',
   getParentRoute: () => rootRouteImport,
 } as any)
 const PesquisaRoute = PesquisaRouteImport.update({
@@ -71,6 +77,7 @@ export interface FileRoutesByFullPath {
   '/auth': typeof AuthRoute
   '/avisos': typeof AvisosRoute
   '/documentos-demo': typeof DocumentosDemoRoute
+  '/offline': typeof OfflineRoute
   '/pesquisa': typeof PesquisaRoute
   '/reservas': typeof AuthenticatedReservasRoute
   '/viagens/$viagemId': typeof AuthenticatedViagensViagemIdRoute
@@ -81,6 +88,7 @@ export interface FileRoutesByTo {
   '/auth': typeof AuthRoute
   '/avisos': typeof AvisosRoute
   '/documentos-demo': typeof DocumentosDemoRoute
+  '/offline': typeof OfflineRoute
   '/pesquisa': typeof PesquisaRoute
   '/reservas': typeof AuthenticatedReservasRoute
   '/viagens/$viagemId': typeof AuthenticatedViagensViagemIdRoute
@@ -93,6 +101,7 @@ export interface FileRoutesById {
   '/auth': typeof AuthRoute
   '/avisos': typeof AvisosRoute
   '/documentos-demo': typeof DocumentosDemoRoute
+  '/offline': typeof OfflineRoute
   '/pesquisa': typeof PesquisaRoute
   '/_authenticated/reservas': typeof AuthenticatedReservasRoute
   '/_authenticated/viagens/$viagemId': typeof AuthenticatedViagensViagemIdRoute
@@ -105,6 +114,7 @@ export interface FileRouteTypes {
     | '/auth'
     | '/avisos'
     | '/documentos-demo'
+    | '/offline'
     | '/pesquisa'
     | '/reservas'
     | '/viagens/$viagemId'
@@ -115,6 +125,7 @@ export interface FileRouteTypes {
     | '/auth'
     | '/avisos'
     | '/documentos-demo'
+    | '/offline'
     | '/pesquisa'
     | '/reservas'
     | '/viagens/$viagemId'
@@ -126,6 +137,7 @@ export interface FileRouteTypes {
     | '/auth'
     | '/avisos'
     | '/documentos-demo'
+    | '/offline'
     | '/pesquisa'
     | '/_authenticated/reservas'
     | '/_authenticated/viagens/$viagemId'
@@ -138,6 +150,7 @@ export interface RootRouteChildren {
   AuthRoute: typeof AuthRoute
   AvisosRoute: typeof AvisosRoute
   DocumentosDemoRoute: typeof DocumentosDemoRoute
+  OfflineRoute: typeof OfflineRoute
   PesquisaRoute: typeof PesquisaRoute
 }
 
@@ -176,6 +189,13 @@ declare module '@tanstack/react-router' {
       path: '/documentos-demo'
       fullPath: '/documentos-demo'
       preLoaderRoute: typeof DocumentosDemoRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/offline': {
+      id: '/offline'
+      path: '/offline'
+      fullPath: '/offline'
+      preLoaderRoute: typeof OfflineRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/pesquisa': {
@@ -230,6 +250,7 @@ const rootRouteChildren: RootRouteChildren = {
   AuthRoute: AuthRoute,
   AvisosRoute: AvisosRoute,
   DocumentosDemoRoute: DocumentosDemoRoute,
+  OfflineRoute: OfflineRoute,
   PesquisaRoute: PesquisaRoute,
 }
 export const routeTree = rootRouteImport

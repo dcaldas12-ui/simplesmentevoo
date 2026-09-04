@@ -255,6 +255,7 @@ export function SearchForm({
         <div className="flex items-center gap-3 sm:mt-6">
           <Switch
             id="diretos"
+            aria-label="Apenas voos diretos"
             checked={v.apenasDiretos}
             onCheckedChange={(c) => set("apenasDiretos", c)}
           />

@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
-import { ExternalLink, Ticket } from "lucide-react";
+import { CalendarPlus, ExternalLink, Ticket } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
@@ -13,6 +13,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
+import { enviarAvisoPush } from "@/lib/push.functions";
+import { descarregarICS } from "@/lib/wallet";
 import {
   cancelarReserva,
   confirmarReserva,
@@ -136,6 +138,7 @@ function ReservasPage() {
 function CartaoReserva({ reserva }: { reserva: Reserva }) {
   const queryClient = useQueryClient();
   const confirmar = useServerFn(confirmarReserva);
+  const avisarPush = useServerFn(enviarAvisoPush);
   const cancelar = useServerFn(cancelarReserva);
   const [referencia, setReferencia] = useState(reserva.referencia ?? "");
   const [preco, setPreco] = useState(reserva.preco != null ? String(reserva.preco) : "");
@@ -147,6 +150,17 @@ function CartaoReserva({ reserva }: { reserva: Reserva }) {
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["reservas"] });
       toast.success("Confirmação importada.");
+      try {
+        await avisarPush({
+          data: {
+            titulo: `Reserva confirmada · ${reserva.origem} → ${reserva.destino}`,
+            texto: `Partida a ${dataCurta(reserva.data_partida)}${referencia ? ` · ref. ${referencia}` : ""}`,
+            url: "/reservas",
+          },
+        });
+      } catch {
+        // Sem notificações ativas neste dispositivo: a confirmação foi guardada na mesma.
+      }
     },
     onError: (e: unknown) =>
       toast.error(e instanceof Error ? e.message : "Não foi possível guardar a confirmação."),
@@ -189,6 +203,26 @@ function CartaoReserva({ reserva }: { reserva: Reserva }) {
         {reserva.preco != null ? ` · ${fmtPreco.format(Number(reserva.preco))}` : " · preço por confirmar"}
         {reserva.referencia ? ` · ref. ${reserva.referencia}` : ""}
       </p>
+
+      <Button
+        size="sm"
+        variant="outline"
+        className="min-h-11"
+        disabled={!reserva.data_partida}
+        onClick={() =>
+          descarregarICS({
+            id: reserva.id,
+            titulo: `Voo ${reserva.origem} → ${reserva.destino}`,
+            descricao: [reserva.companhia, reserva.referencia].filter(Boolean).join(" · "),
+            local: reserva.origem,
+            inicio: reserva.data_partida ? `${reserva.data_partida}T08:00:00` : null,
+            duracaoMin: 120,
+            ...(reserva.referencia ? { referencia: reserva.referencia } : {}),
+          })
+        }
+      >
+        <CalendarPlus className="size-4" aria-hidden /> Guardar no calendário
+      </Button>
 
       {reserva.deeplink ? (
         <Button asChild size="sm" variant="outline">

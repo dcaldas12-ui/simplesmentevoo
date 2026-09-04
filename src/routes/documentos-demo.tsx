@@ -264,6 +264,7 @@ function DocumentosDemo() {
           <input
             ref={inputFicheiro}
             type="file"
+            aria-label="Escolher ficheiro PDF ou imagem para juntar à viagem"
             accept="application/pdf,image/*"
             className="hidden"
             onChange={(e) => {
