@@ -277,8 +277,14 @@ function HistoricoDocumentos() {
       const uid = userData.user?.id;
       if (!uid) throw new Error("Sessão expirada. Volte a entrar.");
 
-      const path = `${uid}/historico/${Date.now()}-${file.name}`;
-      const { error: erroUpload } = await supabase.storage.from("documentos").upload(path, file);
+      const nomeSeguro = file.name.normalize("NFD").replace(/[^\w.\-]+/g, "_");
+      const path = `${uid}/historico/${Date.now()}-${nomeSeguro}`;
+      const { error: erroUpload } = await supabase.storage
+        .from("documentos")
+        .upload(path, file, {
+          contentType: file.type || "application/octet-stream",
+          upsert: false,
+        });
       if (erroUpload) throw erroUpload;
 
       const { data: inserido, error } = await supabase
