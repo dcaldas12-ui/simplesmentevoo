@@ -327,6 +327,28 @@ function HistoricoDocumentos() {
     },
   });
 
+  async function verFicheiro(d: DocRow) {
+    if (!d.ficheiro_path) {
+      setVisualizar({
+        doc: d,
+        url: null,
+        aCarregar: false,
+        erro: "Este registo não tem ficheiro guardado para visualizar.",
+      });
+      return;
+    }
+    setVisualizar({ doc: d, url: null, aCarregar: true, erro: null });
+    const { data, error } = await supabase.storage
+      .from("documentos")
+      .createSignedUrl(d.ficheiro_path, 300);
+    setVisualizar({
+      doc: d,
+      url: data?.signedUrl ?? null,
+      aCarregar: false,
+      erro: error || !data ? "Não foi possível abrir este ficheiro." : null,
+    });
+  }
+
   async function abrir(d: DocRow) {
     if (!d.ficheiro_path) return;
     const { data, error } = await supabase.storage
