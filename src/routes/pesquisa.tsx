@@ -125,12 +125,8 @@ function PesquisaPage() {
 
         <SearchForm initial={{ ...busca }} compacto />
 
-        {data?.aviso ? (
-          <div className="flex items-start gap-2 rounded-xl border border-border bg-secondary/60 p-4 text-sm text-secondary-foreground">
-            <Info className="mt-0.5 size-4 shrink-0" />
-            <p>{data.aviso}</p>
-          </div>
-        ) : null}
+        {data ? <EstadoLigacao dados={data} /> : null}
+
 
         {isFetching ? (
           <div className="space-y-3">
