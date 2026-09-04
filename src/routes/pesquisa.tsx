@@ -246,7 +246,24 @@ function Resumo({ etiqueta, valor }: { etiqueta: string; valor: string }) {
   );
 }
 
-function CartaoOferta({ oferta, melhor }: { oferta: Oferta; melhor: boolean }) {
+function CartaoOferta({
+  oferta,
+  melhor,
+  pedido,
+  referencia,
+}: {
+  oferta: Oferta;
+  melhor: boolean;
+  pedido?: { partida: string; regresso: string | null };
+  referencia?: number;
+}) {
+  const partidaMudou = pedido ? oferta.dataPartida !== pedido.partida : false;
+  const regressoMudou = pedido
+    ? (oferta.dataRegresso ?? null) !== (pedido.regresso ?? null)
+    : false;
+  const poupanca =
+    referencia !== undefined ? Math.round((referencia - oferta.precoTotal) * 100) / 100 : 0;
+
   return (
     <div className="flex flex-col gap-4 rounded-2xl border border-border bg-card p-4 sm:flex-row sm:items-center">
       <div className="flex-1">
@@ -254,20 +271,36 @@ function CartaoOferta({ oferta, melhor }: { oferta: Oferta; melhor: boolean }) {
           <span className="font-display font-semibold">{oferta.companhia}</span>
           <Badge variant="secondary">{oferta.numeroVoo}</Badge>
           {melhor ? <Badge>Melhor preço</Badge> : null}
+          {poupanca > 0 ? <Badge>Poupa {fmtPreco.format(poupanca)}</Badge> : null}
           {oferta.escalas === 0 ? <Badge variant="outline">Direto</Badge> : null}
           {oferta.bagagemIncluida ? <Badge variant="outline">Bagagem incluída</Badge> : null}
         </div>
         <p className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
-          <span className="inline-flex items-center gap-1.5 text-foreground">
+          <span
+            className={`inline-flex items-center gap-1.5 ${partidaMudou ? "font-medium text-primary" : "text-foreground"}`}
+          >
             <PlaneTakeoff className="size-4" />
             {formatarData(oferta.dataPartida)} · {oferta.horaPartida} → {oferta.horaChegada}
           </span>
           <span className="inline-flex items-center gap-1.5">
             <Timer className="size-4" /> {duracao(oferta.duracaoMin)}
           </span>
-          {oferta.dataRegresso ? <span>Regresso {formatarData(oferta.dataRegresso)}</span> : null}
+          {oferta.dataRegresso ? (
+            <span className={regressoMudou ? "font-medium text-primary" : undefined}>
+              Regresso {formatarData(oferta.dataRegresso)}
+            </span>
+          ) : null}
         </p>
+        {partidaMudou || regressoMudou ? (
+          <p className="mt-1 text-xs text-primary">
+            Datas alteradas face ao que pediu
+            {pedido
+              ? ` (${formatarData(pedido.partida)}${pedido.regresso ? ` → ${formatarData(pedido.regresso)}` : ""})`
+              : ""}
+          </p>
+        ) : null}
       </div>
+
 
       <div className="flex items-center justify-between gap-4 sm:flex-col sm:items-end">
         <div className="text-right">
