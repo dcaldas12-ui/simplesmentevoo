@@ -168,6 +168,7 @@ function HistoricoDocumentos() {
     url: string | null;
     aCarregar: boolean;
     erro: string | null;
+    leitura: boolean;
   } | null>(null);
 
   const { data: docs, isLoading } = useQuery({
