@@ -187,6 +187,16 @@
     [role="switch"] {
       min-width: 44px;
     }
+
+    /* Botões e links com aspeto de botão (shadcn) e botões só com ícone */
+    a[class*="inline-flex"] {
+      min-height: 44px;
+    }
+
+    button:has(> svg:only-child),
+    a[class*="inline-flex"]:has(> svg:only-child) {
+      min-width: 44px;
+    }
   }
 
   /* Foco sempre visível, também no teclado do telemóvel */
