@@ -10,6 +10,8 @@ type Props = {
   mimeType: string | null;
   aCarregar?: boolean | undefined;
   erro?: string | null | undefined;
+  /** Entra automaticamente em modo de leitura assim que o ficheiro estiver pronto. */
+  iniciarLeitura?: boolean | undefined;
   onFechar: () => void;
 };
 
@@ -26,6 +28,7 @@ export function VisualizadorDocumento({
   mimeType,
   aCarregar,
   erro,
+  iniciarLeitura,
   onFechar,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -70,6 +73,19 @@ export function VisualizadorDocumento({
     }
     await pedirWakeLock();
   }, [pedirWakeLock]);
+
+  // Abre já em modo de leitura quando pedido a partir do cartão do documento.
+  const jaAutoAbriu = useRef(false);
+  useEffect(() => {
+    if (!aberto) {
+      jaAutoAbriu.current = false;
+      return;
+    }
+    if (iniciarLeitura && url && !aCarregar && !jaAutoAbriu.current) {
+      jaAutoAbriu.current = true;
+      void entrarLeitura();
+    }
+  }, [aberto, iniciarLeitura, url, aCarregar, entrarLeitura]);
 
   const sairLeitura = useCallback(async () => {
     setLeitura(false);
@@ -197,11 +213,24 @@ export function VisualizadorDocumento({
               />
             </div>
           ) : (
-            <iframe
-              src={url}
-              title={`Pré-visualização do documento ${nome}`}
-              className="h-full min-h-[60vh] w-full border-0 bg-white"
-            />
+            <object
+              data={`${url}#view=FitH`}
+              type={mimeType || "application/pdf"}
+              aria-label={`Pré-visualização do documento ${nome}`}
+              className="h-full min-h-[70vh] w-full border-0 bg-white"
+            >
+              <div className="p-6 text-sm">
+                <p>Este dispositivo não mostra o ficheiro dentro da app.</p>
+                <a
+                  className="mt-2 inline-block font-medium text-primary underline underline-offset-4"
+                  href={url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  Abrir o ficheiro numa nova janela
+                </a>
+              </div>
+            </object>
           )}
         </div>
       </div>

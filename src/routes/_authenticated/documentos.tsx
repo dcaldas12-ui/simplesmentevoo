@@ -8,6 +8,7 @@ import {
   FileText,
   Loader2,
   Mail,
+  Maximize2,
   Pencil,
   QrCode,
   RefreshCw,
@@ -168,6 +169,7 @@ function HistoricoDocumentos() {
     url: string | null;
     aCarregar: boolean;
     erro: string | null;
+    leitura: boolean;
   } | null>(null);
 
   const { data: docs, isLoading } = useQuery({
@@ -276,8 +278,14 @@ function HistoricoDocumentos() {
       const uid = userData.user?.id;
       if (!uid) throw new Error("Sessão expirada. Volte a entrar.");
 
-      const path = `${uid}/historico/${Date.now()}-${file.name}`;
-      const { error: erroUpload } = await supabase.storage.from("documentos").upload(path, file);
+      const nomeSeguro = file.name.normalize("NFD").replace(/[^\w.\-]+/g, "_");
+      const path = `${uid}/historico/${Date.now()}-${nomeSeguro}`;
+      const { error: erroUpload } = await supabase.storage
+        .from("documentos")
+        .upload(path, file, {
+          contentType: file.type || "application/octet-stream",
+          upsert: false,
+        });
       if (erroUpload) throw erroUpload;
 
       const { data: inserido, error } = await supabase
@@ -327,17 +335,18 @@ function HistoricoDocumentos() {
     },
   });
 
-  async function verFicheiro(d: DocRow) {
+  async function verFicheiro(d: DocRow, leitura = false) {
     if (!d.ficheiro_path) {
       setVisualizar({
         doc: d,
         url: null,
         aCarregar: false,
+        leitura: false,
         erro: "Este registo não tem ficheiro guardado para visualizar.",
       });
       return;
     }
-    setVisualizar({ doc: d, url: null, aCarregar: true, erro: null });
+    setVisualizar({ doc: d, url: null, aCarregar: true, erro: null, leitura });
     const { data, error } = await supabase.storage
       .from("documentos")
       .createSignedUrl(d.ficheiro_path, 300);
@@ -345,7 +354,11 @@ function HistoricoDocumentos() {
       doc: d,
       url: data?.signedUrl ?? null,
       aCarregar: false,
-      erro: error || !data ? "Não foi possível abrir este ficheiro." : null,
+      leitura,
+      erro:
+        error || !data?.signedUrl
+          ? `Não foi possível abrir este ficheiro.${error?.message ? ` (${error.message})` : ""}`
+          : null,
     });
   }
 
@@ -574,10 +587,28 @@ function HistoricoDocumentos() {
                         </Button>
                       ) : null}
                       {d.ficheiro_path ? (
-                        <Button size="sm" variant="ghost" onClick={() => void abrir(d)}>
-                          <Download className="size-4" /> Abrir
+                        <>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => void verFicheiro(d, true)}
+                          >
+                            <Maximize2 className="size-4" /> Ler em ecrã inteiro
+                          </Button>
+                          <Button size="sm" variant="ghost" onClick={() => void abrir(d)}>
+                            <Download className="size-4" /> Abrir
+                          </Button>
+                        </>
+                      ) : (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled
+                          title="Este registo não tem ficheiro original guardado."
+                        >
+                          <Maximize2 className="size-4" /> Sem ficheiro para ler
                         </Button>
-                      ) : null}
+                      )}
                       <Button
                         size="sm"
                         variant="ghost"
@@ -602,6 +633,7 @@ function HistoricoDocumentos() {
         mimeType={visualizar?.doc.mime_type ?? null}
         aCarregar={visualizar?.aCarregar}
         erro={visualizar?.erro ?? null}
+        iniciarLeitura={visualizar?.leitura ?? false}
         onFechar={() => setVisualizar(null)}
       />
 
