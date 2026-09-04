@@ -112,7 +112,8 @@ export const analisarDocumento = createServerFn({ method: "POST" })
         text: [
           `Nome do documento: ${data.nome}`,
           data.texto ? `Conteúdo conhecido: ${data.texto}` : "",
-          "Extrai os dados do documento de viagem. Usa strings vazias quando não souberes.",
+          `Data de hoje: ${new Date().toISOString().slice(0, 10)}. Se o documento não indicar o ano, assume a próxima ocorrência futura.`,
+          "Extrai os dados do documento de viagem. Em tipoDocumento usa uma designação concreta (por exemplo: Cartão de embarque, Voucher de hotel, Reserva de transfer, Seguro de viagem). Usa strings vazias quando não souberes.",
         ]
           .filter(Boolean)
           .join("\n"),
