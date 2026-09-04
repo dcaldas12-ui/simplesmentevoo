@@ -1,5 +1,5 @@
 import { Link, useNavigate } from "@tanstack/react-router";
-import { LogOut, Luggage, Plane, Search } from "lucide-react";
+import { FileText, LogOut, Luggage, Plane, Search } from "lucide-react";
 import type { ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";

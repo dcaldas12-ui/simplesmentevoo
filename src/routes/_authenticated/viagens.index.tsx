@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { CalendarDays, Luggage, MapPin, Plus } from "lucide-react";
+import { CalendarDays, FileText, Luggage, MapPin, Plus } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
@@ -177,6 +177,26 @@ function ViagensPage() {
             </DialogContent>
           </Dialog>
         </div>
+
+        <Link
+          to="/documentos-demo"
+          className="mt-6 flex flex-col items-start gap-3 rounded-2xl border border-primary/40 bg-card p-5 transition-colors hover:border-primary sm:flex-row sm:items-center sm:justify-between"
+        >
+          <div>
+            <span className="inline-flex items-center gap-2 rounded-full bg-secondary px-3 py-1 text-xs font-medium text-secondary-foreground">
+              Viagem de demonstração
+            </span>
+            <h2 className="mt-2 font-display text-lg font-semibold">
+              Documentos da viagem — Férias em Barcelona
+            </h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Bilhetes, vouchers e outros documentos em PDF, código QR ou recebidos por email.
+            </p>
+          </div>
+          <span className="inline-flex items-center gap-2 rounded-xl bg-secondary px-4 py-2 text-sm font-medium text-secondary-foreground">
+            <FileText className="size-4" /> Abrir exemplo
+          </span>
+        </Link>
 
         <div className="mt-8">
           {isLoading ? (
