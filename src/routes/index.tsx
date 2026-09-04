@@ -52,12 +52,10 @@ const destaques = [
 function Index() {
   return (
     <AppShell>
-      <section className="relative overflow-hidden">
-        <div
-          className="absolute inset-0 -z-10"
-          style={{ background: "var(--gradient-hero)" }}
-          aria-hidden="true"
-        />
+      <section
+        className="relative overflow-hidden"
+        style={{ background: "var(--gradient-hero)" }}
+      >
         <div className="mx-auto w-full max-w-6xl px-4 pb-10 pt-14 text-primary-foreground sm:pt-20">
           <span className="inline-flex items-center gap-2 rounded-full bg-primary-foreground/15 px-3 py-1 text-xs font-medium">
             <Sparkles className="size-3.5" /> Pesquisa flexível de datas
