@@ -30,7 +30,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 
           <nav className="ml-auto flex items-center gap-1">
             <Button asChild variant="ghost" size="sm">
-              <Link to="/pesquisa">
+              <Link to="/pesquisa" search={{}}>
                 <Search className="size-4" /> Pesquisar
               </Link>
             </Button>
