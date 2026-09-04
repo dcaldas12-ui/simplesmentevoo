@@ -1,13 +1,15 @@
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
-import { Info, PlaneTakeoff, SearchX, Timer } from "lucide-react";
+import { CalendarRange, ChevronDown, Info, PlaneTakeoff, SearchX, Timer } from "lucide-react";
+import { useMemo, useState } from "react";
 
 import { AppShell } from "@/components/AppShell";
 import { EmptyState } from "@/components/EmptyState";
 import { GuardarOfertaDialog } from "@/components/GuardarOfertaDialog";
 import { SearchForm } from "@/components/SearchForm";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { Oferta } from "@/lib/flight-engine";
 import { pesquisarVoos } from "@/lib/flights.functions";
@@ -75,12 +77,25 @@ function duracao(min: number) {
 function PesquisaPage() {
   const busca = Route.useSearch();
   const procurar = useServerFn(pesquisarVoos);
+  const [flexVisiveis, setFlexVisiveis] = useState(3);
 
   const { data, isFetching, error } = useQuery({
     queryKey: ["voos", busca],
     queryFn: () => procurar({ data: busca }),
     enabled: Boolean(busca.dataPartida),
   });
+
+  const { exatas, flexiveis } = useMemo(() => {
+    const todas = data?.ofertas ?? [];
+    const regressoPedido = busca.dataRegresso === "" ? null : busca.dataRegresso;
+    const exatas = todas.filter(
+      (o) => o.dataPartida === busca.dataPartida && (o.dataRegresso ?? null) === regressoPedido,
+    );
+    const flexiveis = todas.filter((o) => !exatas.includes(o));
+    return { exatas: exatas.slice(0, 5), flexiveis };
+  }, [data, busca.dataPartida, busca.dataRegresso]);
+
+  const melhorExata = exatas[0]?.precoTotal ?? null;
 
   return (
     <AppShell>
@@ -136,13 +151,85 @@ function PesquisaPage() {
               />
             </div>
 
-            <ul className="space-y-3">
-              {data.ofertas.map((oferta, i) => (
-                <li key={oferta.id}>
-                  <CartaoOferta oferta={oferta} melhor={i === 0} />
-                </li>
-              ))}
-            </ul>
+            <section className="space-y-3">
+              <div>
+                <h2 className="font-display text-lg font-semibold">Nas datas que pediu</h2>
+                <p className="text-sm text-muted-foreground">
+                  As 5 opções mais baratas para {formatarData(busca.dataPartida)}
+                  {busca.dataRegresso ? ` · regresso ${formatarData(busca.dataRegresso)}` : ""}.
+                </p>
+              </div>
+
+              {exatas.length === 0 ? (
+                <div className="rounded-2xl border border-dashed border-border p-4 text-sm text-muted-foreground">
+                  Não encontrámos voos exactamente nestas datas. Veja as alternativas em baixo.
+                </div>
+              ) : (
+                <ul className="space-y-3">
+                  {exatas.map((oferta, i) => (
+                    <li key={oferta.id}>
+                      <CartaoOferta oferta={oferta} melhor={i === 0} />
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+
+            {flexiveis.length > 0 ? (
+              <section className="space-y-3 rounded-2xl border border-border bg-secondary/30 p-4 sm:p-5">
+                <div className="flex flex-col gap-1">
+                  <h2 className="flex items-center gap-2 font-display text-lg font-semibold">
+                    <CalendarRange className="size-5" /> Datas flexíveis: opções mais baratas
+                  </h2>
+                  <p className="text-sm text-muted-foreground">
+                    Alternativas dentro de ±{busca.flexibilidade} dias, ordenadas pelo preço.
+                  </p>
+                </div>
+
+                <ul className="space-y-3">
+                  {flexiveis.slice(0, flexVisiveis).map((oferta) => (
+                    <li key={oferta.id}>
+                      <CartaoOferta
+                        oferta={oferta}
+                        melhor={false}
+                        pedido={{
+                          partida: busca.dataPartida,
+                          regresso: busca.dataRegresso === "" ? null : busca.dataRegresso,
+                        }}
+                        {...(melhorExata !== null ? { referencia: melhorExata } : {})}
+                      />
+                    </li>
+                  ))}
+                </ul>
+
+                {flexVisiveis < flexiveis.length ? (
+                  <div className="flex flex-col gap-2 sm:flex-row">
+                    <Button
+                      variant="outline"
+                      className="w-full sm:w-auto"
+                      onClick={() => setFlexVisiveis((n) => n + 5)}
+                    >
+                      <ChevronDown className="size-4" /> Ver mais opções
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      className="w-full sm:w-auto"
+                      onClick={() => setFlexVisiveis(flexiveis.length)}
+                    >
+                      Ver todos os preços ({flexiveis.length})
+                    </Button>
+                  </div>
+                ) : (
+                  <Button
+                    variant="ghost"
+                    className="w-full sm:w-auto"
+                    onClick={() => setFlexVisiveis(3)}
+                  >
+                    Mostrar menos
+                  </Button>
+                )}
+              </section>
+            ) : null}
           </>
         )}
       </div>
@@ -159,7 +246,24 @@ function Resumo({ etiqueta, valor }: { etiqueta: string; valor: string }) {
   );
 }
 
-function CartaoOferta({ oferta, melhor }: { oferta: Oferta; melhor: boolean }) {
+function CartaoOferta({
+  oferta,
+  melhor,
+  pedido,
+  referencia,
+}: {
+  oferta: Oferta;
+  melhor: boolean;
+  pedido?: { partida: string; regresso: string | null };
+  referencia?: number;
+}) {
+  const partidaMudou = pedido ? oferta.dataPartida !== pedido.partida : false;
+  const regressoMudou = pedido
+    ? (oferta.dataRegresso ?? null) !== (pedido.regresso ?? null)
+    : false;
+  const poupanca =
+    referencia !== undefined ? Math.round((referencia - oferta.precoTotal) * 100) / 100 : 0;
+
   return (
     <div className="flex flex-col gap-4 rounded-2xl border border-border bg-card p-4 sm:flex-row sm:items-center">
       <div className="flex-1">
@@ -167,20 +271,36 @@ function CartaoOferta({ oferta, melhor }: { oferta: Oferta; melhor: boolean }) {
           <span className="font-display font-semibold">{oferta.companhia}</span>
           <Badge variant="secondary">{oferta.numeroVoo}</Badge>
           {melhor ? <Badge>Melhor preço</Badge> : null}
+          {poupanca > 0 ? <Badge>Poupa {fmtPreco.format(poupanca)}</Badge> : null}
           {oferta.escalas === 0 ? <Badge variant="outline">Direto</Badge> : null}
           {oferta.bagagemIncluida ? <Badge variant="outline">Bagagem incluída</Badge> : null}
         </div>
         <p className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
-          <span className="inline-flex items-center gap-1.5 text-foreground">
+          <span
+            className={`inline-flex items-center gap-1.5 ${partidaMudou ? "font-medium text-primary" : "text-foreground"}`}
+          >
             <PlaneTakeoff className="size-4" />
             {formatarData(oferta.dataPartida)} · {oferta.horaPartida} → {oferta.horaChegada}
           </span>
           <span className="inline-flex items-center gap-1.5">
             <Timer className="size-4" /> {duracao(oferta.duracaoMin)}
           </span>
-          {oferta.dataRegresso ? <span>Regresso {formatarData(oferta.dataRegresso)}</span> : null}
+          {oferta.dataRegresso ? (
+            <span className={regressoMudou ? "font-medium text-primary" : undefined}>
+              Regresso {formatarData(oferta.dataRegresso)}
+            </span>
+          ) : null}
         </p>
+        {partidaMudou || regressoMudou ? (
+          <p className="mt-1 text-xs text-primary">
+            Datas alteradas face ao que pediu
+            {pedido
+              ? ` (${formatarData(pedido.partida)}${pedido.regresso ? ` → ${formatarData(pedido.regresso)}` : ""})`
+              : ""}
+          </p>
+        ) : null}
       </div>
+
 
       <div className="flex items-center justify-between gap-4 sm:flex-col sm:items-end">
         <div className="text-right">
