@@ -45,6 +45,11 @@ export function AppShell({ children }: { children: ReactNode }) {
                 <FileText className="size-4" /> Documentos
               </Link>
             </Button>
+            <Button asChild variant="ghost" size="sm">
+              <Link to="/avisos">
+                <BellRing className="size-4" /> Avisos
+              </Link>
+            </Button>
             {session ? (
               <Button variant="outline" size="sm" onClick={() => void sair()}>
                 <LogOut className="size-4" /> Sair
