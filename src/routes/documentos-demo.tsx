@@ -19,6 +19,7 @@ import {
 import { useRef, useState } from "react";
 import { toast } from "sonner";
 
+import { OfflineCard } from "@/components/OfflineCard";
 import { AppShell } from "@/components/AppShell";
 import { DocumentoFicha } from "@/components/DocumentoFicha";
 import { EmptyState } from "@/components/EmptyState";
