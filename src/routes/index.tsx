@@ -86,6 +86,28 @@ function Index() {
         ))}
       </section>
 
+      <section className="mx-auto mb-8 w-full max-w-6xl px-4">
+        <div className="flex flex-col items-start gap-4 rounded-2xl border border-primary/40 bg-card p-6 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <span className="inline-flex items-center gap-2 rounded-full bg-secondary px-3 py-1 text-xs font-medium text-secondary-foreground">
+              Viagem de demonstração
+            </span>
+            <h2 className="mt-3 font-display text-xl font-semibold">
+              Documentos da viagem — Férias em Barcelona
+            </h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Veja como bilhetes, vouchers e outros documentos (PDF, código QR ou recebidos por
+              email) ficam associados a cada viagem. Sem conta e sem compromisso.
+            </p>
+          </div>
+          <Button asChild size="lg" variant="outline">
+            <Link to="/documentos-demo">
+              <FileText className="size-4" /> Ver documentos da viagem
+            </Link>
+          </Button>
+        </div>
+      </section>
+
       <section className="mx-auto mb-16 w-full max-w-6xl px-4">
         <div className="flex flex-col items-start gap-4 rounded-2xl border border-border bg-secondary/60 p-6 sm:flex-row sm:items-center sm:justify-between">
           <div>
