@@ -500,7 +500,9 @@ function DocumentosPainel({
       });
       return;
     }
-    const blob = data.type || !doc.mime_type ? data : new Blob([data], { type: doc.mime_type });
+    const mimeEsperado =
+      doc.mime_type || (doc.nome.toLowerCase().endsWith(".pdf") ? "application/pdf" : data.type);
+    const blob = new Blob([data], { type: mimeEsperado || "application/octet-stream" });
     const objectUrl = URL.createObjectURL(blob);
     urlVisualizacaoRef.current = objectUrl;
     setVisualizar({ doc, url: objectUrl, aCarregar: false, erro: null, leitura });
@@ -619,6 +621,9 @@ function DocumentosPainel({
         aCarregar={visualizar?.aCarregar}
         erro={visualizar?.erro ?? null}
         iniciarLeitura={visualizar?.leitura ?? false}
+        onTentarNovamente={
+          visualizar ? () => void abrir(visualizar.doc, visualizar.leitura) : undefined
+        }
         onFechar={() => {
           if (urlVisualizacaoRef.current) {
             URL.revokeObjectURL(urlVisualizacaoRef.current);

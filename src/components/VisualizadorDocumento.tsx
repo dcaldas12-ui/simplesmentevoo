@@ -1,4 +1,4 @@
-import { Loader2, Maximize2, Minimize2, X } from "lucide-react";
+import { Loader2, Maximize2, Minimize2, RefreshCw, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -12,6 +12,7 @@ type Props = {
   erro?: string | null | undefined;
   /** Entra automaticamente em modo de leitura assim que o ficheiro estiver pronto. */
   iniciarLeitura?: boolean | undefined;
+  onTentarNovamente?: (() => void) | undefined;
   onFechar: () => void;
 };
 
@@ -29,6 +30,7 @@ export function VisualizadorDocumento({
   aCarregar,
   erro,
   iniciarLeitura,
+  onTentarNovamente,
   onFechar,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -37,6 +39,7 @@ export function VisualizadorDocumento({
   const [ecraAtivo, setEcraAtivo] = useState(false);
 
   const éImagem = (mimeType ?? "").startsWith("image/");
+  const éPdf = mimeType === "application/pdf" || nome.toLowerCase().endsWith(".pdf");
 
   const libertarWakeLock = useCallback(async () => {
     try {
@@ -201,9 +204,16 @@ export function VisualizadorDocumento({
               <Loader2 className="size-4 animate-spin" /> A abrir o ficheiro…
             </p>
           ) : erro || !url ? (
-            <p className="p-6 text-sm text-destructive" role="alert">
-              {erro ?? "Não foi possível abrir este ficheiro."}
-            </p>
+            <div className="flex min-h-64 flex-col items-center justify-center gap-4 p-6 text-center">
+              <p className="max-w-md text-sm text-destructive" role="alert">
+                {erro ?? "Não foi possível abrir este ficheiro."}
+              </p>
+              {onTentarNovamente ? (
+                <Button variant="outline" onClick={onTentarNovamente}>
+                  <RefreshCw className="size-4" /> Tentar novamente
+                </Button>
+              ) : null}
+            </div>
           ) : éImagem ? (
             <div className="flex min-h-full items-center justify-center p-3">
               <img
@@ -212,25 +222,23 @@ export function VisualizadorDocumento({
                 className="max-h-full w-auto max-w-full rounded-lg object-contain"
               />
             </div>
-          ) : (
-            <object
-              data={`${url}#view=FitH`}
-              type={mimeType || "application/pdf"}
-              aria-label={`Pré-visualização do documento ${nome}`}
+          ) : éPdf ? (
+            <iframe
+              src={`${url}#view=FitH`}
+              title={`Pré-visualização do documento ${nome}`}
               className="h-full min-h-[70vh] w-full border-0 bg-white"
-            >
-              <div className="p-6 text-sm">
-                <p>Este dispositivo não mostra o ficheiro dentro da app.</p>
-                <a
-                  className="mt-2 inline-block font-medium text-primary underline underline-offset-4"
-                  href={url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  Abrir o ficheiro numa nova janela
-                </a>
-              </div>
-            </object>
+            />
+          ) : (
+            <div className="flex min-h-64 flex-col items-center justify-center gap-4 p-6 text-center">
+              <p className="max-w-md text-sm text-destructive" role="alert">
+                Este formato não pode ser apresentado dentro da app.
+              </p>
+              {onTentarNovamente ? (
+                <Button variant="outline" onClick={onTentarNovamente}>
+                  <RefreshCw className="size-4" /> Tentar novamente
+                </Button>
+              ) : null}
+            </div>
           )}
         </div>
       </div>
