@@ -334,17 +334,18 @@ function HistoricoDocumentos() {
     },
   });
 
-  async function verFicheiro(d: DocRow) {
+  async function verFicheiro(d: DocRow, leitura = false) {
     if (!d.ficheiro_path) {
       setVisualizar({
         doc: d,
         url: null,
         aCarregar: false,
+        leitura: false,
         erro: "Este registo não tem ficheiro guardado para visualizar.",
       });
       return;
     }
-    setVisualizar({ doc: d, url: null, aCarregar: true, erro: null });
+    setVisualizar({ doc: d, url: null, aCarregar: true, erro: null, leitura });
     const { data, error } = await supabase.storage
       .from("documentos")
       .createSignedUrl(d.ficheiro_path, 300);
@@ -352,7 +353,11 @@ function HistoricoDocumentos() {
       doc: d,
       url: data?.signedUrl ?? null,
       aCarregar: false,
-      erro: error || !data ? "Não foi possível abrir este ficheiro." : null,
+      leitura,
+      erro:
+        error || !data?.signedUrl
+          ? `Não foi possível abrir este ficheiro.${error?.message ? ` (${error.message})` : ""}`
+          : null,
     });
   }
 
