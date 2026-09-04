@@ -36,6 +36,13 @@
       "when": 1788559101678,
       "tag": "0004_preferencias_push_avancadas",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1788560898954,
+      "tag": "0005_documentos_historico_processamento",
+      "breakpoints": true
     }
   ]
 }

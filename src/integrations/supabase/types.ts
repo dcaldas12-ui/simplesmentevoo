@@ -80,44 +80,68 @@ export type Database = {
       documentos: {
         Row: {
           created_at: string
+          dados_extraidos: Json | null
+          erro_processamento: string | null
+          estado_processamento: string
           ficheiro_path: string | null
           id: string
+          mime_type: string | null
           nome: string
           origem: string
+          processado_em: string | null
           qr_conteudo: string | null
           recebido_em: string | null
           remetente_email: string | null
+          resumo: string | null
+          tamanho_bytes: number | null
           tipo: string
+          updated_at: string
           user_id: string
-          viagem_id: string
+          viagem_id: string | null
           voo_id: string | null
         }
         Insert: {
           created_at?: string
+          dados_extraidos?: Json | null
+          erro_processamento?: string | null
+          estado_processamento?: string
           ficheiro_path?: string | null
           id?: string
+          mime_type?: string | null
           nome: string
           origem?: string
+          processado_em?: string | null
           qr_conteudo?: string | null
           recebido_em?: string | null
           remetente_email?: string | null
+          resumo?: string | null
+          tamanho_bytes?: number | null
           tipo?: string
+          updated_at?: string
           user_id?: string
-          viagem_id: string
+          viagem_id?: string | null
           voo_id?: string | null
         }
         Update: {
           created_at?: string
+          dados_extraidos?: Json | null
+          erro_processamento?: string | null
+          estado_processamento?: string
           ficheiro_path?: string | null
           id?: string
+          mime_type?: string | null
           nome?: string
           origem?: string
+          processado_em?: string | null
           qr_conteudo?: string | null
           recebido_em?: string | null
           remetente_email?: string | null
+          resumo?: string | null
+          tamanho_bytes?: number | null
           tipo?: string
+          updated_at?: string
           user_id?: string
-          viagem_id?: string
+          viagem_id?: string | null
           voo_id?: string | null
         }
         Relationships: [
