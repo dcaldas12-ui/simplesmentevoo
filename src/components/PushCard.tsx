@@ -97,7 +97,7 @@ export function PushCard() {
   async function enviarTeste() {
     setOcupado(true);
     try {
-      const r = await testar({ data: {} });
+      const r = await testar();
       if (!r.configurado) toast.error("Servidor de notificações por configurar");
       else if (r.enviadas > 0) toast.success(`Enviada para ${r.enviadas} dispositivo(s)`);
       else toast.error("Nenhum dispositivo recebeu a notificação", {

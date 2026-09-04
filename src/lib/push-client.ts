@@ -11,11 +11,12 @@ export function verificarSuporte(): SuportePush {
   if (typeof window === "undefined") return "sem-service-worker";
   if (!("serviceWorker" in navigator)) return "sem-service-worker";
   if (!("Notification" in window)) return "sem-notificacoes";
-  if (!("PushManager" in window)) {
+  const janela = globalThis as unknown as Window;
+  if (!("PushManager" in janela)) {
     const ua = navigator.userAgent;
     const ios = /iPad|iPhone|iPod/.test(ua);
     const standalone =
-      window.matchMedia("(display-mode: standalone)").matches ||
+      janela.matchMedia("(display-mode: standalone)").matches ||
       (navigator as unknown as { standalone?: boolean }).standalone === true;
     if (ios && !standalone) return "ios-precisa-instalar";
     return "sem-push";
