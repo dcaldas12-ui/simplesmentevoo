@@ -1,0 +1,198 @@
+import { useQuery } from "@tanstack/react-query";
+import { createFileRoute } from "@tanstack/react-router";
+import { useServerFn } from "@tanstack/react-start";
+import { Info, PlaneTakeoff, SearchX, Timer } from "lucide-react";
+
+import { AppShell } from "@/components/AppShell";
+import { EmptyState } from "@/components/EmptyState";
+import { GuardarOfertaDialog } from "@/components/GuardarOfertaDialog";
+import { SearchForm } from "@/components/SearchForm";
+import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
+import type { Oferta } from "@/lib/flight-engine";
+import { pesquisarVoos } from "@/lib/flights.functions";
+
+type Busca = {
+  origem: string;
+  destino: string;
+  dataPartida: string;
+  dataRegresso: string;
+  flexibilidade: number;
+  passageiros: number;
+  apenasDiretos: boolean;
+};
+
+export const Route = createFileRoute("/pesquisa")({
+  validateSearch: (search: Partial<Record<keyof Busca, unknown>>): Busca => ({
+    origem: String(search["origem"] ?? "LIS").toUpperCase(),
+    destino: String(search["destino"] ?? "BCN").toUpperCase(),
+    dataPartida: String(search["dataPartida"] ?? ""),
+    dataRegresso: String(search["dataRegresso"] ?? ""),
+    flexibilidade: Number(search["flexibilidade"] ?? 3) || 0,
+    passageiros: Number(search["passageiros"] ?? 1) || 1,
+    apenasDiretos: search["apenasDiretos"] === true || search["apenasDiretos"] === "true",
+  }),
+  head: () => ({
+    meta: [
+      { title: "Pesquisa de voos com datas flexíveis — Simplesmente voo" },
+      {
+        name: "description",
+        content:
+          "Veja todas as combinações de datas dentro da sua flexibilidade, ordenadas do preço mais baixo para o mais alto.",
+      },
+      { property: "og:title", content: "Pesquisa de voos com datas flexíveis" },
+      {
+        property: "og:description",
+        content: "Compare preços por combinação de datas e guarde o voo na sua viagem.",
+      },
+    ],
+  }),
+  component: PesquisaPage,
+  errorComponent: ({ error }) => (
+    <AppShell>
+      <p role="alert" className="mx-auto max-w-6xl px-4 py-16 text-sm text-destructive">
+        {error.message}
+      </p>
+    </AppShell>
+  ),
+});
+
+const fmtPreco = new Intl.NumberFormat("pt-PT", { style: "currency", currency: "EUR" });
+
+function formatarData(iso: string) {
+  return new Date(`${iso}T00:00:00Z`).toLocaleDateString("pt-PT", {
+    weekday: "short",
+    day: "2-digit",
+    month: "short",
+    timeZone: "UTC",
+  });
+}
+
+function duracao(min: number) {
+  return `${Math.floor(min / 60)}h ${String(min % 60).padStart(2, "0")}m`;
+}
+
+function PesquisaPage() {
+  const busca = Route.useSearch();
+  const procurar = useServerFn(pesquisarVoos);
+
+  const { data, isFetching, error } = useQuery({
+    queryKey: ["voos", busca],
+    queryFn: () => procurar({ data: busca }),
+    enabled: Boolean(busca.dataPartida),
+  });
+
+  return (
+    <AppShell>
+      <div className="mx-auto w-full max-w-6xl space-y-6 px-4 py-8">
+        <div>
+          <h1 className="font-display text-2xl font-semibold">
+            {busca.origem} → {busca.destino}
+          </h1>
+          <p className="text-sm text-muted-foreground">
+            Margem de ±{busca.flexibilidade} dias · {busca.passageiros}{" "}
+            {busca.passageiros === 1 ? "passageiro" : "passageiros"}
+          </p>
+        </div>
+
+        <SearchForm initial={{ ...busca }} compacto />
+
+        {data?.aviso ? (
+          <div className="flex items-start gap-2 rounded-xl border border-border bg-secondary/60 p-4 text-sm text-secondary-foreground">
+            <Info className="mt-0.5 size-4 shrink-0" />
+            <p>{data.aviso}</p>
+          </div>
+        ) : null}
+
+        {isFetching ? (
+          <div className="space-y-3">
+            {[0, 1, 2, 3].map((i) => (
+              <Skeleton key={i} className="h-24 w-full rounded-2xl" />
+            ))}
+          </div>
+        ) : error ? (
+          <EmptyState
+            icon={SearchX}
+            titulo="Não foi possível pesquisar"
+            descricao={error instanceof Error ? error.message : "Tente novamente."}
+          />
+        ) : !data || data.ofertas.length === 0 ? (
+          <EmptyState
+            icon={SearchX}
+            titulo="Sem resultados para estas datas"
+            descricao="Experimente aumentar a flexibilidade de dias ou escolher outro aeroporto."
+          />
+        ) : (
+          <>
+            <div className="grid gap-3 sm:grid-cols-3">
+              <Resumo etiqueta="Preço mais baixo" valor={fmtPreco.format(data.precoMinimo ?? 0)} />
+              <Resumo
+                etiqueta="Preço mediano"
+                valor={fmtPreco.format(data.precoMediano ?? 0)}
+              />
+              <Resumo
+                etiqueta="Combinações analisadas"
+                valor={`${data.combinacoesValidas} de ${data.combinacoesGeradas}`}
+              />
+            </div>
+
+            <ul className="space-y-3">
+              {data.ofertas.map((oferta, i) => (
+                <li key={oferta.id}>
+                  <CartaoOferta oferta={oferta} melhor={i === 0} />
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
+      </div>
+    </AppShell>
+  );
+}
+
+function Resumo({ etiqueta, valor }: { etiqueta: string; valor: string }) {
+  return (
+    <div className="rounded-2xl border border-border bg-card p-4">
+      <p className="text-xs uppercase tracking-wide text-muted-foreground">{etiqueta}</p>
+      <p className="mt-1 font-display text-xl font-semibold">{valor}</p>
+    </div>
+  );
+}
+
+function CartaoOferta({ oferta, melhor }: { oferta: Oferta; melhor: boolean }) {
+  return (
+    <div className="flex flex-col gap-4 rounded-2xl border border-border bg-card p-4 sm:flex-row sm:items-center">
+      <div className="flex-1">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="font-display font-semibold">{oferta.companhia}</span>
+          <Badge variant="secondary">{oferta.numeroVoo}</Badge>
+          {melhor ? <Badge>Melhor preço</Badge> : null}
+          {oferta.escalas === 0 ? <Badge variant="outline">Direto</Badge> : null}
+          {oferta.bagagemIncluida ? <Badge variant="outline">Bagagem incluída</Badge> : null}
+        </div>
+        <p className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
+          <span className="inline-flex items-center gap-1.5 text-foreground">
+            <PlaneTakeoff className="size-4" />
+            {formatarData(oferta.dataPartida)} · {oferta.horaPartida} → {oferta.horaChegada}
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            <Timer className="size-4" /> {duracao(oferta.duracaoMin)}
+          </span>
+          {oferta.dataRegresso ? <span>Regresso {formatarData(oferta.dataRegresso)}</span> : null}
+        </p>
+      </div>
+
+      <div className="flex items-center justify-between gap-4 sm:flex-col sm:items-end">
+        <div className="text-right">
+          <p className="font-display text-xl font-semibold">
+            {fmtPreco.format(oferta.precoTotal)}
+          </p>
+          <p className="text-xs text-muted-foreground">
+            {fmtPreco.format(oferta.precoPorPassageiro)} por passageiro
+          </p>
+        </div>
+        <GuardarOfertaDialog oferta={oferta} />
+      </div>
+    </div>
+  );
+}

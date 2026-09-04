@@ -10,33 +10,87 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/route'
+import { Route as AuthRouteImport } from './routes/auth'
+import { Route as PesquisaRouteImport } from './routes/pesquisa'
+import { Route as AuthenticatedViagensIndexRouteImport } from './routes/_authenticated/viagens.index'
+import { Route as AuthenticatedViagensViagemIdRouteImport } from './routes/_authenticated/viagens.$viagemId'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AuthenticatedRouteRoute = AuthenticatedRouteRouteImport.update({
+  id: '/_authenticated',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AuthRoute = AuthRouteImport.update({
+  id: '/auth',
+  path: '/auth',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PesquisaRoute = PesquisaRouteImport.update({
+  id: '/pesquisa',
+  path: '/pesquisa',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AuthenticatedViagensIndexRoute =
+  AuthenticatedViagensIndexRouteImport.update({
+    id: '/viagens/',
+    path: '/viagens/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedViagensViagemIdRoute =
+  AuthenticatedViagensViagemIdRouteImport.update({
+    id: '/viagens/$viagemId',
+    path: '/viagens/$viagemId',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/auth': typeof AuthRoute
+  '/pesquisa': typeof PesquisaRoute
+  '/viagens/$viagemId': typeof AuthenticatedViagensViagemIdRoute
+  '/viagens/': typeof AuthenticatedViagensIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/auth': typeof AuthRoute
+  '/pesquisa': typeof PesquisaRoute
+  '/viagens/$viagemId': typeof AuthenticatedViagensViagemIdRoute
+  '/viagens': typeof AuthenticatedViagensIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/_authenticated': typeof AuthenticatedRouteRouteWithChildren
+  '/auth': typeof AuthRoute
+  '/pesquisa': typeof PesquisaRoute
+  '/_authenticated/viagens/$viagemId': typeof AuthenticatedViagensViagemIdRoute
+  '/_authenticated/viagens/': typeof AuthenticatedViagensIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/'
+  fullPaths: '/' | '/auth' | '/pesquisa' | '/viagens/$viagemId' | '/viagens/'
   fileRoutesByTo: FileRoutesByTo
-  to: '/'
-  id: '__root__' | '/'
+  to: '/' | '/auth' | '/pesquisa' | '/viagens/$viagemId' | '/viagens'
+  id:
+    | '__root__'
+    | '/'
+    | '/_authenticated'
+    | '/auth'
+    | '/pesquisa'
+    | '/_authenticated/viagens/$viagemId'
+    | '/_authenticated/viagens/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AuthenticatedRouteRoute: typeof AuthenticatedRouteRouteWithChildren
+  AuthRoute: typeof AuthRoute
+  PesquisaRoute: typeof PesquisaRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -48,11 +102,62 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/_authenticated': {
+      id: '/_authenticated'
+      path: ''
+      fullPath: '/'
+      preLoaderRoute: typeof AuthenticatedRouteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/auth': {
+      id: '/auth'
+      path: '/auth'
+      fullPath: '/auth'
+      preLoaderRoute: typeof AuthRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/pesquisa': {
+      id: '/pesquisa'
+      path: '/pesquisa'
+      fullPath: '/pesquisa'
+      preLoaderRoute: typeof PesquisaRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/_authenticated/viagens/': {
+      id: '/_authenticated/viagens/'
+      path: '/viagens'
+      fullPath: '/viagens/'
+      preLoaderRoute: typeof AuthenticatedViagensIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/viagens/$viagemId': {
+      id: '/_authenticated/viagens/$viagemId'
+      path: '/viagens/$viagemId'
+      fullPath: '/viagens/$viagemId'
+      preLoaderRoute: typeof AuthenticatedViagensViagemIdRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
   }
 }
 
+interface AuthenticatedRouteRouteChildren {
+  AuthenticatedViagensViagemIdRoute: typeof AuthenticatedViagensViagemIdRoute
+  AuthenticatedViagensIndexRoute: typeof AuthenticatedViagensIndexRoute
+}
+
+const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
+  AuthenticatedViagensViagemIdRoute: AuthenticatedViagensViagemIdRoute,
+  AuthenticatedViagensIndexRoute: AuthenticatedViagensIndexRoute,
+}
+
+const AuthenticatedRouteRouteWithChildren =
+  AuthenticatedRouteRoute._addFileChildren(AuthenticatedRouteRouteChildren)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AuthenticatedRouteRoute: AuthenticatedRouteRouteWithChildren,
+  AuthRoute: AuthRoute,
+  PesquisaRoute: PesquisaRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
