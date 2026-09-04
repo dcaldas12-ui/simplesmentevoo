@@ -595,6 +595,16 @@ function HistoricoDocumentos() {
         </div>
       </div>
 
+      <VisualizadorDocumento
+        aberto={visualizar !== null}
+        nome={visualizar?.doc.nome ?? ""}
+        url={visualizar?.url ?? null}
+        mimeType={visualizar?.doc.mime_type ?? null}
+        aCarregar={visualizar?.aCarregar}
+        erro={visualizar?.erro ?? null}
+        onFechar={() => setVisualizar(null)}
+      />
+
       <DetalheDialog doc={detalhe} onFechar={() => setDetalhe(null)} viagem={tituloViagem} />
       <EditarDialog
         doc={editar}
