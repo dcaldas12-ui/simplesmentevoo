@@ -13,7 +13,11 @@ export type SearchFormValues = {
   destino: string;
   dataPartida: string;
   dataRegresso: string;
-  flexibilidade: number;
+  idaAntes: number;
+  idaDepois: number;
+  regressoAntes: number;
+  regressoDepois: number;
+  duracaoMaxima: number;
   passageiros: number;
   apenasDiretos: boolean;
 };
@@ -29,7 +33,11 @@ export const valoresIniciais: SearchFormValues = {
   destino: "BCN",
   dataPartida: daqui(30),
   dataRegresso: daqui(37),
-  flexibilidade: 3,
+  idaAntes: 2,
+  idaDepois: 2,
+  regressoAntes: 2,
+  regressoDepois: 2,
+  duracaoMaxima: 0,
   passageiros: 1,
   apenasDiretos: false,
 };
@@ -61,7 +69,11 @@ export function SearchForm({
         destino: v.destino.toUpperCase(),
         dataPartida: v.dataPartida,
         dataRegresso: v.dataRegresso,
-        flexibilidade: v.flexibilidade,
+        idaAntes: v.idaAntes,
+        idaDepois: v.idaDepois,
+        regressoAntes: v.regressoAntes,
+        regressoDepois: v.regressoDepois,
+        duracaoMaxima: v.duracaoMaxima,
         passageiros: v.passageiros,
         apenasDiretos: v.apenasDiretos,
       },
@@ -145,19 +157,86 @@ export function SearchForm({
         </div>
       </div>
 
+      <div className="mt-4 grid gap-4 lg:grid-cols-2">
+        <fieldset className="rounded-xl border border-border p-3">
+          <legend className="px-1 text-sm font-medium">Flexibilidade da ida</legend>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label htmlFor="idaAntes">Dias antes</Label>
+              <Input
+                id="idaAntes"
+                type="number"
+                min={0}
+                max={7}
+                value={v.idaAntes}
+                onChange={(e) => set("idaAntes", Number(e.target.value))}
+                className="mt-1.5"
+              />
+            </div>
+            <div>
+              <Label htmlFor="idaDepois">Dias depois</Label>
+              <Input
+                id="idaDepois"
+                type="number"
+                min={0}
+                max={7}
+                value={v.idaDepois}
+                onChange={(e) => set("idaDepois", Number(e.target.value))}
+                className="mt-1.5"
+              />
+            </div>
+          </div>
+        </fieldset>
+
+        <fieldset
+          className="rounded-xl border border-border p-3 disabled:opacity-50"
+          disabled={!v.dataRegresso}
+        >
+          <legend className="px-1 text-sm font-medium">Flexibilidade do regresso</legend>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label htmlFor="regAntes">Dias antes</Label>
+              <Input
+                id="regAntes"
+                type="number"
+                min={0}
+                max={7}
+                value={v.regressoAntes}
+                onChange={(e) => set("regressoAntes", Number(e.target.value))}
+                className="mt-1.5"
+              />
+            </div>
+            <div>
+              <Label htmlFor="regDepois">Dias depois</Label>
+              <Input
+                id="regDepois"
+                type="number"
+                min={0}
+                max={7}
+                value={v.regressoDepois}
+                onChange={(e) => set("regressoDepois", Number(e.target.value))}
+                className="mt-1.5"
+              />
+            </div>
+          </div>
+        </fieldset>
+      </div>
+
       <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <div>
-          <Label htmlFor="flex">Flexibilidade: ±{v.flexibilidade} dias</Label>
-          <input
-            id="flex"
-            type="range"
+          <Label htmlFor="duracaoMax">Duração máxima (dias)</Label>
+          <Input
+            id="duracaoMax"
+            type="number"
             min={0}
-            max={7}
-            step={1}
-            value={v.flexibilidade}
-            onChange={(e) => set("flexibilidade", Number(e.target.value))}
-            className="mt-3 w-full accent-[var(--primary)]"
+            max={60}
+            value={v.duracaoMaxima || ""}
+            onChange={(e) => set("duracaoMaxima", Number(e.target.value))}
+            placeholder="Sem limite"
+            disabled={!v.dataRegresso}
+            className="mt-1.5"
           />
+          <p className="mt-1 text-xs text-muted-foreground">Opcional. 0 = sem limite.</p>
         </div>
 
         <div>
