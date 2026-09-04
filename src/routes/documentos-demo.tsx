@@ -94,7 +94,7 @@ const seccoes = [
 ];
 
 function DocumentosDemo() {
-  const [docs, setDocs] = useState<DocumentoViagem[]>(documentosIniciais);
+  const [docs, setDocs] = useState<DocumentoViagem[]>(() => documentosDemo());
   const [fichaAberta, setFichaAberta] = useState<string | null>(null);
   const [walletAberta, setWalletAberta] = useState<string | null>(null);
   const inputFicheiro = useRef<HTMLInputElement>(null);
