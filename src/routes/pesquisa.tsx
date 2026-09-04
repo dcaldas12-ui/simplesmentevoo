@@ -19,7 +19,11 @@ type Busca = {
   destino: string;
   dataPartida: string;
   dataRegresso: string;
-  flexibilidade: number;
+  idaAntes: number;
+  idaDepois: number;
+  regressoAntes: number;
+  regressoDepois: number;
+  duracaoMaxima: number;
   passageiros: number;
   apenasDiretos: boolean;
 };
@@ -30,7 +34,11 @@ export const Route = createFileRoute("/pesquisa")({
     destino: String(search["destino"] ?? "BCN").toUpperCase(),
     dataPartida: String(search["dataPartida"] ?? ""),
     dataRegresso: String(search["dataRegresso"] ?? ""),
-    flexibilidade: Number(search["flexibilidade"] ?? 3) || 0,
+    idaAntes: Number(search["idaAntes"] ?? 2) || 0,
+    idaDepois: Number(search["idaDepois"] ?? 2) || 0,
+    regressoAntes: Number(search["regressoAntes"] ?? 2) || 0,
+    regressoDepois: Number(search["regressoDepois"] ?? 2) || 0,
+    duracaoMaxima: Number(search["duracaoMaxima"] ?? 0) || 0,
     passageiros: Number(search["passageiros"] ?? 1) || 1,
     apenasDiretos: search["apenasDiretos"] === true || search["apenasDiretos"] === "true",
   }),
@@ -105,7 +113,12 @@ function PesquisaPage() {
             {busca.origem} → {busca.destino}
           </h1>
           <p className="text-sm text-muted-foreground">
-            Margem de ±{busca.flexibilidade} dias · {busca.passageiros}{" "}
+            Ida −{busca.idaAntes}/+{busca.idaDepois} dias
+            {busca.dataRegresso
+              ? ` · Regresso −${busca.regressoAntes}/+${busca.regressoDepois} dias`
+              : ""}
+            {busca.duracaoMaxima > 0 ? ` · até ${busca.duracaoMaxima} dias de viagem` : ""} ·{" "}
+            {busca.passageiros}{" "}
             {busca.passageiros === 1 ? "passageiro" : "passageiros"}
           </p>
         </div>
@@ -151,6 +164,23 @@ function PesquisaPage() {
               />
             </div>
 
+            {data.criterios.length > 0 ? (
+              <div className="rounded-2xl border border-border bg-card p-4">
+                <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                  Critérios aplicados
+                </p>
+                <ul className="mt-2 flex flex-wrap gap-2">
+                  {data.criterios.map((c) => (
+                    <li key={c}>
+                      <Badge variant="secondary" className="whitespace-normal text-left">
+                        {c}
+                      </Badge>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+
             <section className="space-y-3">
               <div>
                 <h2 className="font-display text-lg font-semibold">Nas datas que pediu</h2>
@@ -182,7 +212,7 @@ function PesquisaPage() {
                     <CalendarRange className="size-5" /> Datas flexíveis: opções mais baratas
                   </h2>
                   <p className="text-sm text-muted-foreground">
-                    Alternativas dentro de ±{busca.flexibilidade} dias, ordenadas pelo preço.
+                    Alternativas dentro das margens indicadas, ordenadas pelo preço.
                   </p>
                 </div>
 
