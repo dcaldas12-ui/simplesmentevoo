@@ -516,7 +516,7 @@ function HistoricoDocumentos() {
                         <button
                           type="button"
                           onClick={() => void verFicheiro(d)}
-                          className="block max-w-full truncate rounded text-left font-medium underline-offset-4 hover:underline focus-visible:underline"
+                          className="block max-w-full cursor-pointer truncate rounded text-left font-medium text-primary underline underline-offset-4 hover:opacity-80"
                           aria-label={`Ver o ficheiro original ${d.nome}`}
                         >
                           {d.nome}
