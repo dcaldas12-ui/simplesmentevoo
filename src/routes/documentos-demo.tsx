@@ -205,11 +205,13 @@ function DocumentosDemo() {
           </span>
           <div className="min-w-0 flex-1">
             <p className="truncate font-medium">{d.nome}</p>
-            <p className="mt-0.5 truncate text-xs text-muted-foreground">
+            <p className="mt-0.5 text-xs text-muted-foreground">
               {d.estadoAnalise === "a_analisar"
-                ? "A ler o documento…"
-                : [d.ficha.fornecedor, d.ficha.referencia].filter(Boolean).join(" · ") ||
-                  "Sem dados extraídos"}
+                ? "A processar o documento…"
+                : d.estadoAnalise === "erro"
+                  ? (d.notaAnalise ?? "Ficheiro guardado, sem dados lidos.")
+                  : [d.ficha.fornecedor, d.ficha.referencia].filter(Boolean).join(" · ") ||
+                    "Guardado nesta viagem"}
             </p>
             <p className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
               <Clock className="size-3.5" /> {formatarDataHora(d.ficha.dataHora)}
@@ -218,6 +220,16 @@ function DocumentosDemo() {
               <span className="rounded-full bg-secondary px-2 py-0.5 text-[11px] text-secondary-foreground">
                 {etiquetaTipo(d.tipo)}
               </span>
+              {d.estadoAnalise === "a_analisar" ? (
+                <span className="rounded-full bg-secondary px-2 py-0.5 text-[11px] text-secondary-foreground">
+                  A analisar
+                </span>
+              ) : null}
+              {d.estadoAnalise === "concluida" ? (
+                <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[11px] text-primary">
+                  Guardado
+                </span>
+              ) : null}
               {d.ficha.tipoDocumento ? (
                 <span className="rounded-full bg-secondary px-2 py-0.5 text-[11px] text-secondary-foreground">
                   {d.ficha.tipoDocumento}
@@ -233,12 +245,35 @@ function DocumentosDemo() {
         </div>
 
         <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-border/70 pt-3">
-          <Button size="sm" variant="outline" onClick={() => setFichaAberta(d.id)}>
-            <Pencil className="size-4" /> Ficha
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={d.estadoAnalise === "a_analisar"}
+            onClick={() => setFichaAberta(d.id)}
+          >
+            <Pencil className="size-4" /> Ver detalhes
           </Button>
-          <Button size="sm" variant="outline" onClick={() => setWalletAberta(d.id)}>
-            <Wallet className="size-4" /> Adicionar à Wallet
-          </Button>
+          {d.estadoAnalise === "erro" ? (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                const entrada = entradas.current.get(d.id) ?? { nome: d.nome };
+                void correrAnalise(d.id, entrada);
+              }}
+            >
+              <Sparkles className="size-4" /> Tentar ler de novo
+            </Button>
+          ) : (
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={d.estadoAnalise === "a_analisar"}
+              onClick={() => setWalletAberta(d.id)}
+            >
+              <Wallet className="size-4" /> Adicionar à Wallet
+            </Button>
+          )}
           <label className="ml-auto flex items-center gap-2 text-xs text-muted-foreground">
             Destacar
             <Switch
@@ -248,6 +283,7 @@ function DocumentosDemo() {
             />
           </label>
         </div>
+
       </li>
     );
   }
