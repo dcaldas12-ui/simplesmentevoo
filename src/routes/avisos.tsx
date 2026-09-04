@@ -15,6 +15,7 @@ import { toast } from "sonner";
 
 import { AppShell } from "@/components/AppShell";
 import { EmptyState } from "@/components/EmptyState";
+import { PushCard } from "@/components/PushCard";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -136,11 +137,15 @@ function PaginaAvisos() {
           hotel. Pode ligar ou desligar cada um, escolher a antecipação e corrigir os detalhes.
         </p>
 
+        <div className="mt-6">
+          <PushCard />
+        </div>
+
         <div className="mt-6 flex flex-col gap-3 rounded-2xl border border-border bg-secondary/50 p-5 sm:flex-row sm:items-center sm:justify-between">
           <p className="flex items-start gap-2 text-sm text-muted-foreground">
-            <Smartphone className="mt-0.5 size-4 shrink-0" />
-            Aqui os avisos aparecem dentro da app. Para receber no telemóvel com o ecrã bloqueado é
-            preciso instalar a app no telemóvel e autorizar as notificações — ainda não está ativo.
+            <Smartphone className="mt-0.5 size-4 shrink-0" aria-hidden />
+            Estes avisos aparecem sempre dentro da app. Com as notificações ativadas acima, também
+            chegam ao telemóvel — o ecrã bloqueado depende das permissões do sistema.
           </p>
           {session ? (
             <Button onClick={() => void guardarNaConta()} disabled={aGuardar || ativos.length === 0}>
