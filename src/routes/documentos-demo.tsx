@@ -365,9 +365,10 @@ function DocumentosDemo() {
             </Button>
           </div>
           <p className="mt-3 flex items-center gap-2 text-xs text-muted-foreground">
-            <Sparkles className="size-3.5 text-primary" /> A leitura automática nunca substitui a
-            sua confirmação: todos os campos ficam editáveis.
+            <Sparkles className="size-3.5 text-primary" /> Nada é inventado: se a leitura falhar, o
+            ficheiro fica na mesma guardado e pode corrigir os campos quando quiser.
           </p>
+
         </div>
 
         <div className="mt-6">
