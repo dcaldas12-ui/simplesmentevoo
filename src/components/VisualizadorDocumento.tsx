@@ -74,6 +74,19 @@ export function VisualizadorDocumento({
     await pedirWakeLock();
   }, [pedirWakeLock]);
 
+  // Abre já em modo de leitura quando pedido a partir do cartão do documento.
+  const jaAutoAbriu = useRef(false);
+  useEffect(() => {
+    if (!aberto) {
+      jaAutoAbriu.current = false;
+      return;
+    }
+    if (iniciarLeitura && url && !aCarregar && !jaAutoAbriu.current) {
+      jaAutoAbriu.current = true;
+      void entrarLeitura();
+    }
+  }, [aberto, iniciarLeitura, url, aCarregar, entrarLeitura]);
+
   const sairLeitura = useCallback(async () => {
     setLeitura(false);
     if (document.fullscreenElement) {
