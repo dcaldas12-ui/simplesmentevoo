@@ -112,7 +112,7 @@ function DocumentosDemo() {
 
   async function correrAnalise(id: string, entrada: EntradaAnalise) {
     entradas.current.set(id, entrada);
-    atualizar(id, (d) => ({ ...d, estadoAnalise: "a_analisar", notaAnalise: undefined }));
+    atualizar(id, ({ notaAnalise: _n, ...d }) => ({ ...d, estadoAnalise: "a_analisar" }));
     try {
       const r = await analisar({ data: entrada });
       const vazio = Object.values(r.ficha).every((v) => !String(v ?? "").trim());
