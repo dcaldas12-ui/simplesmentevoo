@@ -141,24 +141,54 @@ export type Database = {
         Row: {
           antecipacao_padrao_min: number
           avisos_ativos: boolean
+          cat_alteracao: boolean
+          cat_cancelamento: boolean
+          cat_lembrete: boolean
+          cat_reserva: boolean
           created_at: string
+          fuso_horario: string
+          hora_silencio_fim: number
+          hora_silencio_inicio: number
+          horas_tranquilas_ativas: boolean
+          intervalo_minimo_min: number
           push_ativado: boolean
+          ultima_notificacao: string | null
           updated_at: string
           user_id: string
         }
         Insert: {
           antecipacao_padrao_min?: number
           avisos_ativos?: boolean
+          cat_alteracao?: boolean
+          cat_cancelamento?: boolean
+          cat_lembrete?: boolean
+          cat_reserva?: boolean
           created_at?: string
+          fuso_horario?: string
+          hora_silencio_fim?: number
+          hora_silencio_inicio?: number
+          horas_tranquilas_ativas?: boolean
+          intervalo_minimo_min?: number
           push_ativado?: boolean
+          ultima_notificacao?: string | null
           updated_at?: string
           user_id?: string
         }
         Update: {
           antecipacao_padrao_min?: number
           avisos_ativos?: boolean
+          cat_alteracao?: boolean
+          cat_cancelamento?: boolean
+          cat_lembrete?: boolean
+          cat_reserva?: boolean
           created_at?: string
+          fuso_horario?: string
+          hora_silencio_fim?: number
+          hora_silencio_inicio?: number
+          horas_tranquilas_ativas?: boolean
+          intervalo_minimo_min?: number
           push_ativado?: boolean
+          ultima_notificacao?: string | null
           updated_at?: string
           user_id?: string
         }
