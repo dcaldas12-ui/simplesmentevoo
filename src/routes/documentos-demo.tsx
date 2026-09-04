@@ -1,40 +1,60 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { useServerFn } from "@tanstack/react-start";
 import {
   CalendarDays,
+  Clock,
   FileText,
   Link2,
+  Loader2,
   Mail,
   MapPin,
-  Plus,
+  Pencil,
   QrCode,
+  Sparkles,
+  Star,
   Ticket,
   Upload,
   Wallet,
 } from "lucide-react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { AppShell } from "@/components/AppShell";
+import { DocumentoFicha } from "@/components/DocumentoFicha";
 import { EmptyState } from "@/components/EmptyState";
+import { WalletDialog } from "@/components/WalletDialog";
 import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
+import { analisarDocumento } from "@/lib/documentos-ia.functions";
+import {
+  etiquetaTipo,
+  fichaVazia,
+  formatarDataHora,
+  paraUsarEmBreve,
+  seccaoSugerida,
+  type DocumentoViagem,
+  type FichaDocumento,
+  type SeccaoDocumento,
+  type TipoFicheiro,
+} from "@/lib/documentos";
 
 export const Route = createFileRoute("/documentos-demo")({
   head: () => ({
     meta: [
-      { title: "Documentos da viagem (demonstração) — Simplesmente voo" },
+      { title: "Documentos da viagem com leitura automática — Simplesmente voo" },
       {
         name: "description",
         content:
-          "Veja como os bilhetes, vouchers e outros documentos ficam organizados e associados a cada viagem: PDF, códigos QR e documentos recebidos por email.",
+          "Carregue bilhetes e vouchers e deixe a leitura automática preencher fornecedor, passageiro, referência e horas. Destaque o que vai usar em breve e prepare a carteira digital.",
       },
       {
         property: "og:title",
-        content: "Documentos da viagem (demonstração) — Simplesmente voo",
+        content: "Documentos da viagem com leitura automática — Simplesmente voo",
       },
       {
         property: "og:description",
         content:
-          "Exemplo prático de gestão de documentos de viagem: bilhetes, vouchers e outros ficheiros sempre à mão.",
+          "Bilhetes, vouchers e comprovativos organizados por viagem, com ficha editável e destaque para o que vai usar a seguir.",
       },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
@@ -43,58 +63,99 @@ export const Route = createFileRoute("/documentos-demo")({
   component: DocumentosDemo,
 });
 
-type DocDemo = {
-  id: string;
-  nome: string;
-  tipo: "pdf" | "qr" | "email";
-  detalhe: string;
-  seccao: "bilhetes" | "vouchers" | "outros";
-};
+const iconePorTipo = { pdf: FileText, qr: QrCode, email: Mail, imagem: FileText } as const;
 
-const documentosIniciais: DocDemo[] = [
-  {
-    id: "1",
+function doc(
+  parcial: Partial<DocumentoViagem> & { nome: string; tipo: TipoFicheiro; seccao: SeccaoDocumento },
+): DocumentoViagem {
+  return {
+    id: crypto.randomUUID(),
+    ficha: { ...fichaVazia },
+    destacar: true,
+    wallet: "nao",
+    estadoAnalise: "concluida",
+    ...parcial,
+  };
+}
+
+function emDias(dias: number, hora: string) {
+  const d = new Date();
+  d.setDate(d.getDate() + dias);
+  return `${d.toISOString().slice(0, 10)}T${hora}`;
+}
+
+const documentosIniciais: DocumentoViagem[] = [
+  doc({
     nome: "Cartão de embarque — LIS → BCN",
     tipo: "pdf",
-    detalhe: "PDF · 3 out, 07:45 · TP1042",
     seccao: "bilhetes",
-  },
-  {
-    id: "2",
-    nome: "Cartão de embarque — BCN → LIS",
-    tipo: "qr",
-    detalhe: "Código QR · 7 out, 19:20 · TP1049",
-    seccao: "bilhetes",
-  },
-  {
-    id: "3",
-    nome: "Reserva do hotel Gòtic",
-    tipo: "email",
-    detalhe: "Recebido de reservas@hotelgotic.es · 12 set",
-    seccao: "vouchers",
-  },
-  {
-    id: "4",
+    ficha: {
+      tipoDocumento: "Cartão de embarque",
+      fornecedor: "TAP Air Portugal",
+      passageiro: "Diogo Caldas",
+      local: "Lisboa (LIS) → Barcelona (BCN)",
+      referencia: "TP1042",
+      dataHora: emDias(1, "07:45"),
+      codigo: "M1CALDAS/DIOGO TP1042 LISBCN",
+    },
+    wallet: "ligado",
+  }),
+  doc({
     nome: "Transfer aeroporto → centro",
     tipo: "qr",
-    detalhe: "Código QR · voucher para 2 pessoas",
     seccao: "vouchers",
-  },
-  {
-    id: "5",
+    ficha: {
+      tipoDocumento: "Voucher de transfer",
+      fornecedor: "Barcelona Shuttle",
+      passageiro: "2 pessoas",
+      local: "Aeroporto El Prat",
+      referencia: "BS-77120",
+      dataHora: emDias(1, "11:30"),
+      codigo: "QR:BS-77120",
+    },
+  }),
+  doc({
+    nome: "Reserva do hotel Gòtic",
+    tipo: "email",
+    seccao: "vouchers",
+    ficha: {
+      tipoDocumento: "Reserva de hotel",
+      fornecedor: "Hotel Gòtic",
+      passageiro: "Diogo Caldas",
+      local: "Carrer dels Banys Nous, Barcelona",
+      referencia: "HG-88213",
+      dataHora: emDias(1, "15:00"),
+      codigo: "",
+    },
+  }),
+  doc({
+    nome: "Cartão de embarque — BCN → LIS",
+    tipo: "qr",
+    seccao: "bilhetes",
+    ficha: {
+      tipoDocumento: "Cartão de embarque",
+      fornecedor: "TAP Air Portugal",
+      passageiro: "Diogo Caldas",
+      local: "Barcelona (BCN) → Lisboa (LIS)",
+      referencia: "TP1049",
+      dataHora: emDias(5, "19:20"),
+      codigo: "M1CALDAS/DIOGO TP1049 BCNLIS",
+    },
+  }),
+  doc({
     nome: "Seguro de viagem",
     tipo: "pdf",
-    detalhe: "PDF · apólice 88213-A",
     seccao: "outros",
-  },
+    destacar: false,
+    ficha: {
+      ...fichaVazia,
+      tipoDocumento: "Seguro de viagem",
+      fornecedor: "Fidelidade",
+      passageiro: "Diogo Caldas",
+      referencia: "88213-A",
+    },
+  }),
 ];
-
-const iconePorTipo = { pdf: FileText, qr: QrCode, email: Mail } as const;
-const etiquetaPorTipo = {
-  pdf: "PDF",
-  qr: "Código QR",
-  email: "Recebido por email",
-} as const;
 
 const seccoes = [
   {
@@ -121,25 +182,140 @@ const seccoes = [
 ];
 
 function DocumentosDemo() {
-  const [docs, setDocs] = useState<DocDemo[]>(documentosIniciais);
+  const [docs, setDocs] = useState<DocumentoViagem[]>(documentosIniciais);
+  const [fichaAberta, setFichaAberta] = useState<string | null>(null);
+  const [walletAberta, setWalletAberta] = useState<string | null>(null);
+  const inputFicheiro = useRef<HTMLInputElement>(null);
+  const analisar = useServerFn(analisarDocumento);
 
-  function adicionar(tipo: DocDemo["tipo"], seccao: DocDemo["seccao"]) {
-    const nomes = {
-      pdf: "Novo ficheiro carregado.pdf",
-      qr: "Novo código QR digitalizado",
-      email: "Documento recebido por email",
-    } as const;
-    setDocs((atuais) => [
-      ...atuais,
-      {
-        id: crypto.randomUUID(),
-        nome: nomes[tipo],
-        tipo,
-        detalhe: "Adicionado agora · exemplo de demonstração",
-        seccao,
-      },
-    ]);
-    toast.success("Documento associado à viagem “Férias em Barcelona” (demonstração).");
+  const emBreve = paraUsarEmBreve(docs);
+
+  function atualizar(id: string, muda: (d: DocumentoViagem) => DocumentoViagem) {
+    setDocs((atuais) => atuais.map((d) => (d.id === id ? muda(d) : d)));
+  }
+
+  async function correrAnalise(
+    id: string,
+    entrada: { nome: string; texto?: string | null; imagem?: string | null },
+  ) {
+    try {
+      const r = await analisar({ data: entrada });
+      atualizar(id, (d) => ({
+        ...d,
+        ficha: { ...d.ficha, ...r.ficha },
+        seccao: r.ficha.tipoDocumento ? seccaoSugerida(r.ficha.tipoDocumento) : d.seccao,
+        estadoAnalise: "concluida",
+        notaAnalise: r.nota,
+      }));
+      toast.success(r.porIa ? "Documento lido automaticamente." : r.nota);
+      setFichaAberta(id);
+    } catch {
+      atualizar(id, (d) => ({
+        ...d,
+        estadoAnalise: "erro",
+        notaAnalise: "Não foi possível ler o documento. Preencha a ficha à mão.",
+      }));
+      toast.error("Não foi possível ler o documento. Preencha a ficha à mão.");
+    }
+  }
+
+  function novoDocumento(
+    nome: string,
+    tipo: TipoFicheiro,
+    seccao: SeccaoDocumento,
+    entrada: { texto?: string | null; imagem?: string | null } = {},
+  ) {
+    const novo = doc({ nome, tipo, seccao, estadoAnalise: "a_analisar", destacar: true });
+    setDocs((atuais) => [...atuais, novo]);
+    void correrAnalise(novo.id, { nome, ...entrada });
+  }
+
+  async function aoEscolherFicheiro(ficheiro: File) {
+    const eImagem = ficheiro.type.startsWith("image/");
+    let imagem: string | null = null;
+    if (eImagem) {
+      imagem = await new Promise<string>((resolve) => {
+        const leitor = new FileReader();
+        leitor.onload = () => resolve(String(leitor.result));
+        leitor.readAsDataURL(ficheiro);
+      });
+    }
+    novoDocumento(ficheiro.name, eImagem ? "imagem" : "pdf", "bilhetes", { imagem });
+  }
+
+  function guardarFicha(id: string, ficha: FichaDocumento, destacar: boolean) {
+    atualizar(id, (d) => ({
+      ...d,
+      ficha,
+      destacar,
+      seccao: ficha.tipoDocumento ? seccaoSugerida(ficha.tipoDocumento) : d.seccao,
+    }));
+    setFichaAberta(null);
+    toast.success("Ficha guardada nesta viagem (demonstração).");
+  }
+
+  const docFicha = docs.find((d) => d.id === fichaAberta) ?? null;
+  const docWallet = docs.find((d) => d.id === walletAberta) ?? null;
+
+  function Cartao({ d }: { d: DocumentoViagem }) {
+    const Icone = iconePorTipo[d.tipo];
+    return (
+      <li className="rounded-2xl border border-border bg-card p-4">
+        <div className="flex items-start gap-3">
+          <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-secondary text-secondary-foreground">
+            {d.estadoAnalise === "a_analisar" ? (
+              <Loader2 className="size-5 animate-spin" />
+            ) : (
+              <Icone className="size-5" />
+            )}
+          </span>
+          <div className="min-w-0 flex-1">
+            <p className="truncate font-medium">{d.nome}</p>
+            <p className="mt-0.5 truncate text-xs text-muted-foreground">
+              {d.estadoAnalise === "a_analisar"
+                ? "A ler o documento…"
+                : [d.ficha.fornecedor, d.ficha.referencia].filter(Boolean).join(" · ") ||
+                  "Sem dados extraídos"}
+            </p>
+            <p className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
+              <Clock className="size-3.5" /> {formatarDataHora(d.ficha.dataHora)}
+            </p>
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              <span className="rounded-full bg-secondary px-2 py-0.5 text-[11px] text-secondary-foreground">
+                {etiquetaTipo(d.tipo)}
+              </span>
+              {d.ficha.tipoDocumento ? (
+                <span className="rounded-full bg-secondary px-2 py-0.5 text-[11px] text-secondary-foreground">
+                  {d.ficha.tipoDocumento}
+                </span>
+              ) : null}
+              {d.wallet === "ligado" ? (
+                <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[11px] text-primary">
+                  Carteira preparada
+                </span>
+              ) : null}
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-border/70 pt-3">
+          <Button size="sm" variant="outline" onClick={() => setFichaAberta(d.id)}>
+            <Pencil className="size-4" /> Ficha
+          </Button>
+          <Button size="sm" variant="outline" onClick={() => setWalletAberta(d.id)}>
+            <Wallet className="size-4" /> Adicionar à Wallet
+          </Button>
+          <label className="ml-auto flex items-center gap-2 text-xs text-muted-foreground">
+            Destacar
+            <Switch
+              checked={d.destacar}
+              onCheckedChange={(v) => atualizar(d.id, (x) => ({ ...x, destacar: v }))}
+              aria-label={`Destacar ${d.nome}`}
+            />
+          </label>
+        </div>
+      </li>
+    );
   }
 
   return (
@@ -153,8 +329,9 @@ function DocumentosDemo() {
           Documentos da viagem
         </h1>
         <p className="mt-2 max-w-2xl text-muted-foreground">
-          Todos os documentos ficam ligados a uma viagem. Assim, quando abre a viagem, tem os
-          bilhetes, vouchers e comprovativos no mesmo sítio — mesmo sem rede.
+          Carregue um ficheiro e a leitura automática tenta preencher tipo, fornecedor, passageiro,
+          local, referência, data/hora e código. Depois é só confirmar na ficha — tudo fica ligado a
+          esta viagem.
         </p>
 
         <div className="mt-6 rounded-2xl border border-border bg-card p-5">
@@ -164,7 +341,7 @@ function DocumentosDemo() {
               <MapPin className="size-4" /> Barcelona, Espanha
             </p>
             <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
-              <CalendarDays className="size-4" /> 3 out — 7 out
+              <CalendarDays className="size-4" /> 5 dias
             </p>
           </div>
           <p className="mt-3 flex items-center gap-2 text-sm text-muted-foreground">
@@ -172,21 +349,78 @@ function DocumentosDemo() {
             {docs.length} documento(s) associados a esta viagem
           </p>
 
+          <input
+            ref={inputFicheiro}
+            type="file"
+            accept="application/pdf,image/*"
+            className="hidden"
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) void aoEscolherFicheiro(f);
+              e.target.value = "";
+            }}
+          />
+
           <div className="mt-4 flex flex-wrap gap-2">
-            <Button size="sm" onClick={() => adicionar("pdf", "bilhetes")}>
+            <Button size="sm" onClick={() => inputFicheiro.current?.click()}>
               <Upload className="size-4" /> Carregar ficheiro
             </Button>
-            <Button size="sm" variant="outline" onClick={() => adicionar("qr", "bilhetes")}>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() =>
+                novoDocumento("Código QR digitalizado", "qr", "bilhetes", {
+                  texto: "QR: TP1042 CALDAS/DIOGO LIS BCN 07:45",
+                })
+              }
+            >
               <QrCode className="size-4" /> Digitalizar código QR
             </Button>
-            <Button size="sm" variant="outline" onClick={() => adicionar("email", "vouchers")}>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() =>
+                novoDocumento("Reserva recebida por email", "email", "vouchers", {
+                  texto:
+                    "De: reservas@hotelgotic.es — Reserva HG-90441 confirmada para Diogo Caldas, check-in às 15:00 em Barcelona.",
+                })
+              }
+            >
               <Mail className="size-4" /> Registar documento por email
             </Button>
             <Button size="sm" variant="ghost" onClick={() => setDocs([])}>
               Ver estados vazios
             </Button>
           </div>
+          <p className="mt-3 flex items-center gap-2 text-xs text-muted-foreground">
+            <Sparkles className="size-3.5 text-primary" /> A leitura automática nunca substitui a
+            sua confirmação: todos os campos ficam editáveis.
+          </p>
         </div>
+
+        <section className="mt-8">
+          <h2 className="flex items-center gap-2 font-display text-xl font-semibold">
+            <Star className="size-5 text-primary" /> Para usar em breve
+          </h2>
+          <p className="text-sm text-muted-foreground">
+            Documentos destacados, ordenados pela data e hora mais próximas.
+          </p>
+          <div className="mt-4">
+            {emBreve.length === 0 ? (
+              <EmptyState
+                icon={Star}
+                titulo="Nada para usar já"
+                descricao="Ative o botão “Destacar” num documento com data e hora para o ver aqui primeiro."
+              />
+            ) : (
+              <ul className="grid gap-3 sm:grid-cols-2">
+                {emBreve.map((d) => (
+                  <Cartao key={d.id} d={d} />
+                ))}
+              </ul>
+            )}
+          </div>
+        </section>
 
         <div className="mt-8 space-y-8">
           {seccoes.map((s) => {
@@ -200,48 +434,51 @@ function DocumentosDemo() {
                     </h2>
                     <p className="text-sm text-muted-foreground">{s.descricao}</p>
                   </div>
-                  <Button size="sm" variant="outline" onClick={() => adicionar("pdf", s.chave)}>
-                    <Plus className="size-4" /> Adicionar
+                  <Button size="sm" variant="outline" onClick={() => inputFicheiro.current?.click()}>
+                    <Upload className="size-4" /> Adicionar
                   </Button>
                 </div>
 
                 <div className="mt-4">
                   {lista.length === 0 ? (
-                    <EmptyState icon={s.icone} titulo={`Sem ${s.titulo.toLowerCase()}`} descricao={s.vazio}>
+                    <EmptyState
+                      icon={s.icone}
+                      titulo={`Sem ${s.titulo.toLowerCase()}`}
+                      descricao={s.vazio}
+                    >
                       <div className="flex flex-wrap justify-center gap-2">
-                        <Button size="sm" onClick={() => adicionar("pdf", s.chave)}>
+                        <Button size="sm" onClick={() => inputFicheiro.current?.click()}>
                           <Upload className="size-4" /> Carregar ficheiro
                         </Button>
-                        <Button size="sm" variant="outline" onClick={() => adicionar("qr", s.chave)}>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() =>
+                            novoDocumento("Código QR digitalizado", "qr", s.chave, {
+                              texto: "QR: voucher para 2 pessoas",
+                            })
+                          }
+                        >
                           <QrCode className="size-4" /> Adicionar QR
                         </Button>
-                        <Button size="sm" variant="outline" onClick={() => adicionar("email", s.chave)}>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() =>
+                            novoDocumento("Documento recebido por email", "email", s.chave, {
+                              texto: "Documento reencaminhado para a viagem.",
+                            })
+                          }
+                        >
                           <Mail className="size-4" /> Recebido por email
                         </Button>
                       </div>
                     </EmptyState>
                   ) : (
                     <ul className="grid gap-3 sm:grid-cols-2">
-                      {lista.map((d) => {
-                        const Icone = iconePorTipo[d.tipo];
-                        return (
-                          <li
-                            key={d.id}
-                            className="flex items-start gap-3 rounded-2xl border border-border bg-card p-4"
-                          >
-                            <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-secondary text-secondary-foreground">
-                              <Icone className="size-5" />
-                            </span>
-                            <div className="min-w-0">
-                              <p className="truncate font-medium">{d.nome}</p>
-                              <p className="mt-0.5 text-xs text-muted-foreground">{d.detalhe}</p>
-                              <span className="mt-2 inline-block rounded-full bg-secondary px-2 py-0.5 text-[11px] text-secondary-foreground">
-                                {etiquetaPorTipo[d.tipo]}
-                              </span>
-                            </div>
-                          </li>
-                        );
-                      })}
+                      {lista.map((d) => (
+                        <Cartao key={d.id} d={d} />
+                      ))}
                     </ul>
                   )}
                 </div>
@@ -262,6 +499,24 @@ function DocumentosDemo() {
           </Button>
         </div>
       </div>
+
+      <DocumentoFicha
+        documento={docFicha}
+        aberto={docFicha !== null}
+        onFechar={() => setFichaAberta(null)}
+        onGuardar={guardarFicha}
+      />
+      <WalletDialog
+        documento={docWallet}
+        aberto={docWallet !== null}
+        onFechar={() => setWalletAberta(null)}
+        onLigar={(id) => {
+          atualizar(id, (d) => ({ ...d, wallet: "ligado" }));
+          toast.success(
+            "Ligação preparada. O passe real fica disponível quando a Apple/Google Wallet estiver configurada.",
+          );
+        }}
+      />
     </AppShell>
   );
 }
