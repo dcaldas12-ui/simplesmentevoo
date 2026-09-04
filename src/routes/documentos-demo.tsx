@@ -311,12 +311,19 @@ function DocumentosDemo() {
         </div>
 
         <section className="mt-8">
-          <h2 className="flex items-center gap-2 font-display text-xl font-semibold">
-            <Star className="size-5 text-primary" /> Para usar em breve
-          </h2>
-          <p className="text-sm text-muted-foreground">
-            Documentos destacados, ordenados pela data e hora mais próximas.
-          </p>
+          <div className="flex flex-wrap items-end justify-between gap-3">
+            <div>
+              <h2 className="flex items-center gap-2 font-display text-xl font-semibold">
+                <Star className="size-5 text-primary" /> Para usar em breve
+              </h2>
+              <p className="text-sm text-muted-foreground">
+                Documentos destacados, ordenados pela data e hora mais próximas.
+              </p>
+            </div>
+            <Button asChild size="sm" variant="outline">
+              <Link to="/avisos">Ver próximos avisos</Link>
+            </Button>
+          </div>
           <div className="mt-4">
             {emBreve.length === 0 ? (
               <EmptyState
