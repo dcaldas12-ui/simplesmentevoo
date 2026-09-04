@@ -46,17 +46,34 @@ export type Oferta = {
   moeda: string;
   bagagemIncluida: boolean;
   reservavel: boolean;
+  /** Ligação de reserva do fornecedor real, quando existir. */
+  deeplink?: string | null;
+  /** Verdadeiro quando o fornecedor não devolveu preço para esta opção. */
+  precoIndisponivel?: boolean;
   fonte: "demo" | "api";
 };
+
+export type EstadoFornecedorPesquisa =
+  | "demo"
+  | "ativo"
+  | "nao_configurado"
+  | "erro"
+  | "limite";
 
 export type ResultadoPesquisa = {
   ofertas: Oferta[];
   combinacoesGeradas: number;
   combinacoesValidas: number;
+  /** Combinações efetivamente consultadas ao fornecedor. */
+  combinacoesConsultadas: number;
   criterios: string[];
   precoMinimo: number | null;
   precoMediano: number | null;
   fonte: "demo" | "api";
+  fornecedor: string;
+  estadoFornecedor: EstadoFornecedorPesquisa;
+  /** O que falta para ativar o fornecedor real (ex.: nomes de chaves). */
+  emFalta?: string[];
   aviso?: string | undefined;
 };
 
@@ -65,6 +82,7 @@ export interface FlightProvider {
   fonte: "demo" | "api";
   procurar(input: PesquisaInput, combos: Combinacao[]): Promise<Oferta[]>;
 }
+
 
 export type Combinacao = { partida: string; regresso: string | null; noites: number | null };
 
@@ -248,6 +266,8 @@ const demoProvider: FlightProvider = {
           moeda: "EUR",
           bagagemIncluida: rnd(seed + "b") > 0.55,
           reservavel: false,
+          deeplink: null,
+          precoIndisponivel: false,
           fonte: "demo",
         });
       }
@@ -256,47 +276,84 @@ const demoProvider: FlightProvider = {
   },
 };
 
-/**
- * Ponto único de integração: devolver aqui um adaptador de API real
- * (ex.: Duffel, Amadeus, Kiwi) assim que as credenciais existirem.
- */
+/** Adaptador de demonstração, usado sempre que não houver fornecedor real ativo. */
 export function getProvider(): FlightProvider {
   return demoProvider;
 }
 
-export async function pesquisar(input: PesquisaInput): Promise<ResultadoPesquisa> {
+export type OpcoesPesquisa = {
+  provider?: FlightProvider;
+  estadoFornecedor?: EstadoFornecedorPesquisa;
+  emFalta?: string[];
+  aviso?: string;
+  /** Limite de combinações que o fornecedor real consulta. */
+  maxCombinacoes?: number;
+};
+
+const AVISO_DEMO =
+  "Resultados de demonstração: a ligação ao Skyscanner ainda não está ativa, por isso os preços são simulados e não reserváveis.";
+
+export async function pesquisar(
+  input: PesquisaInput,
+  opcoes: OpcoesPesquisa = {},
+): Promise<ResultadoPesquisa> {
   const { combos, geradas } = gerarCombinacoes(input);
-  const provider = getProvider();
+  const provider = opcoes.provider ?? getProvider();
+  const estadoFornecedor: EstadoFornecedorPesquisa =
+    opcoes.estadoFornecedor ?? (provider.fonte === "api" ? "ativo" : "demo");
+  const emFalta = opcoes.emFalta ?? [];
 
   if (combos.length === 0) {
     return {
       ofertas: [],
       combinacoesGeradas: geradas,
       combinacoesValidas: 0,
+      combinacoesConsultadas: 0,
       criterios: descreverCriterios(input),
       precoMinimo: null,
       precoMediano: null,
       fonte: provider.fonte,
+      fornecedor: provider.nome,
+      estadoFornecedor,
+      emFalta,
       aviso: "Nenhuma combinação de datas válida. Verifique as datas escolhidas.",
     };
   }
 
+  const consultadas = opcoes.maxCombinacoes
+    ? Math.min(combos.length, opcoes.maxCombinacoes)
+    : combos.length;
+
   const todas = await provider.procurar(input, combos);
-  todas.sort((a, b) => a.precoTotal - b.precoTotal || a.duracaoMin - b.duracaoMin);
+  todas.sort((a, b) => {
+    if (a.precoIndisponivel !== b.precoIndisponivel) return a.precoIndisponivel ? 1 : -1;
+    return a.precoTotal - b.precoTotal || a.duracaoMin - b.duracaoMin;
+  });
   const ofertas = todas.slice(0, 40);
-  const precos = todas.map((o) => o.precoTotal);
+  const precos = todas.filter((o) => !o.precoIndisponivel).map((o) => o.precoTotal);
+
+  const avisos: string[] = [];
+  if (opcoes.aviso) avisos.push(opcoes.aviso);
+  if (provider.fonte === "demo") avisos.push(AVISO_DEMO);
+  if (consultadas < combos.length) {
+    avisos.push(
+      `Para respeitar os limites do fornecedor, foram consultadas ${consultadas} das ${combos.length} combinações válidas.`,
+    );
+  }
 
   return {
     ofertas,
     combinacoesGeradas: geradas,
     combinacoesValidas: combos.length,
+    combinacoesConsultadas: consultadas,
     criterios: descreverCriterios(input),
     precoMinimo: precos.length ? precos[0]! : null,
     precoMediano: precos.length ? precos[Math.floor(precos.length / 2)]! : null,
     fonte: provider.fonte,
-    aviso:
-      provider.fonte === "demo"
-        ? "Resultados de demonstração: ainda não há fornecedor de voos configurado, por isso os preços são simulados e não reserváveis."
-        : undefined,
+    fornecedor: provider.nome,
+    estadoFornecedor,
+    emFalta,
+    aviso: avisos.length ? avisos.join(" ") : undefined,
   };
 }
+

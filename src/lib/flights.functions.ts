@@ -40,4 +40,50 @@ function validar(data: unknown): PesquisaInput {
 
 export const pesquisarVoos = createServerFn({ method: "POST" })
   .inputValidator(validar)
-  .handler(async ({ data }): Promise<ResultadoPesquisa> => pesquisar(data));
+  .handler(async ({ data }): Promise<ResultadoPesquisa> => {
+    const {
+      estadoSkyscanner,
+      criarSkyscannerProvider,
+      SkyscannerError,
+      MAX_COMBINACOES_API,
+    } = await import("./skyscanner.server");
+
+    const estado = estadoSkyscanner();
+
+    if (!estado.configurado) {
+      return pesquisar(data, {
+        estadoFornecedor: "nao_configurado",
+        emFalta: estado.emFalta,
+        aviso:
+          "Ligação ao Skyscanner por ativar: falta a chave de API e o acesso aprovado ao produto.",
+      });
+    }
+
+    try {
+      const provider = criarSkyscannerProvider(
+        process.env["SKYSCANNER_API_KEY"]!,
+        estado.base,
+      );
+      const resultado = await pesquisar(data, {
+        provider,
+        estadoFornecedor: "ativo",
+        maxCombinacoes: MAX_COMBINACOES_API,
+      });
+      if (resultado.ofertas.length > 0) return resultado;
+      return pesquisar(data, {
+        estadoFornecedor: "erro",
+        aviso: "O Skyscanner não devolveu preços para estas datas.",
+      });
+    } catch (erro) {
+      const estadoErro =
+        erro instanceof SkyscannerError ? erro.estado : ("erro" as const);
+      const mensagem =
+        erro instanceof Error ? erro.message : "Falha na ligação ao Skyscanner.";
+      return pesquisar(data, {
+        estadoFornecedor: estadoErro,
+        ...(estadoErro === "nao_configurado" ? { emFalta: ["SKYSCANNER_API_KEY"] } : {}),
+        aviso: mensagem,
+      });
+    }
+  });
+

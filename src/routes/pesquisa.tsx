@@ -1,7 +1,16 @@
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
-import { CalendarRange, ChevronDown, Info, PlaneTakeoff, SearchX, Timer } from "lucide-react";
+import {
+  CalendarRange,
+  ChevronDown,
+  ExternalLink,
+  Info,
+  PlaneTakeoff,
+  SearchX,
+  Timer,
+} from "lucide-react";
+
 import { useMemo, useState } from "react";
 
 import { AppShell } from "@/components/AppShell";
@@ -125,12 +134,8 @@ function PesquisaPage() {
 
         <SearchForm initial={{ ...busca }} compacto />
 
-        {data?.aviso ? (
-          <div className="flex items-start gap-2 rounded-xl border border-border bg-secondary/60 p-4 text-sm text-secondary-foreground">
-            <Info className="mt-0.5 size-4 shrink-0" />
-            <p>{data.aviso}</p>
-          </div>
-        ) : null}
+        {data ? <EstadoLigacao dados={data} /> : null}
+
 
         {isFetching ? (
           <div className="space-y-3">
@@ -317,15 +322,76 @@ function CartaoOferta({
 
       <div className="flex items-center justify-between gap-4 sm:flex-col sm:items-end">
         <div className="text-right">
-          <p className="font-display text-xl font-semibold">
-            {fmtPreco.format(oferta.precoTotal)}
-          </p>
-          <p className="text-xs text-muted-foreground">
-            {fmtPreco.format(oferta.precoPorPassageiro)} por passageiro
-          </p>
+          {oferta.precoIndisponivel ? (
+            <p className="font-display text-base font-semibold text-muted-foreground">
+              Preço indisponível
+            </p>
+          ) : (
+            <>
+              <p className="font-display text-xl font-semibold">
+                {fmtPreco.format(oferta.precoTotal)}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {fmtPreco.format(oferta.precoPorPassageiro)} por passageiro
+              </p>
+            </>
+          )}
         </div>
-        <GuardarOfertaDialog oferta={oferta} />
+        <div className="flex items-center gap-2">
+          {oferta.deeplink ? (
+            <Button asChild size="sm" variant="outline">
+              <a href={oferta.deeplink} target="_blank" rel="noopener noreferrer">
+                Reservar <ExternalLink className="size-4" />
+              </a>
+            </Button>
+          ) : null}
+          <GuardarOfertaDialog oferta={oferta} />
+        </div>
       </div>
     </div>
   );
 }
+
+function EstadoLigacao({
+  dados,
+}: {
+  dados: {
+    estadoFornecedor: string;
+    fornecedor: string;
+    emFalta?: string[] | undefined;
+    aviso?: string | undefined;
+  };
+}) {
+  const ativo = dados.estadoFornecedor === "ativo";
+  const titulo = ativo
+    ? `Preços em direto via ${dados.fornecedor}`
+    : dados.estadoFornecedor === "limite"
+      ? "Limite de pedidos do fornecedor atingido"
+      : dados.estadoFornecedor === "erro"
+        ? "O fornecedor de voos não respondeu"
+        : "Ligação ao Skyscanner por ativar";
+
+  return (
+    <div
+      className={`flex items-start gap-2 rounded-xl border p-4 text-sm ${
+        ativo
+          ? "border-primary/30 bg-primary/5 text-foreground"
+          : "border-border bg-secondary/60 text-secondary-foreground"
+      }`}
+    >
+      <Info className="mt-0.5 size-4 shrink-0" />
+      <div className="space-y-1">
+        <p className="font-medium">{titulo}</p>
+        {dados.aviso ? <p>{dados.aviso}</p> : null}
+        {!ativo && dados.emFalta && dados.emFalta.length > 0 ? (
+          <p className="text-xs">
+            Para ativar preços reais e reserváveis é preciso um acesso aprovado ao Skyscanner e
+            guardar a chave {dados.emFalta.join(", ")} nas definições da app. Enquanto isso não
+            acontecer, mostramos apenas resultados simulados.
+          </p>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
