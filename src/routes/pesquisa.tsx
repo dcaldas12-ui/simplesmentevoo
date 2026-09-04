@@ -355,7 +355,12 @@ function CartaoOferta({
 function EstadoLigacao({
   dados,
 }: {
-  dados: { estadoFornecedor: string; fornecedor: string; emFalta?: string[]; aviso?: string };
+  dados: {
+    estadoFornecedor: string;
+    fornecedor: string;
+    emFalta?: string[] | undefined;
+    aviso?: string | undefined;
+  };
 }) {
   const ativo = dados.estadoFornecedor === "ativo";
   const titulo = ativo
