@@ -38,7 +38,13 @@ import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
 import { supabase } from "@/integrations/supabase/client";
 import { analisarDocumento } from "@/lib/documentos-ia.functions";
-import { fichaVazia, type FichaDocumento } from "@/lib/documentos";
+import {
+  camposDaFicha,
+  camposPorConfirmar,
+  fichaVazia,
+  type FichaDocumento,
+} from "@/lib/documentos";
+import { eventosDaFicha } from "@/lib/avisos";
 
 export const Route = createFileRoute("/_authenticated/documentos")({
   head: () => ({
@@ -405,8 +411,17 @@ function HistoricoDocumentos() {
       id = inserido.id;
       await invalidar();
 
-      const imagem = file.type.startsWith("image/") ? await ficheiroParaDataUrl(file) : null;
-      await processar(id, { nome: file.name, imagem }, true);
+      const éImagem = file.type.startsWith("image/");
+      const dataUrl = await ficheiroParaDataUrl(file);
+      await processar(
+        id,
+        {
+          nome: file.name,
+          imagem: éImagem ? dataUrl : null,
+          pdf: éImagem ? null : dataUrl,
+        },
+        true,
+      );
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Não foi possível carregar o ficheiro.";
       if (id) {
@@ -427,11 +442,19 @@ function HistoricoDocumentos() {
   const reprocessar = useMutation({
     mutationFn: async (d: DocRow) => {
       let imagem: string | null = null;
-      if (d.ficheiro_path && (d.mime_type ?? "").startsWith("image/")) {
+      let pdf: string | null = null;
+      if (d.ficheiro_path) {
         const { data } = await supabase.storage.from("documentos").download(d.ficheiro_path);
-        if (data) imagem = await ficheiroParaDataUrl(data);
+        if (data) {
+          const éImagem = (d.mime_type ?? "").startsWith("image/");
+          const dataUrl = await ficheiroParaDataUrl(
+            new Blob([data], { type: d.mime_type || (éImagem ? "image/jpeg" : "application/pdf") }),
+          );
+          if (éImagem) imagem = dataUrl;
+          else pdf = dataUrl;
+        }
       }
-      await processar(d.id, { nome: d.nome, texto: d.qr_conteudo, imagem }, false);
+      await processar(d.id, { nome: d.nome, texto: d.qr_conteudo, imagem, pdf }, false, d.viagem_id);
     },
   });
 
