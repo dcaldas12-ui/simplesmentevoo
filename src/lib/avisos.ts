@@ -1,4 +1,10 @@
-import type { DocumentoViagem } from "./documentos";
+import {
+  categoriaPorTexto,
+  categoriaValida,
+  type DocumentoViagem,
+  type FichaDocumento,
+} from "./documentos";
+
 
 export type TipoEvento =
   | "checkin_voo"
