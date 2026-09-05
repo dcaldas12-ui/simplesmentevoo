@@ -112,7 +112,12 @@ function DocumentosDemo() {
     setDocs((atuais) => atuais.map((d) => (d.id === id ? muda(d) : d)));
   }
 
-  type EntradaAnalise = { nome: string; texto?: string | null; imagem?: string | null };
+  type EntradaAnalise = {
+    nome: string;
+    texto?: string | null;
+    imagem?: string | null;
+    pdf?: string | null;
+  };
   const entradas = useRef<Map<string, EntradaAnalise>>(new Map());
 
   async function correrAnalise(id: string, entrada: EntradaAnalise) {
@@ -150,7 +155,7 @@ function DocumentosDemo() {
     nome: string,
     tipo: TipoFicheiro,
     seccao: SeccaoDocumento,
-    entrada: { texto?: string | null; imagem?: string | null } = {},
+    entrada: { texto?: string | null; imagem?: string | null; pdf?: string | null } = {},
   ) {
     const novo = doc({ nome, tipo, seccao, estadoAnalise: "a_analisar", destacar: true });
     setDocs((atuais) => [...atuais, novo]);
@@ -170,16 +175,16 @@ function DocumentosDemo() {
       return;
     }
     const eImagem = ficheiro.type.startsWith("image/");
-    let imagem: string | null = null;
-    if (eImagem) {
-      imagem = await new Promise<string | null>((resolve) => {
-        const leitor = new FileReader();
-        leitor.onload = () => resolve(String(leitor.result));
-        leitor.onerror = () => resolve(null);
-        leitor.readAsDataURL(ficheiro);
-      });
-    }
-    const id = novoDocumento(ficheiro.name, eImagem ? "imagem" : "pdf", "bilhetes", { imagem });
+    const dataUrl = await new Promise<string | null>((resolve) => {
+      const leitor = new FileReader();
+      leitor.onload = () => resolve(String(leitor.result));
+      leitor.onerror = () => resolve(null);
+      leitor.readAsDataURL(ficheiro);
+    });
+    const id = novoDocumento(ficheiro.name, eImagem ? "imagem" : "pdf", "bilhetes", {
+      imagem: eImagem ? dataUrl : null,
+      pdf: eImagem ? null : dataUrl,
+    });
     ficheirosLocais.current.set(id, {
       url: URL.createObjectURL(ficheiro),
       mime: ficheiro.type,

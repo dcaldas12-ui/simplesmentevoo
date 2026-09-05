@@ -1,4 +1,10 @@
-import type { DocumentoViagem } from "./documentos";
+import {
+  categoriaPorTexto,
+  categoriaValida,
+  type DocumentoViagem,
+  type FichaDocumento,
+} from "./documentos";
+
 
 export type TipoEvento =
   | "checkin_voo"
@@ -48,65 +54,89 @@ function desloca(iso: string, minutos: number) {
 }
 
 function categoria(doc: DocumentoViagem): "voo" | "transfer" | "hotel" | "outro" {
-  const t = `${doc.ficha.tipoDocumento} ${doc.nome}`.toLowerCase();
-  if (/embarque|voo|boarding|bilhete de avião/.test(t)) return "voo";
-  if (/transfer|recolha|shuttle|táxi|taxi|aluguer/.test(t)) return "transfer";
-  if (/hotel|alojamento|apartamento|hostel|reserva de hotel/.test(t)) return "hotel";
-  return "outro";
+  if (doc.ficha.categoria) return categoriaValida(doc.ficha.categoria);
+  return categoriaPorTexto(`${doc.ficha.tipoDocumento} ${doc.nome}`);
+}
+
+export type EventoDerivado = {
+  tipo: TipoEvento;
+  titulo: string;
+  local: string;
+  /** ISO UTC */
+  quando: string;
+  antecipacaoMin: number;
+};
+
+/**
+ * Eventos que fazem sentido para uma ficha já analisada (voo, hotel, transfer).
+ * As antecipações são apenas sugestões — o utilizador pode alterá-las.
+ */
+export function eventosDaFicha(ficha: FichaDocumento, nomeDocumento: string): EventoDerivado[] {
+  const quando = ficha.dataHora;
+  if (!quando || Number.isNaN(new Date(quando).getTime())) return [];
+  const local = ficha.local || ficha.origem || ficha.morada || "";
+  const eventos: EventoDerivado[] = [];
+  const juntar = (tipo: TipoEvento, momento: string, antecipacaoMin: number, titulo?: string) => {
+    if (!momento) return;
+    eventos.push({ tipo, titulo: titulo ?? rotuloTipo[tipo], local, quando: momento, antecipacaoMin });
+  };
+
+  const cat = ficha.categoria
+    ? categoriaValida(ficha.categoria)
+    : categoriaPorTexto(`${ficha.tipoDocumento} ${nomeDocumento}`);
+
+  switch (cat) {
+    case "voo": {
+      const voo = ficha.numeroVoo ? ` ${ficha.numeroVoo}` : "";
+      juntar("checkin_voo", desloca(quando, -24 * 60), 60, `Check-in do voo${voo}`);
+      juntar("sair_para_aeroporto", desloca(quando, -3 * 60), 60);
+      juntar(
+        "embarque",
+        ficha.horaEmbarque && !Number.isNaN(new Date(ficha.horaEmbarque).getTime())
+          ? new Date(ficha.horaEmbarque).toISOString()
+          : desloca(quando, -40),
+        15,
+        `Embarque${voo}${ficha.porta ? ` · porta ${ficha.porta}` : ""}`,
+      );
+      break;
+    }
+    case "transfer":
+      juntar("recolha_transfer", new Date(quando).toISOString(), 60);
+      break;
+    case "hotel":
+      juntar("checkin_hotel", new Date(quando).toISOString(), 180);
+      if (ficha.dataHoraFim && !Number.isNaN(new Date(ficha.dataHoraFim).getTime())) {
+        juntar("checkout_hotel", new Date(ficha.dataHoraFim).toISOString(), 60);
+      }
+      break;
+    default:
+      juntar("outro", new Date(quando).toISOString(), 1440, `Lembrete — ${nomeDocumento}`);
+  }
+  return eventos;
 }
 
 /**
  * Deriva os eventos sugeridos a partir dos dados extraídos de cada documento.
- * As antecipações são apenas sugestões — o utilizador pode alterá-las.
  */
 export function eventosSugeridos(docs: DocumentoViagem[]): EventoAviso[] {
   const eventos: EventoAviso[] = [];
 
   for (const doc of docs) {
-    const quando = doc.ficha.dataHora;
-    if (!quando) continue;
-    const base = {
-      documentoId: doc.id,
-      documentoNome: doc.nome,
-      local: doc.ficha.local,
-      ativo: doc.destacar,
-    };
-    const juntar = (
-      tipo: TipoEvento,
-      momento: string,
-      antecipacaoMin: number,
-      titulo?: string,
-    ) => {
-      if (!momento) return;
+    for (const e of eventosDaFicha({ ...doc.ficha, categoria: categoria(doc) }, doc.nome)) {
       eventos.push({
-        ...base,
-        id: `${doc.id}:${tipo}`,
-        tipo,
-        titulo: titulo ?? rotuloTipo[tipo],
-        quando: momento,
-        antecipacaoMin,
+        documentoId: doc.id,
+        documentoNome: doc.nome,
+        ativo: doc.destacar,
+        id: `${doc.id}:${e.tipo}`,
+        tipo: e.tipo,
+        titulo: e.titulo,
+        local: e.local,
+        quando: e.quando,
+        antecipacaoMin: e.antecipacaoMin,
       });
-    };
-
-    switch (categoria(doc)) {
-      case "voo":
-        juntar("checkin_voo", desloca(quando, -24 * 60), 60);
-        juntar("sair_para_aeroporto", desloca(quando, -3 * 60), 60);
-        juntar("embarque", desloca(quando, -40), 15);
-        break;
-      case "transfer":
-        juntar("recolha_transfer", new Date(quando).toISOString(), 60);
-        break;
-      case "hotel":
-        juntar("checkin_hotel", new Date(quando).toISOString(), 180);
-        if (doc.ficha.dataHoraFim) {
-          juntar("checkout_hotel", new Date(doc.ficha.dataHoraFim).toISOString(), 60);
-        }
-        break;
-      default:
-        juntar("outro", new Date(quando).toISOString(), 1440, `Lembrete — ${doc.nome}`);
     }
   }
+
 
   return eventos.sort((a, b) => a.quando.localeCompare(b.quando));
 }

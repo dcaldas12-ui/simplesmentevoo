@@ -38,7 +38,13 @@ import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
 import { supabase } from "@/integrations/supabase/client";
 import { analisarDocumento } from "@/lib/documentos-ia.functions";
-import { fichaVazia, type FichaDocumento } from "@/lib/documentos";
+import {
+  camposDaFicha,
+  camposPorConfirmar,
+  fichaVazia,
+  type FichaDocumento,
+} from "@/lib/documentos";
+import { eventosDaFicha } from "@/lib/avisos";
 
 export const Route = createFileRoute("/_authenticated/documentos")({
   head: () => ({
@@ -223,7 +229,9 @@ function HistoricoDocumentos() {
   const { data: viagens } = useQuery({
     queryKey: ["viagens-nomes"],
     queryFn: async () => {
-      const { data, error } = await supabase.from("viagens").select("id, titulo");
+      const { data, error } = await supabase
+        .from("viagens")
+        .select("id, titulo, destino, data_inicio, data_fim");
       if (error) throw error;
       return data ?? [];
     },
@@ -251,13 +259,64 @@ function HistoricoDocumentos() {
         .toLowerCase();
       return alvo.includes(q);
     });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [docs, procura, filtro, viagens]);
+
+
+
+  /** Encontra a viagem que corresponde às datas/destino extraídos, se existir. */
+  function viagemCorrespondente(f: FichaDocumento): string | null {
+    const lista = viagens ?? [];
+    if (lista.length === 0) return null;
+    const ts = f.dataHora ? new Date(f.dataHora).getTime() : NaN;
+    if (Number.isFinite(ts)) {
+      const porData = lista.find((v) => {
+        if (!v.data_inicio) return false;
+        const ini = new Date(`${v.data_inicio}T00:00`).getTime();
+        const fim = new Date(`${v.data_fim ?? v.data_inicio}T23:59`).getTime();
+        return ts >= ini - 24 * 3600 * 1000 && ts <= fim + 24 * 3600 * 1000;
+      });
+      if (porData) return porData.id;
+    }
+    const alvo = `${f.destino} ${f.local} ${f.morada}`.toLowerCase();
+    const porDestino = lista.find(
+      (v) => v.destino && alvo.includes(String(v.destino).toLowerCase()),
+    );
+    return porDestino?.id ?? null;
+  }
+
+  /** Cria (substituindo) os avisos derivados da ficha analisada. */
+  async function sincronizarAvisos(
+    documentoId: string,
+    viagemId: string | null,
+    nome: string,
+    f: FichaDocumento,
+  ) {
+    const eventos = eventosDaFicha(f, nome);
+    await supabase.from("avisos").delete().eq("documento_id", documentoId);
+    if (eventos.length === 0) return 0;
+    const { error } = await supabase.from("avisos").insert(
+      eventos.map((e) => ({
+        documento_id: documentoId,
+        viagem_id: viagemId,
+        tipo: e.tipo,
+        titulo: e.titulo,
+        local: e.local || null,
+        quando: e.quando,
+        antecipacao_min: e.antecipacaoMin,
+        origem: "documento",
+      })),
+    );
+    if (error) return 0;
+    return eventos.length;
+  }
 
   /** Corre extração → análise → validação → conclusão, com estados reais gravados. */
   async function processar(
     id: string,
-    entrada: { nome: string; texto?: string | null; imagem?: string | null },
+    entrada: { nome: string; texto?: string | null; imagem?: string | null; pdf?: string | null },
     comProgresso: boolean,
+    viagemAtual: string | null = null,
   ) {
     const marcar = async (estado: Estado, extra: Record<string, unknown> = {}) => {
       if (comProgresso) setEtapaAtual(estado);
@@ -278,13 +337,26 @@ function HistoricoDocumentos() {
         throw new Error("A análise não devolveu dados legíveis deste ficheiro.");
       }
 
+      const viagemId = viagemAtual ?? viagemCorrespondente(r.ficha);
       await marcar("concluido", {
         dados_extraidos: r.ficha,
         resumo: resumoDe(r.ficha),
         erro_processamento: null,
         processado_em: new Date().toISOString(),
+        ...(viagemId ? { viagem_id: viagemId } : {}),
       });
-      toast.success("Documento analisado e guardado.");
+      const nAvisos = await sincronizarAvisos(id, viagemId, entrada.nome, r.ficha);
+      const porConfirmar = camposPorConfirmar(r.ficha).length;
+      toast.success(
+        [
+          "Documento analisado e guardado.",
+          viagemId ? `Associado a ${tituloViagem(viagemId)}.` : "",
+          nAvisos ? `${nAvisos} aviso(s) criado(s).` : "",
+          porConfirmar ? `${porConfirmar} campo(s) a confirmar.` : "",
+        ]
+          .filter(Boolean)
+          .join(" "),
+      );
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Não foi possível analisar este documento.";
       await marcar("falhou", { erro_processamento: msg });
@@ -293,6 +365,7 @@ function HistoricoDocumentos() {
       if (comProgresso) setEtapaAtual(null);
     }
   }
+
 
   async function enviarFicheiro(file: File) {
     const tipoOk = file.type === "application/pdf" || file.type.startsWith("image/");
@@ -360,8 +433,17 @@ function HistoricoDocumentos() {
       id = inserido.id;
       await invalidar();
 
-      const imagem = file.type.startsWith("image/") ? await ficheiroParaDataUrl(file) : null;
-      await processar(id, { nome: file.name, imagem }, true);
+      const éImagem = file.type.startsWith("image/");
+      const dataUrl = await ficheiroParaDataUrl(file);
+      await processar(
+        id,
+        {
+          nome: file.name,
+          imagem: éImagem ? dataUrl : null,
+          pdf: éImagem ? null : dataUrl,
+        },
+        true,
+      );
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Não foi possível carregar o ficheiro.";
       if (id) {
@@ -382,11 +464,19 @@ function HistoricoDocumentos() {
   const reprocessar = useMutation({
     mutationFn: async (d: DocRow) => {
       let imagem: string | null = null;
-      if (d.ficheiro_path && (d.mime_type ?? "").startsWith("image/")) {
+      let pdf: string | null = null;
+      if (d.ficheiro_path) {
         const { data } = await supabase.storage.from("documentos").download(d.ficheiro_path);
-        if (data) imagem = await ficheiroParaDataUrl(data);
+        if (data) {
+          const éImagem = (d.mime_type ?? "").startsWith("image/");
+          const dataUrl = await ficheiroParaDataUrl(
+            new Blob([data], { type: d.mime_type || (éImagem ? "image/jpeg" : "application/pdf") }),
+          );
+          if (éImagem) imagem = dataUrl;
+          else pdf = dataUrl;
+        }
       }
-      await processar(d.id, { nome: d.nome, texto: d.qr_conteudo, imagem }, false);
+      await processar(d.id, { nome: d.nome, texto: d.qr_conteudo, imagem, pdf }, false, d.viagem_id);
     },
   });
 
@@ -742,16 +832,12 @@ function DetalheDialog({
 }) {
   if (!doc) return null;
   const f = ficha(doc);
-  const linhas: Array<[string, string]> = [
-    ["Tipo de documento", f.tipoDocumento],
-    ["Fornecedor", f.fornecedor],
-    ["Passageiro", f.passageiro],
-    ["Local", f.local],
-    ["Referência", f.referencia],
-    ["Data e hora", f.dataHora],
-    ["Fim", f.dataHoraFim],
-    ["Código / QR", f.codigo],
-  ];
+  const aConfirmar = camposPorConfirmar(f);
+  const linhas: Array<[string, string, boolean]> = camposDaFicha(f.categoria).map((c) => [
+    c.rotulo,
+    f[c.chave],
+    aConfirmar.includes(c.chave),
+  ]);
   return (
     <Dialog open onOpenChange={(v) => (v ? null : onFechar())}>
       <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
@@ -768,12 +854,15 @@ function DetalheDialog({
           </p>
         ) : null}
         <dl className="grid gap-2 text-sm">
-          {linhas.map(([rotulo, valor]) => (
+          {linhas.map(([rotulo, valor, confirmar]) => (
             <div
               key={rotulo}
               className="flex flex-wrap justify-between gap-2 border-b border-border/60 pb-2"
             >
-              <dt className="text-muted-foreground">{rotulo}</dt>
+              <dt className="text-muted-foreground">
+                {rotulo}
+                {confirmar ? <span className="ml-1 text-destructive">· a confirmar</span> : null}
+              </dt>
               <dd className="text-right font-medium">{valor || "—"}</dd>
             </div>
           ))}
@@ -807,16 +896,8 @@ function EditarDialog({
   }
   if (!doc) return null;
 
-  const campos: Array<[keyof FichaDocumento, string]> = [
-    ["tipoDocumento", "Tipo de documento"],
-    ["fornecedor", "Fornecedor"],
-    ["passageiro", "Passageiro"],
-    ["local", "Local"],
-    ["referencia", "Referência"],
-    ["dataHora", "Data e hora"],
-    ["dataHoraFim", "Fim"],
-    ["codigo", "Código / QR"],
-  ];
+  const aConfirmar = camposPorConfirmar(dados);
+  const campos = camposDaFicha(dados.categoria);
 
   async function guardar() {
     if (!doc) return;
@@ -858,13 +939,18 @@ function EditarDialog({
           />
         </div>
         <div className="grid gap-3 sm:grid-cols-2">
-          {campos.map(([chave, rotulo]) => (
-            <div key={chave}>
-              <Label htmlFor={`edit-${chave}`}>{rotulo}</Label>
+          {campos.map((c) => (
+            <div key={c.chave} className={c.largo ? "sm:col-span-2" : undefined}>
+              <Label htmlFor={`edit-${c.chave}`}>
+                {c.rotulo}
+                {aConfirmar.includes(c.chave) ? (
+                  <span className="ml-1 text-destructive">· a confirmar</span>
+                ) : null}
+              </Label>
               <Input
-                id={`edit-${chave}`}
-                value={dados[chave]}
-                onChange={(e) => setDados({ ...dados, [chave]: e.target.value })}
+                id={`edit-${c.chave}`}
+                value={dados[c.chave]}
+                onChange={(e) => setDados({ ...dados, [c.chave]: e.target.value })}
                 className="mt-1"
               />
             </div>

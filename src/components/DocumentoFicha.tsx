@@ -13,18 +13,20 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import type { DocumentoViagem, FichaDocumento } from "@/lib/documentos";
+import {
+  camposDaFicha,
+  camposPorConfirmar,
+  type DocumentoViagem,
+  type FichaDocumento,
+} from "@/lib/documentos";
 
-const campos: Array<{ chave: keyof FichaDocumento; rotulo: string; tipo?: string }> = [
-  { chave: "tipoDocumento", rotulo: "Tipo de documento" },
-  { chave: "fornecedor", rotulo: "Fornecedor" },
-  { chave: "passageiro", rotulo: "Passageiro" },
-  { chave: "local", rotulo: "Local" },
-  { chave: "referencia", rotulo: "Referência" },
-  { chave: "dataHora", rotulo: "Data e hora", tipo: "datetime-local" },
-  { chave: "dataHoraFim", rotulo: "Fim (ex.: check-out)", tipo: "datetime-local" },
-  { chave: "codigo", rotulo: "Código / QR" },
+const categorias: Array<{ valor: string; rotulo: string }> = [
+  { valor: "voo", rotulo: "Voo" },
+  { valor: "hotel", rotulo: "Alojamento" },
+  { valor: "transfer", rotulo: "Transfer" },
+  { valor: "outro", rotulo: "Outro" },
 ];
+
 
 export function DocumentoFicha({
   documento,
@@ -49,6 +51,9 @@ export function DocumentoFicha({
 
   if (!documento || !ficha) return null;
 
+  const porConfirmar = camposPorConfirmar(ficha);
+
+
   return (
     <Dialog open={aberto} onOpenChange={(v) => (v ? null : onFechar())}>
       <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
@@ -66,10 +71,37 @@ export function DocumentoFicha({
           </p>
         ) : null}
 
+        {porConfirmar.length > 0 ? (
+          <p className="rounded-xl bg-destructive/10 px-3 py-2 text-xs text-destructive" role="note">
+            Confirme os campos assinalados: a leitura não teve certeza deles.
+          </p>
+        ) : null}
+
+        <div>
+          <Label htmlFor="ficha-categoria">Categoria</Label>
+          <select
+            id="ficha-categoria"
+            value={ficha.categoria || "outro"}
+            onChange={(e) => setFicha({ ...ficha, categoria: e.target.value })}
+            className="mt-1 h-11 w-full rounded-md border border-input bg-background px-3 text-sm"
+          >
+            {categorias.map((c) => (
+              <option key={c.valor} value={c.valor}>
+                {c.rotulo}
+              </option>
+            ))}
+          </select>
+        </div>
+
         <div className="grid gap-3 sm:grid-cols-2">
-          {campos.map((c) => (
-            <div key={c.chave} className={c.chave === "codigo" ? "sm:col-span-2" : undefined}>
-              <Label htmlFor={`ficha-${c.chave}`}>{c.rotulo}</Label>
+          {camposDaFicha(ficha.categoria).map((c) => (
+            <div key={c.chave} className={c.largo ? "sm:col-span-2" : undefined}>
+              <Label htmlFor={`ficha-${c.chave}`}>
+                {c.rotulo}
+                {porConfirmar.includes(c.chave) ? (
+                  <span className="ml-1 text-destructive">· a confirmar</span>
+                ) : null}
+              </Label>
               <Input
                 id={`ficha-${c.chave}`}
                 type={c.tipo ?? "text"}
@@ -80,6 +112,7 @@ export function DocumentoFicha({
             </div>
           ))}
         </div>
+
 
         <div className="flex items-center justify-between rounded-xl border border-border p-3">
           <div className="pr-4">
