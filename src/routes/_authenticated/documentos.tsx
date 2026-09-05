@@ -810,16 +810,12 @@ function DetalheDialog({
 }) {
   if (!doc) return null;
   const f = ficha(doc);
-  const linhas: Array<[string, string]> = [
-    ["Tipo de documento", f.tipoDocumento],
-    ["Fornecedor", f.fornecedor],
-    ["Passageiro", f.passageiro],
-    ["Local", f.local],
-    ["Referência", f.referencia],
-    ["Data e hora", f.dataHora],
-    ["Fim", f.dataHoraFim],
-    ["Código / QR", f.codigo],
-  ];
+  const aConfirmar = camposPorConfirmar(f);
+  const linhas: Array<[string, string, boolean]> = camposDaFicha(f.categoria).map((c) => [
+    c.rotulo,
+    f[c.chave],
+    aConfirmar.includes(c.chave),
+  ]);
   return (
     <Dialog open onOpenChange={(v) => (v ? null : onFechar())}>
       <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
@@ -836,12 +832,15 @@ function DetalheDialog({
           </p>
         ) : null}
         <dl className="grid gap-2 text-sm">
-          {linhas.map(([rotulo, valor]) => (
+          {linhas.map(([rotulo, valor, confirmar]) => (
             <div
               key={rotulo}
               className="flex flex-wrap justify-between gap-2 border-b border-border/60 pb-2"
             >
-              <dt className="text-muted-foreground">{rotulo}</dt>
+              <dt className="text-muted-foreground">
+                {rotulo}
+                {confirmar ? <span className="ml-1 text-destructive">· a confirmar</span> : null}
+              </dt>
               <dd className="text-right font-medium">{valor || "—"}</dd>
             </div>
           ))}
@@ -875,16 +874,8 @@ function EditarDialog({
   }
   if (!doc) return null;
 
-  const campos: Array<[keyof FichaDocumento, string]> = [
-    ["tipoDocumento", "Tipo de documento"],
-    ["fornecedor", "Fornecedor"],
-    ["passageiro", "Passageiro"],
-    ["local", "Local"],
-    ["referencia", "Referência"],
-    ["dataHora", "Data e hora"],
-    ["dataHoraFim", "Fim"],
-    ["codigo", "Código / QR"],
-  ];
+  const aConfirmar = camposPorConfirmar(dados);
+  const campos = camposDaFicha(dados.categoria);
 
   async function guardar() {
     if (!doc) return;
@@ -926,13 +917,18 @@ function EditarDialog({
           />
         </div>
         <div className="grid gap-3 sm:grid-cols-2">
-          {campos.map(([chave, rotulo]) => (
-            <div key={chave}>
-              <Label htmlFor={`edit-${chave}`}>{rotulo}</Label>
+          {campos.map((c) => (
+            <div key={c.chave} className={c.largo ? "sm:col-span-2" : undefined}>
+              <Label htmlFor={`edit-${c.chave}`}>
+                {c.rotulo}
+                {aConfirmar.includes(c.chave) ? (
+                  <span className="ml-1 text-destructive">· a confirmar</span>
+                ) : null}
+              </Label>
               <Input
-                id={`edit-${chave}`}
-                value={dados[chave]}
-                onChange={(e) => setDados({ ...dados, [chave]: e.target.value })}
+                id={`edit-${c.chave}`}
+                value={dados[c.chave]}
+                onChange={(e) => setDados({ ...dados, [c.chave]: e.target.value })}
                 className="mt-1"
               />
             </div>
