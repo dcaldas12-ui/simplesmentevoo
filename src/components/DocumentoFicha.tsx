@@ -68,10 +68,37 @@ export function DocumentoFicha({
           </p>
         ) : null}
 
+        {porConfirmar.length > 0 ? (
+          <p className="rounded-xl bg-destructive/10 px-3 py-2 text-xs text-destructive" role="note">
+            Confirme os campos assinalados: a leitura não teve certeza deles.
+          </p>
+        ) : null}
+
+        <div>
+          <Label htmlFor="ficha-categoria">Categoria</Label>
+          <select
+            id="ficha-categoria"
+            value={ficha.categoria || "outro"}
+            onChange={(e) => setFicha({ ...ficha, categoria: e.target.value })}
+            className="mt-1 h-11 w-full rounded-md border border-input bg-background px-3 text-sm"
+          >
+            {categorias.map((c) => (
+              <option key={c.valor} value={c.valor}>
+                {c.rotulo}
+              </option>
+            ))}
+          </select>
+        </div>
+
         <div className="grid gap-3 sm:grid-cols-2">
-          {campos.map((c) => (
-            <div key={c.chave} className={c.chave === "codigo" ? "sm:col-span-2" : undefined}>
-              <Label htmlFor={`ficha-${c.chave}`}>{c.rotulo}</Label>
+          {camposDaFicha(ficha.categoria).map((c) => (
+            <div key={c.chave} className={c.largo ? "sm:col-span-2" : undefined}>
+              <Label htmlFor={`ficha-${c.chave}`}>
+                {c.rotulo}
+                {porConfirmar.includes(c.chave) ? (
+                  <span className="ml-1 text-destructive">· a confirmar</span>
+                ) : null}
+              </Label>
               <Input
                 id={`ficha-${c.chave}`}
                 type={c.tipo ?? "text"}
@@ -82,6 +109,7 @@ export function DocumentoFicha({
             </div>
           ))}
         </div>
+
 
         <div className="flex items-center justify-between rounded-xl border border-border p-3">
           <div className="pr-4">
