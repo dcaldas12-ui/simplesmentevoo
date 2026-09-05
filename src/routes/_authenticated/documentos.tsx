@@ -223,7 +223,9 @@ function HistoricoDocumentos() {
   const { data: viagens } = useQuery({
     queryKey: ["viagens-nomes"],
     queryFn: async () => {
-      const { data, error } = await supabase.from("viagens").select("id, titulo");
+      const { data, error } = await supabase
+        .from("viagens")
+        .select("id, titulo, destino, data_inicio, data_fim");
       if (error) throw error;
       return data ?? [];
     },
@@ -234,30 +236,59 @@ function HistoricoDocumentos() {
 
   const invalidar = () => queryClient.invalidateQueries({ queryKey: ["historico-documentos"] });
 
-  const lista = useMemo(() => {
-    const q = procura.trim().toLowerCase();
-    return (docs ?? []).filter((d) => {
-      if (filtro !== "todos" && estadoDe(d) !== filtro) return false;
-      if (!q) return true;
-      const alvo = [
-        d.nome,
-        d.tipo,
-        d.origem,
-        d.resumo ?? "",
-        tituloViagem(d.viagem_id) ?? "",
-        resumoDe(ficha(d)),
-      ]
-        .join(" ")
-        .toLowerCase();
-      return alvo.includes(q);
-    });
-  }, [docs, procura, filtro, viagens]);
+  /** Encontra a viagem que corresponde às datas/destino extraídos, se existir. */
+  function viagemCorrespondente(f: FichaDocumento): string | null {
+    const lista = viagens ?? [];
+    if (lista.length === 0) return null;
+    const ts = f.dataHora ? new Date(f.dataHora).getTime() : NaN;
+    if (Number.isFinite(ts)) {
+      const porData = lista.find((v) => {
+        if (!v.data_inicio) return false;
+        const ini = new Date(`${v.data_inicio}T00:00`).getTime();
+        const fim = new Date(`${v.data_fim ?? v.data_inicio}T23:59`).getTime();
+        return ts >= ini - 24 * 3600 * 1000 && ts <= fim + 24 * 3600 * 1000;
+      });
+      if (porData) return porData.id;
+    }
+    const alvo = `${f.destino} ${f.local} ${f.morada}`.toLowerCase();
+    const porDestino = lista.find(
+      (v) => v.destino && alvo.includes(String(v.destino).toLowerCase()),
+    );
+    return porDestino?.id ?? null;
+  }
+
+  /** Cria (substituindo) os avisos derivados da ficha analisada. */
+  async function sincronizarAvisos(
+    documentoId: string,
+    viagemId: string | null,
+    nome: string,
+    f: FichaDocumento,
+  ) {
+    const eventos = eventosDaFicha(f, nome);
+    await supabase.from("avisos").delete().eq("documento_id", documentoId);
+    if (eventos.length === 0) return 0;
+    const { error } = await supabase.from("avisos").insert(
+      eventos.map((e) => ({
+        documento_id: documentoId,
+        viagem_id: viagemId,
+        tipo: e.tipo,
+        titulo: e.titulo,
+        local: e.local || null,
+        quando: e.quando,
+        antecipacao_min: e.antecipacaoMin,
+        origem: "documento",
+      })),
+    );
+    if (error) return 0;
+    return eventos.length;
+  }
 
   /** Corre extração → análise → validação → conclusão, com estados reais gravados. */
   async function processar(
     id: string,
-    entrada: { nome: string; texto?: string | null; imagem?: string | null },
+    entrada: { nome: string; texto?: string | null; imagem?: string | null; pdf?: string | null },
     comProgresso: boolean,
+    viagemAtual: string | null = null,
   ) {
     const marcar = async (estado: Estado, extra: Record<string, unknown> = {}) => {
       if (comProgresso) setEtapaAtual(estado);
@@ -278,13 +309,26 @@ function HistoricoDocumentos() {
         throw new Error("A análise não devolveu dados legíveis deste ficheiro.");
       }
 
+      const viagemId = viagemAtual ?? viagemCorrespondente(r.ficha);
       await marcar("concluido", {
         dados_extraidos: r.ficha,
         resumo: resumoDe(r.ficha),
         erro_processamento: null,
         processado_em: new Date().toISOString(),
+        ...(viagemId ? { viagem_id: viagemId } : {}),
       });
-      toast.success("Documento analisado e guardado.");
+      const nAvisos = await sincronizarAvisos(id, viagemId, entrada.nome, r.ficha);
+      const porConfirmar = camposPorConfirmar(r.ficha).length;
+      toast.success(
+        [
+          "Documento analisado e guardado.",
+          viagemId ? `Associado a ${tituloViagem(viagemId)}.` : "",
+          nAvisos ? `${nAvisos} aviso(s) criado(s).` : "",
+          porConfirmar ? `${porConfirmar} campo(s) a confirmar.` : "",
+        ]
+          .filter(Boolean)
+          .join(" "),
+      );
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Não foi possível analisar este documento.";
       await marcar("falhou", { erro_processamento: msg });
@@ -293,6 +337,7 @@ function HistoricoDocumentos() {
       if (comProgresso) setEtapaAtual(null);
     }
   }
+
 
   async function enviarFicheiro(file: File) {
     const tipoOk = file.type === "application/pdf" || file.type.startsWith("image/");
