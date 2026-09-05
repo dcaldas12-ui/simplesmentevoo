@@ -51,6 +51,9 @@ export function DocumentoFicha({
 
   if (!documento || !ficha) return null;
 
+  const porConfirmar = camposPorConfirmar(ficha);
+
+
   return (
     <Dialog open={aberto} onOpenChange={(v) => (v ? null : onFechar())}>
       <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
