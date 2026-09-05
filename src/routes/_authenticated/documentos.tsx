@@ -242,6 +242,28 @@ function HistoricoDocumentos() {
 
   const invalidar = () => queryClient.invalidateQueries({ queryKey: ["historico-documentos"] });
 
+  const lista = useMemo(() => {
+    const q = procura.trim().toLowerCase();
+    return (docs ?? []).filter((d) => {
+      if (filtro !== "todos" && estadoDe(d) !== filtro) return false;
+      if (!q) return true;
+      const alvo = [
+        d.nome,
+        d.tipo,
+        d.origem,
+        d.resumo ?? "",
+        tituloViagem(d.viagem_id) ?? "",
+        resumoDe(ficha(d)),
+      ]
+        .join(" ")
+        .toLowerCase();
+      return alvo.includes(q);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [docs, procura, filtro, viagens]);
+
+
+
   /** Encontra a viagem que corresponde às datas/destino extraídos, se existir. */
   function viagemCorrespondente(f: FichaDocumento): string | null {
     const lista = viagens ?? [];
