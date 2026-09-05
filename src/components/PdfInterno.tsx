@@ -39,7 +39,7 @@ function PaginaPdf({ pdf, numero }: { pdf: PDFDocumentProxy; numero: number }) {
         canvas.style.height = `${Math.floor(viewport.height / pixelRatio)}px`;
         const contexto = canvas.getContext("2d", { alpha: false });
         if (!contexto) throw new Error("Canvas indisponível");
-        const render = pagina.render({ canvas, canvasContext: contexto, viewport });
+        const render = pagina.render({ canvasContext: contexto, viewport });
         tarefa = render;
         await render.promise;
       } catch (e) {
@@ -82,7 +82,6 @@ export function PdfInterno({ url, nome }: Props) {
     tarefa.promise
       .then((documento) => {
         if (ativo) setPdf(documento);
-        else void documento.destroy();
       })
       .catch(() => {
         if (!ativo) return;
