@@ -13,18 +13,20 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import type { DocumentoViagem, FichaDocumento } from "@/lib/documentos";
+import {
+  camposDaFicha,
+  camposPorConfirmar,
+  type DocumentoViagem,
+  type FichaDocumento,
+} from "@/lib/documentos";
 
-const campos: Array<{ chave: keyof FichaDocumento; rotulo: string; tipo?: string }> = [
-  { chave: "tipoDocumento", rotulo: "Tipo de documento" },
-  { chave: "fornecedor", rotulo: "Fornecedor" },
-  { chave: "passageiro", rotulo: "Passageiro" },
-  { chave: "local", rotulo: "Local" },
-  { chave: "referencia", rotulo: "Referência" },
-  { chave: "dataHora", rotulo: "Data e hora", tipo: "datetime-local" },
-  { chave: "dataHoraFim", rotulo: "Fim (ex.: check-out)", tipo: "datetime-local" },
-  { chave: "codigo", rotulo: "Código / QR" },
+const categorias: Array<{ valor: string; rotulo: string }> = [
+  { valor: "voo", rotulo: "Voo" },
+  { valor: "hotel", rotulo: "Alojamento" },
+  { valor: "transfer", rotulo: "Transfer" },
+  { valor: "outro", rotulo: "Outro" },
 ];
+
 
 export function DocumentoFicha({
   documento,
