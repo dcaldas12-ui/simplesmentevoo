@@ -15,7 +15,7 @@ type Props = {
 function PaginaPdf({ pdf, numero }: { pdf: PDFDocumentProxy; numero: number }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
-  const [erro, setErro] = useState(false);
+  const [erro, setErro] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelado = false;
@@ -44,7 +44,7 @@ function PaginaPdf({ pdf, numero }: { pdf: PDFDocumentProxy; numero: number }) {
         await render.promise;
       } catch (e) {
         if (!cancelado && !(e instanceof Error && e.name === "RenderingCancelledException")) {
-          setErro(true);
+          setErro(e instanceof Error ? e.message : "Erro desconhecido");
         }
       }
     }
@@ -59,7 +59,9 @@ function PaginaPdf({ pdf, numero }: { pdf: PDFDocumentProxy; numero: number }) {
   return (
     <div ref={wrapperRef} className="flex w-full justify-center" aria-label={`Página ${numero}`}>
       {erro ? (
-        <p className="p-6 text-sm text-destructive">Não foi possível apresentar esta página.</p>
+        <p className="p-6 text-sm text-destructive" title={erro}>
+          Não foi possível apresentar esta página. {erro}
+        </p>
       ) : (
         <canvas ref={canvasRef} className="max-w-full bg-white shadow-sm" />
       )}
