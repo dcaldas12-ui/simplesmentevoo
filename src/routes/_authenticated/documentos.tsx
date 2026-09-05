@@ -414,7 +414,9 @@ function HistoricoDocumentos() {
       });
       return;
     }
-    const blob = data.type || !d.mime_type ? data : new Blob([data], { type: d.mime_type });
+    const mimeEsperado =
+      d.mime_type || (d.nome.toLowerCase().endsWith(".pdf") ? "application/pdf" : data.type);
+    const blob = new Blob([data], { type: mimeEsperado || "application/octet-stream" });
     const objectUrl = URL.createObjectURL(blob);
     urlVisualizacaoRef.current = objectUrl;
     setVisualizar({
@@ -707,6 +709,9 @@ function HistoricoDocumentos() {
         aCarregar={visualizar?.aCarregar}
         erro={visualizar?.erro ?? null}
         iniciarLeitura={visualizar?.leitura ?? false}
+        onTentarNovamente={
+          visualizar ? () => void verFicheiro(visualizar.doc, visualizar.leitura) : undefined
+        }
         onFechar={() => {
           libertarUrlVisualizacao();
           setVisualizar(null);
