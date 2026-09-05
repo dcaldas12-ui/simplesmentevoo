@@ -224,7 +224,7 @@ export function VisualizadorDocumento({
               />
             </div>
           ) : éPdf ? (
-            <PdfInterno url={url} nome={nome} onErro={onTentarNovamente} />
+            <PdfInterno url={url} nome={nome} />
           ) : (
             <div className="flex min-h-64 flex-col items-center justify-center gap-4 p-6 text-center">
               <p className="max-w-md text-sm text-destructive" role="alert">

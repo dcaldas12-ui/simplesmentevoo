@@ -10,7 +10,6 @@ GlobalWorkerOptions.workerSrc = workerSrc;
 type Props = {
   url: string;
   nome: string;
-  onErro?: (() => void) | undefined;
 };
 
 function PaginaPdf({ pdf, numero }: { pdf: PDFDocumentProxy; numero: number }) {
@@ -68,7 +67,7 @@ function PaginaPdf({ pdf, numero }: { pdf: PDFDocumentProxy; numero: number }) {
   );
 }
 
-export function PdfInterno({ url, nome, onErro }: Props) {
+export function PdfInterno({ url, nome }: Props) {
   const [pdf, setPdf] = useState<PDFDocumentProxy | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [tentativa, setTentativa] = useState(0);
@@ -86,13 +85,12 @@ export function PdfInterno({ url, nome, onErro }: Props) {
       .catch(() => {
         if (!ativo) return;
         setErro("O PDF foi descarregado, mas não foi possível apresentar o conteúdo.");
-        onErro?.();
       });
     return () => {
       ativo = false;
       void tarefa.destroy();
     };
-  }, [url, tentativa, onErro]);
+  }, [url, tentativa]);
 
   if (erro) {
     return (
