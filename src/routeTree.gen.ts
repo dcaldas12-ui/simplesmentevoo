@@ -15,6 +15,7 @@ import { Route as AjudaRouteImport } from './routes/ajuda'
 import { Route as AuthRouteImport } from './routes/auth'
 import { Route as AvisosRouteImport } from './routes/avisos'
 import { Route as DocumentosDemoRouteImport } from './routes/documentos-demo'
+import { Route as ImportarRouteImport } from './routes/importar'
 import { Route as OfflineRouteImport } from './routes/offline'
 import { Route as PesquisaRouteImport } from './routes/pesquisa'
 import { Route as AuthenticatedDocumentosRouteImport } from './routes/_authenticated/documentos'
@@ -49,6 +50,11 @@ const AvisosRoute = AvisosRouteImport.update({
 const DocumentosDemoRoute = DocumentosDemoRouteImport.update({
   id: '/documentos-demo',
   path: '/documentos-demo',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ImportarRoute = ImportarRouteImport.update({
+  id: '/importar',
+  path: '/importar',
   getParentRoute: () => rootRouteImport,
 } as any)
 const OfflineRoute = OfflineRouteImport.update({
@@ -90,6 +96,7 @@ export interface FileRoutesByFullPath {
   '/auth': typeof AuthRoute
   '/avisos': typeof AvisosRoute
   '/documentos-demo': typeof DocumentosDemoRoute
+  '/importar': typeof ImportarRoute
   '/offline': typeof OfflineRoute
   '/pesquisa': typeof PesquisaRoute
   '/documentos': typeof AuthenticatedDocumentosRoute
@@ -103,6 +110,7 @@ export interface FileRoutesByTo {
   '/auth': typeof AuthRoute
   '/avisos': typeof AvisosRoute
   '/documentos-demo': typeof DocumentosDemoRoute
+  '/importar': typeof ImportarRoute
   '/offline': typeof OfflineRoute
   '/pesquisa': typeof PesquisaRoute
   '/documentos': typeof AuthenticatedDocumentosRoute
@@ -118,6 +126,7 @@ export interface FileRoutesById {
   '/auth': typeof AuthRoute
   '/avisos': typeof AvisosRoute
   '/documentos-demo': typeof DocumentosDemoRoute
+  '/importar': typeof ImportarRoute
   '/offline': typeof OfflineRoute
   '/pesquisa': typeof PesquisaRoute
   '/_authenticated/documentos': typeof AuthenticatedDocumentosRoute
@@ -133,6 +142,7 @@ export interface FileRouteTypes {
     | '/auth'
     | '/avisos'
     | '/documentos-demo'
+    | '/importar'
     | '/offline'
     | '/pesquisa'
     | '/documentos'
@@ -146,6 +156,7 @@ export interface FileRouteTypes {
     | '/auth'
     | '/avisos'
     | '/documentos-demo'
+    | '/importar'
     | '/offline'
     | '/pesquisa'
     | '/documentos'
@@ -160,6 +171,7 @@ export interface FileRouteTypes {
     | '/auth'
     | '/avisos'
     | '/documentos-demo'
+    | '/importar'
     | '/offline'
     | '/pesquisa'
     | '/_authenticated/documentos'
@@ -175,6 +187,7 @@ export interface RootRouteChildren {
   AuthRoute: typeof AuthRoute
   AvisosRoute: typeof AvisosRoute
   DocumentosDemoRoute: typeof DocumentosDemoRoute
+  ImportarRoute: typeof ImportarRoute
   OfflineRoute: typeof OfflineRoute
   PesquisaRoute: typeof PesquisaRoute
 }
@@ -221,6 +234,13 @@ declare module '@tanstack/react-router' {
       path: '/documentos-demo'
       fullPath: '/documentos-demo'
       preLoaderRoute: typeof DocumentosDemoRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/importar': {
+      id: '/importar'
+      path: '/importar'
+      fullPath: '/importar'
+      preLoaderRoute: typeof ImportarRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/offline': {
@@ -292,6 +312,7 @@ const rootRouteChildren: RootRouteChildren = {
   AuthRoute: AuthRoute,
   AvisosRoute: AvisosRoute,
   DocumentosDemoRoute: DocumentosDemoRoute,
+  ImportarRoute: ImportarRoute,
   OfflineRoute: OfflineRoute,
   PesquisaRoute: PesquisaRoute,
 }
