@@ -35,7 +35,10 @@ export const apagarConta = createServerFn({ method: "POST" })
 
     for (const tabela of tabelas) {
       // Algumas tabelas podem não existir em todos os ambientes: ignorar em silêncio.
-      await (supabaseAdmin.from(tabela as never) as any).delete().eq("user_id", userId);
+      const consulta = supabaseAdmin.from(tabela as never).delete() as unknown as {
+        eq: (coluna: string, valor: string) => PromiseLike<unknown>;
+      };
+      await consulta.eq("user_id", userId);
     }
 
     const { error } = await supabaseAdmin.auth.admin.deleteUser(userId);

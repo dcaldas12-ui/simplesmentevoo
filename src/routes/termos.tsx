@@ -46,8 +46,8 @@ function Termos() {
         <Seccao titulo="O que a app faz">
           <p>
             A Simplesmente voo ajuda a comparar datas e preços de voos, a organizar viagens e
-            documentos e a criar avisos. Enquanto não estiver ligada a uma fonte de preços real,
-            os resultados apresentados são exemplos claramente identificados como demonstração.
+            documentos e a criar avisos. Enquanto não estiver ligada a uma fonte de preços real, os
+            resultados apresentados são exemplos claramente identificados como demonstração.
           </p>
         </Seccao>
 

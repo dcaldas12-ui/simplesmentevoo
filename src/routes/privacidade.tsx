@@ -53,18 +53,18 @@ function Privacidade() {
         <Seccao titulo="Para que servem e com que base legal">
           <p>
             Execução do serviço que pediu (artigo 6.º, n.º 1, alínea b): conta, viagens, documentos
-            e avisos. Consentimento (alínea a): análise de eventos que decida importar do
-            calendário ou de emails, notificações push e guardar documentos para uso offline. Pode
-            retirar o consentimento a qualquer momento.
+            e avisos. Consentimento (alínea a): análise de eventos que decida importar do calendário
+            ou de emails, notificações push e guardar documentos para uso offline. Pode retirar o
+            consentimento a qualquer momento.
           </p>
         </Seccao>
 
         <Seccao titulo="Documentos e análise automática">
           <p>
-            Os ficheiros ficam num armazenamento privado, acessível apenas à sua conta. Para
-            extrair dados de bilhetes e reservas, o conteúdo pode ser enviado a um serviço de
-            inteligência artificial que o processa apenas para essa resposta. Não usamos os seus
-            documentos para treinar modelos nem para publicidade.
+            Os ficheiros ficam num armazenamento privado, acessível apenas à sua conta. Para extrair
+            dados de bilhetes e reservas, o conteúdo pode ser enviado a um serviço de inteligência
+            artificial que o processa apenas para essa resposta. Não usamos os seus documentos para
+            treinar modelos nem para publicidade.
           </p>
         </Seccao>
 
@@ -104,8 +104,8 @@ function Privacidade() {
 
         <Seccao titulo="Contacto">
           <p>
-            Para questões de privacidade, contacte o responsável pelo tratamento através do
-            endereço indicado na página de{" "}
+            Para questões de privacidade, contacte o responsável pelo tratamento através do endereço
+            indicado na página de{" "}
             <Link to="/ajuda" className="underline underline-offset-4">
               Ajuda
             </Link>
