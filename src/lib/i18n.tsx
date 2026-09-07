@@ -21,7 +21,7 @@ const CHAVE = "simplesmentevoo.idioma";
 /** Português é a base: as outras línguas caem para o texto português quando falta. */
 const pt = {
   "nav.pesquisar": "Pesquisar",
-  "nav.viagens": "Viagens",
+  "nav.viagens": "As minhas Viagens",
   "nav.reservas": "Reservas",
   "nav.documentos": "Documentos",
   "nav.avisos": "Avisos",
