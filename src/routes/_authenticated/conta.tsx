@@ -51,7 +51,7 @@ function Conta() {
   async function confirmarApagar() {
     setAApagar(true);
     try {
-      await apagar({ data: {} });
+      await apagar();
       await supabase.auth.signOut();
       toast.success("Conta e dados apagados.");
       void navigate({ to: "/" });

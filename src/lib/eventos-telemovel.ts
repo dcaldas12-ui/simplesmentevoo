@@ -49,7 +49,7 @@ function numeroVooDe(texto: string) {
 
 function referenciaDe(texto: string) {
   const m = texto.match(/\b(?:ref(?:er[êe]ncia)?|reserva|booking|pnr|localizador)[:\s#]+([A-Z0-9]{5,10})\b/i);
-  return m ? m[1].toUpperCase() : "";
+  return m?.[1] ? m[1].toUpperCase() : "";
 }
 
 /** Lê um ficheiro .ics e devolve apenas os eventos que parecem de viagem. */
@@ -123,7 +123,8 @@ function dataDeTexto(linha: string): string {
   }
   const escrita = linha.match(/\b(\d{1,2})\s*(?:de\s+)?([a-zçéûôA-ZÇÉÛÔ]{3,10})\.?\s*(?:de\s+)?(\d{4})\b/);
   if (escrita) {
-    const mes = MESES[escrita[2].slice(0, 4).toLowerCase()] ?? MESES[escrita[2].slice(0, 3).toLowerCase()];
+    const nomeMes = escrita[2] ?? "";
+    const mes = MESES[nomeMes.slice(0, 4).toLowerCase()] ?? MESES[nomeMes.slice(0, 3).toLowerCase()];
     if (mes !== undefined) {
       const d = new Date(Number(escrita[3]), mes, Number(escrita[1]), hh, mm);
       return Number.isNaN(d.getTime()) ? "" : d.toISOString();

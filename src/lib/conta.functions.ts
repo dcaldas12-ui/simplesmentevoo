@@ -22,7 +22,7 @@ export const apagarConta = createServerFn({ method: "POST" })
         .remove(ficheiros.map((f) => `${userId}/${f.name}`));
     }
 
-    const tabelas = [
+    const tabelas: string[] = [
       "avisos",
       "preferencias_avisos",
       "push_subscricoes",
@@ -31,11 +31,11 @@ export const apagarConta = createServerFn({ method: "POST" })
       "voos",
       "viagens",
       "profiles",
-    ] as const;
+    ];
 
     for (const tabela of tabelas) {
       // Algumas tabelas podem não existir em todos os ambientes: ignorar em silêncio.
-      await supabaseAdmin.from(tabela).delete().eq("user_id", userId);
+      await (supabaseAdmin.from(tabela as never) as any).delete().eq("user_id", userId);
     }
 
     const { error } = await supabaseAdmin.auth.admin.deleteUser(userId);
