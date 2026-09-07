@@ -18,6 +18,9 @@ import { Route as DocumentosDemoRouteImport } from './routes/documentos-demo'
 import { Route as ImportarRouteImport } from './routes/importar'
 import { Route as OfflineRouteImport } from './routes/offline'
 import { Route as PesquisaRouteImport } from './routes/pesquisa'
+import { Route as PrivacidadeRouteImport } from './routes/privacidade'
+import { Route as TermosRouteImport } from './routes/termos'
+import { Route as AuthenticatedContaRouteImport } from './routes/_authenticated/conta'
 import { Route as AuthenticatedDocumentosRouteImport } from './routes/_authenticated/documentos'
 import { Route as AuthenticatedReservasRouteImport } from './routes/_authenticated/reservas'
 import { Route as AuthenticatedViagensIndexRouteImport } from './routes/_authenticated/viagens.index'
@@ -67,6 +70,21 @@ const PesquisaRoute = PesquisaRouteImport.update({
   path: '/pesquisa',
   getParentRoute: () => rootRouteImport,
 } as any)
+const PrivacidadeRoute = PrivacidadeRouteImport.update({
+  id: '/privacidade',
+  path: '/privacidade',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const TermosRoute = TermosRouteImport.update({
+  id: '/termos',
+  path: '/termos',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AuthenticatedContaRoute = AuthenticatedContaRouteImport.update({
+  id: '/conta',
+  path: '/conta',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
 const AuthenticatedDocumentosRoute = AuthenticatedDocumentosRouteImport.update({
   id: '/documentos',
   path: '/documentos',
@@ -99,6 +117,9 @@ export interface FileRoutesByFullPath {
   '/importar': typeof ImportarRoute
   '/offline': typeof OfflineRoute
   '/pesquisa': typeof PesquisaRoute
+  '/privacidade': typeof PrivacidadeRoute
+  '/termos': typeof TermosRoute
+  '/conta': typeof AuthenticatedContaRoute
   '/documentos': typeof AuthenticatedDocumentosRoute
   '/reservas': typeof AuthenticatedReservasRoute
   '/viagens/$viagemId': typeof AuthenticatedViagensViagemIdRoute
@@ -113,6 +134,9 @@ export interface FileRoutesByTo {
   '/importar': typeof ImportarRoute
   '/offline': typeof OfflineRoute
   '/pesquisa': typeof PesquisaRoute
+  '/privacidade': typeof PrivacidadeRoute
+  '/termos': typeof TermosRoute
+  '/conta': typeof AuthenticatedContaRoute
   '/documentos': typeof AuthenticatedDocumentosRoute
   '/reservas': typeof AuthenticatedReservasRoute
   '/viagens/$viagemId': typeof AuthenticatedViagensViagemIdRoute
@@ -129,6 +153,9 @@ export interface FileRoutesById {
   '/importar': typeof ImportarRoute
   '/offline': typeof OfflineRoute
   '/pesquisa': typeof PesquisaRoute
+  '/privacidade': typeof PrivacidadeRoute
+  '/termos': typeof TermosRoute
+  '/_authenticated/conta': typeof AuthenticatedContaRoute
   '/_authenticated/documentos': typeof AuthenticatedDocumentosRoute
   '/_authenticated/reservas': typeof AuthenticatedReservasRoute
   '/_authenticated/viagens/$viagemId': typeof AuthenticatedViagensViagemIdRoute
@@ -145,6 +172,9 @@ export interface FileRouteTypes {
     | '/importar'
     | '/offline'
     | '/pesquisa'
+    | '/privacidade'
+    | '/termos'
+    | '/conta'
     | '/documentos'
     | '/reservas'
     | '/viagens/$viagemId'
@@ -159,6 +189,9 @@ export interface FileRouteTypes {
     | '/importar'
     | '/offline'
     | '/pesquisa'
+    | '/privacidade'
+    | '/termos'
+    | '/conta'
     | '/documentos'
     | '/reservas'
     | '/viagens/$viagemId'
@@ -174,6 +207,9 @@ export interface FileRouteTypes {
     | '/importar'
     | '/offline'
     | '/pesquisa'
+    | '/privacidade'
+    | '/termos'
+    | '/_authenticated/conta'
     | '/_authenticated/documentos'
     | '/_authenticated/reservas'
     | '/_authenticated/viagens/$viagemId'
@@ -190,6 +226,8 @@ export interface RootRouteChildren {
   ImportarRoute: typeof ImportarRoute
   OfflineRoute: typeof OfflineRoute
   PesquisaRoute: typeof PesquisaRoute
+  PrivacidadeRoute: typeof PrivacidadeRoute
+  TermosRoute: typeof TermosRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -257,6 +295,27 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PesquisaRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/privacidade': {
+      id: '/privacidade'
+      path: '/privacidade'
+      fullPath: '/privacidade'
+      preLoaderRoute: typeof PrivacidadeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/termos': {
+      id: '/termos'
+      path: '/termos'
+      fullPath: '/termos'
+      preLoaderRoute: typeof TermosRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/_authenticated/conta': {
+      id: '/_authenticated/conta'
+      path: '/conta'
+      fullPath: '/conta'
+      preLoaderRoute: typeof AuthenticatedContaRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/documentos': {
       id: '/_authenticated/documentos'
       path: '/documentos'
@@ -289,6 +348,7 @@ declare module '@tanstack/react-router' {
 }
 
 interface AuthenticatedRouteRouteChildren {
+  AuthenticatedContaRoute: typeof AuthenticatedContaRoute
   AuthenticatedDocumentosRoute: typeof AuthenticatedDocumentosRoute
   AuthenticatedReservasRoute: typeof AuthenticatedReservasRoute
   AuthenticatedViagensViagemIdRoute: typeof AuthenticatedViagensViagemIdRoute
@@ -296,6 +356,7 @@ interface AuthenticatedRouteRouteChildren {
 }
 
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
+  AuthenticatedContaRoute: AuthenticatedContaRoute,
   AuthenticatedDocumentosRoute: AuthenticatedDocumentosRoute,
   AuthenticatedReservasRoute: AuthenticatedReservasRoute,
   AuthenticatedViagensViagemIdRoute: AuthenticatedViagensViagemIdRoute,
@@ -315,6 +376,8 @@ const rootRouteChildren: RootRouteChildren = {
   ImportarRoute: ImportarRoute,
   OfflineRoute: OfflineRoute,
   PesquisaRoute: PesquisaRoute,
+  PrivacidadeRoute: PrivacidadeRoute,
+  TermosRoute: TermosRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
