@@ -1,15 +1,29 @@
 import { Link, useNavigate } from "@tanstack/react-router";
-import { BellRing, CircleHelp, FileText, LogOut, Luggage, Plane, Search, Ticket } from "lucide-react";
+import {
+  BellRing,
+  CircleHelp,
+  CalendarPlus,
+  FileText,
+  LogOut,
+  Luggage,
+  Plane,
+  Search,
+  Ticket,
+  UserCog,
+} from "lucide-react";
 import type { ReactNode } from "react";
 
 import { InstallHint } from "@/components/InstallHint";
+import { SeletorIdioma } from "@/components/SeletorIdioma";
 import { Button } from "@/components/ui/button";
 import { valoresIniciais } from "@/components/SearchForm";
 import { supabase } from "@/integrations/supabase/client";
 import { useSession } from "@/lib/auth";
+import { useIdioma } from "@/lib/i18n";
 
 export function AppShell({ children }: { children: ReactNode }) {
   const { session } = useSession();
+  const { t } = useIdioma();
   const navigate = useNavigate();
 
   async function sair() {
@@ -18,17 +32,24 @@ export function AppShell({ children }: { children: ReactNode }) {
   }
 
   const ligacoes = [
-    { to: "/pesquisa" as const, search: { ...valoresIniciais }, icon: Search, label: "Pesquisar" },
-    { to: "/viagens" as const, icon: Luggage, label: "Viagens" },
-    ...(session
-      ? [{ to: "/reservas" as const, icon: Ticket, label: "Reservas" }]
-      : []),
+    { to: "/pesquisa" as const, search: { ...valoresIniciais }, icon: Search, label: t("nav.pesquisar") },
+    { to: "/viagens" as const, icon: Luggage, label: t("nav.viagens") },
     session
-      ? { to: "/documentos" as const, icon: FileText, label: "Documentos" }
-      : { to: "/documentos-demo" as const, icon: FileText, label: "Documentos" },
-    { to: "/avisos" as const, icon: BellRing, label: "Avisos" },
+      ? { to: "/documentos" as const, icon: FileText, label: t("nav.documentos") }
+      : { to: "/documentos-demo" as const, icon: FileText, label: t("nav.documentos") },
+    { to: "/importar" as const, icon: CalendarPlus, label: t("nav.importar") },
+    { to: "/avisos" as const, icon: BellRing, label: t("nav.avisos") },
   ];
 
+  const extras = [
+    ...(session
+      ? [
+          { to: "/reservas" as const, icon: Ticket, label: t("nav.reservas") },
+          { to: "/conta" as const, icon: UserCog, label: "Conta" },
+        ]
+      : []),
+    { to: "/ajuda" as const, icon: CircleHelp, label: t("nav.ajuda") },
+  ];
 
   return (
     <div className="flex min-h-screen flex-col bg-background">
@@ -43,10 +64,10 @@ export function AppShell({ children }: { children: ReactNode }) {
             </span>
           </Link>
 
-          <nav className="ml-auto hidden items-center gap-1 md:flex">
-            {[...ligacoes, { to: "/ajuda" as const, icon: CircleHelp, label: "Ajuda", search: undefined }].map((l) => (
+          <nav className="ml-auto hidden items-center gap-1 lg:flex">
+            {[...ligacoes, ...extras].map((l) => (
               <Button key={l.to} asChild variant="ghost" size="sm">
-                {l.search ? (
+                {"search" in l && l.search ? (
                   <Link to={l.to} search={l.search}>
                     <l.icon className="size-4" /> {l.label}
                   </Link>
@@ -59,7 +80,8 @@ export function AppShell({ children }: { children: ReactNode }) {
             ))}
           </nav>
 
-          <div className="ml-auto md:ml-0">
+          <div className="ml-auto flex items-center gap-2 lg:ml-0">
+            <SeletorIdioma />
             {session ? (
               <Button
                 variant="outline"
@@ -68,11 +90,11 @@ export function AppShell({ children }: { children: ReactNode }) {
                 className="h-10 md:h-9"
               >
                 <LogOut className="size-4" />
-                <span className="hidden sm:inline">Sair</span>
+                <span className="hidden sm:inline">{t("nav.sair")}</span>
               </Button>
             ) : (
               <Button asChild size="sm" className="h-10 md:h-9">
-                <Link to="/auth">Entrar</Link>
+                <Link to="/auth">{t("nav.entrar")}</Link>
               </Button>
             )}
           </div>
@@ -84,17 +106,25 @@ export function AppShell({ children }: { children: ReactNode }) {
       </main>
 
       <footer className="hidden border-t border-border/70 py-6 text-center text-sm text-muted-foreground md:block">
-        Simplesmente voo — encontre as melhores datas e preços, sem complicações. ·{" "}
-        <Link to="/ajuda" className="underline underline-offset-4">
-          Ajuda e instalação
-        </Link>
+        <p>{t("rodape.slogan")}</p>
+        <p className="mt-2 flex flex-wrap items-center justify-center gap-3">
+          <Link to="/ajuda" className="underline underline-offset-4">
+            {t("rodape.ajuda")}
+          </Link>
+          <Link to="/privacidade" className="underline underline-offset-4">
+            {t("rodape.privacidade")}
+          </Link>
+          <Link to="/termos" className="underline underline-offset-4">
+            {t("rodape.termos")}
+          </Link>
+        </p>
       </footer>
 
       <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-border/70 bg-background/95 pb-[env(safe-area-inset-bottom)] backdrop-blur md:hidden">
         <ul className="mx-auto flex w-full max-w-lg items-stretch">
           {ligacoes.map((l) => (
             <li key={l.to} className="flex-1">
-              {l.search ? (
+              {"search" in l && l.search ? (
                 <Link
                   to={l.to}
                   search={l.search}
