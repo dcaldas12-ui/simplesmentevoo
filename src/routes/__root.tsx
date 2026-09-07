@@ -9,8 +9,10 @@ import {
 } from "@tanstack/react-router";
 import { useEffect, type ReactNode } from "react";
 
+import { ConsentimentoCookies } from "@/components/ConsentimentoCookies";
 import { EstadoLigacao } from "@/components/EstadoLigacao";
 import { Toaster } from "@/components/ui/sonner";
+import { IdiomaProvider } from "@/lib/i18n";
 import { registarServiceWorker } from "@/lib/pwa";
 
 import appCss from "../styles.css?url";
@@ -149,10 +151,13 @@ function RootComponent() {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <EstadoLigacao />
-      {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
-      <Outlet />
-      <Toaster position="top-center" />
+      <IdiomaProvider>
+        <EstadoLigacao />
+        {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
+        <Outlet />
+        <ConsentimentoCookies />
+        <Toaster position="top-center" />
+      </IdiomaProvider>
     </QueryClientProvider>
   );
 }
