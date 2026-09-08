@@ -25,6 +25,7 @@ import { Route as AuthenticatedDocumentosRouteImport } from './routes/_authentic
 import { Route as AuthenticatedReservasRouteImport } from './routes/_authenticated/reservas'
 import { Route as AuthenticatedViagensIndexRouteImport } from './routes/_authenticated/viagens.index'
 import { Route as AuthenticatedViagensViagemIdRouteImport } from './routes/_authenticated/viagens.$viagemId'
+import { Route as OauthGoogleMailReturnRouteImport } from './routes/oauth.google-mail.return'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -107,6 +108,11 @@ const AuthenticatedViagensViagemIdRoute =
     path: '/viagens/$viagemId',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
+const OauthGoogleMailReturnRoute = OauthGoogleMailReturnRouteImport.update({
+  id: '/oauth/google-mail/return',
+  path: '/oauth/google-mail/return',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -123,6 +129,7 @@ export interface FileRoutesByFullPath {
   '/documentos': typeof AuthenticatedDocumentosRoute
   '/reservas': typeof AuthenticatedReservasRoute
   '/viagens/$viagemId': typeof AuthenticatedViagensViagemIdRoute
+  '/oauth/google-mail/return': typeof OauthGoogleMailReturnRoute
   '/viagens/': typeof AuthenticatedViagensIndexRoute
 }
 export interface FileRoutesByTo {
@@ -140,6 +147,7 @@ export interface FileRoutesByTo {
   '/documentos': typeof AuthenticatedDocumentosRoute
   '/reservas': typeof AuthenticatedReservasRoute
   '/viagens/$viagemId': typeof AuthenticatedViagensViagemIdRoute
+  '/oauth/google-mail/return': typeof OauthGoogleMailReturnRoute
   '/viagens': typeof AuthenticatedViagensIndexRoute
 }
 export interface FileRoutesById {
@@ -159,6 +167,7 @@ export interface FileRoutesById {
   '/_authenticated/documentos': typeof AuthenticatedDocumentosRoute
   '/_authenticated/reservas': typeof AuthenticatedReservasRoute
   '/_authenticated/viagens/$viagemId': typeof AuthenticatedViagensViagemIdRoute
+  '/oauth/google-mail/return': typeof OauthGoogleMailReturnRoute
   '/_authenticated/viagens/': typeof AuthenticatedViagensIndexRoute
 }
 export interface FileRouteTypes {
@@ -178,6 +187,7 @@ export interface FileRouteTypes {
     | '/documentos'
     | '/reservas'
     | '/viagens/$viagemId'
+    | '/oauth/google-mail/return'
     | '/viagens/'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -195,6 +205,7 @@ export interface FileRouteTypes {
     | '/documentos'
     | '/reservas'
     | '/viagens/$viagemId'
+    | '/oauth/google-mail/return'
     | '/viagens'
   id:
     | '__root__'
@@ -213,6 +224,7 @@ export interface FileRouteTypes {
     | '/_authenticated/documentos'
     | '/_authenticated/reservas'
     | '/_authenticated/viagens/$viagemId'
+    | '/oauth/google-mail/return'
     | '/_authenticated/viagens/'
   fileRoutesById: FileRoutesById
 }
@@ -228,6 +240,7 @@ export interface RootRouteChildren {
   PesquisaRoute: typeof PesquisaRoute
   PrivacidadeRoute: typeof PrivacidadeRoute
   TermosRoute: typeof TermosRoute
+  OauthGoogleMailReturnRoute: typeof OauthGoogleMailReturnRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -344,6 +357,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedViagensViagemIdRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/oauth/google-mail/return': {
+      id: '/oauth/google-mail/return'
+      path: '/oauth/google-mail/return'
+      fullPath: '/oauth/google-mail/return'
+      preLoaderRoute: typeof OauthGoogleMailReturnRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -378,6 +398,7 @@ const rootRouteChildren: RootRouteChildren = {
   PesquisaRoute: PesquisaRoute,
   PrivacidadeRoute: PrivacidadeRoute,
   TermosRoute: TermosRoute,
+  OauthGoogleMailReturnRoute: OauthGoogleMailReturnRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
