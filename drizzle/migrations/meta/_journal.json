@@ -43,6 +43,13 @@
       "when": 1788560898954,
       "tag": "0005_documentos_historico_processamento",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1788827119650,
+      "tag": "0006_create_app_user_connections",
+      "breakpoints": true
     }
   ]
 }
