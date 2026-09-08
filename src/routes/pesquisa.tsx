@@ -363,7 +363,7 @@ function EstadoLigacao({
       ? "Limite de pedidos do fornecedor atingido"
       : dados.estadoFornecedor === "erro"
         ? "O fornecedor de voos não respondeu"
-        : "Ligação ao Skyscanner por ativar";
+        : "Ligação ao  por ativar";
 
   return (
     <div
@@ -379,7 +379,7 @@ function EstadoLigacao({
         {dados.aviso ? <p>{dados.aviso}</p> : null}
         {!ativo && dados.emFalta && dados.emFalta.length > 0 ? (
           <p className="text-xs">
-            Para ativar preços reais e reserváveis é preciso um acesso aprovado ao Skyscanner e
+            Para ativar preços reais e reserváveis é preciso um acesso aprovado ao  e
             guardar a chave {dados.emFalta.join(", ")} nas definições da app. Enquanto isso não
             acontecer, mostramos apenas resultados simulados.
           </p>

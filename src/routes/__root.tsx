@@ -86,13 +86,13 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
         name: "viewport",
         content: "width=device-width, initial-scale=1, viewport-fit=cover",
       },
-      { title: "Simplesmente voo" },
+      { title: "ViatOrbis" },
       {
         name: "description",
         content:
           "Pesquisa de voos com datas flexíveis, organização de viagens e documentos num só sítio.",
       },
-      { property: "og:title", content: "Simplesmente voo" },
+      { property: "og:title", content: "ViatOrbis" },
       {
         property: "og:description",
         content: "Voos baratos com datas flexíveis, viagens e documentos organizados.",
@@ -102,7 +102,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { name: "theme-color", content: "#1f3f77" },
       { name: "mobile-web-app-capable", content: "yes" },
       { name: "apple-mobile-web-app-capable", content: "yes" },
-      { name: "apple-mobile-web-app-title", content: "Simplesmente voo" },
+      { name: "apple-mobile-web-app-title", content: "ViatOrbis" },
       { name: "apple-mobile-web-app-status-bar-style", content: "black-translucent" },
     ],
     links: [

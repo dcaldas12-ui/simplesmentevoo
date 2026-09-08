@@ -1,8 +1,8 @@
 /**
- * Adaptador do fornecedor real de voos: Skyscanner Travel APIs.
+ * Adaptador do fornecedor real de voos:  Travel APIs.
  *
- * Só funciona quando existir uma chave válida (`SKYSCANNER_API_KEY`) e acesso
- * aprovado ao produto. Sem isso, `estadoSkyscanner()` devolve "nao_configurado"
+ * Só funciona quando existir uma chave válida (`_API_KEY`) e acesso
+ * aprovado ao produto. Sem isso, `estado()` devolve "nao_configurado"
  * e o motor mantém o modo demonstrativo como fallback explícito.
  *
  * Nunca importar este ficheiro no browser: a chave é lida apenas aqui,
@@ -23,24 +23,24 @@ export type EstadoFornecedor =
   | "erro"
   | "limite";
 
-/** URL base oficial das Skyscanner Travel APIs (substituível por env). */
-const BASE_PADRAO = "https://partners.api.skyscanner.net/apiservices/v3";
+/** URL base oficial das  Travel APIs (substituível por env). */
+const BASE_PADRAO = "https://partners.api..net/apiservices/v3";
 
 /** Nº máximo de combinações consultadas à API real por pesquisa. */
 export const MAX_COMBINACOES_API = 12;
 
-export function estadoSkyscanner(): {
+export function estado(): {
   configurado: boolean;
   emFalta: string[];
   base: string;
 } {
-  const chave = process.env["SKYSCANNER_API_KEY"];
+  const chave = process.env["_API_KEY"];
   const emFalta: string[] = [];
-  if (!chave) emFalta.push("SKYSCANNER_API_KEY");
+  if (!chave) emFalta.push("_API_KEY");
   return {
     configurado: emFalta.length === 0,
     emFalta,
-    base: process.env["SKYSCANNER_API_BASE"] ?? BASE_PADRAO,
+    base: process.env["_API_BASE"] ?? BASE_PADRAO,
   };
 }
 
@@ -118,20 +118,20 @@ async function pedir(
       ...(corpo ? { body: JSON.stringify(corpo) } : {}),
     });
   } catch {
-    throw new SkyscannerError("erro", "Não foi possível contactar o Skyscanner.");
+    throw new SkyscannerError("erro", "Não foi possível contactar o .");
   }
 
   if (resposta.status === 429) {
-    throw new SkyscannerError("limite", "Limite de pedidos do Skyscanner atingido.");
+    throw new SkyscannerError("limite", "Limite de pedidos do  atingido.");
   }
   if (resposta.status === 401 || resposta.status === 403) {
     throw new SkyscannerError(
       "nao_configurado",
-      "A chave do Skyscanner foi recusada ou não tem acesso aprovado ao produto.",
+      "A chave do  foi recusada ou não tem acesso aprovado ao produto.",
     );
   }
   if (!resposta.ok) {
-    throw new SkyscannerError("erro", `O Skyscanner respondeu com o erro ${resposta.status}.`);
+    throw new SkyscannerError("erro", `O  respondeu com o erro ${resposta.status}.`);
   }
   return (await resposta.json()) as SkyResposta;
 }
@@ -199,9 +199,9 @@ function normalizar(
   return ofertas;
 }
 
-export function criarSkyscannerProvider(chave: string, base: string): FlightProvider {
+export function criarProvider(chave: string, base: string): FlightProvider {
   return {
-    nome: "Skyscanner",
+    nome: "",
     fonte: "api",
     async procurar(input, combos) {
       const usar = combos.slice(0, MAX_COMBINACOES_API);

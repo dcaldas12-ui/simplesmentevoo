@@ -65,7 +65,7 @@ export const iniciarReserva = createServerFn({ method: "POST" })
     if (!origem || !destino) throw new Error("Indique a origem e o destino.");
     return {
       viagem_id: d["viagemId"] ? texto(d["viagemId"], 40) : null,
-      fornecedor: texto(d["fornecedor"], 60) || "skyscanner",
+      fornecedor: texto(d["fornecedor"], 60) || "",
       origem,
       destino,
       companhia: d["companhia"] ? texto(d["companhia"], 120) : null,

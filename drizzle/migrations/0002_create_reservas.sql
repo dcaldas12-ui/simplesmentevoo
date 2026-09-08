@@ -3,7 +3,7 @@ CREATE TABLE public.reservas (
   user_id uuid NOT NULL DEFAULT auth.uid(),
   viagem_id uuid REFERENCES public.viagens(id) ON DELETE SET NULL,
   voo_id uuid REFERENCES public.voos(id) ON DELETE SET NULL,
-  fornecedor text NOT NULL DEFAULT 'skyscanner',
+  fornecedor text NOT NULL DEFAULT '',
   estado text NOT NULL DEFAULT 'iniciada',
   origem text NOT NULL,
   destino text NOT NULL,

@@ -42,26 +42,26 @@ export const pesquisarVoos = createServerFn({ method: "POST" })
   .inputValidator(validar)
   .handler(async ({ data }): Promise<ResultadoPesquisa> => {
     const {
-      estadoSkyscanner,
-      criarSkyscannerProvider,
-      SkyscannerError,
+      estado,
+      criarProvider,
+      Error,
       MAX_COMBINACOES_API,
-    } = await import("./skyscanner.server");
+    } = await import("./.server");
 
-    const estado = estadoSkyscanner();
+    const estado = estado();
 
     if (!estado.configurado) {
       return pesquisar(data, {
         estadoFornecedor: "nao_configurado",
         emFalta: estado.emFalta,
         aviso:
-          "Ligação ao Skyscanner por ativar: falta a chave de API e o acesso aprovado ao produto.",
+          "Ligação ao  por ativar: falta a chave de API e o acesso aprovado ao produto.",
       });
     }
 
     try {
-      const provider = criarSkyscannerProvider(
-        process.env["SKYSCANNER_API_KEY"]!,
+      const provider = criarProvider(
+        process.env["_API_KEY"]!,
         estado.base,
       );
       const resultado = await pesquisar(data, {
@@ -72,16 +72,16 @@ export const pesquisarVoos = createServerFn({ method: "POST" })
       if (resultado.ofertas.length > 0) return resultado;
       return pesquisar(data, {
         estadoFornecedor: "erro",
-        aviso: "O Skyscanner não devolveu preços para estas datas.",
+        aviso: "O  não devolveu preços para estas datas.",
       });
     } catch (erro) {
       const estadoErro =
-        erro instanceof SkyscannerError ? erro.estado : ("erro" as const);
+        erro instanceof Error ? erro.estado : ("erro" as const);
       const mensagem =
-        erro instanceof Error ? erro.message : "Falha na ligação ao Skyscanner.";
+        erro instanceof Error ? erro.message : "Falha na ligação ao .";
       return pesquisar(data, {
         estadoFornecedor: estadoErro,
-        ...(estadoErro === "nao_configurado" ? { emFalta: ["SKYSCANNER_API_KEY"] } : {}),
+        ...(estadoErro === "nao_configurado" ? { emFalta: ["_API_KEY"] } : {}),
         aviso: mensagem,
       });
     }

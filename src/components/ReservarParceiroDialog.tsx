@@ -39,7 +39,7 @@ export function ReservarParceiroDialog({ oferta }: { oferta: Oferta }) {
     try {
       await registar({
         data: {
-          fornecedor: oferta.fonte === "api" ? "skyscanner" : "demonstracao",
+          fornecedor: oferta.fonte === "api" ? "" : "demonstracao",
           origem: oferta.origem,
           destino: oferta.destino,
           companhia: oferta.companhia,

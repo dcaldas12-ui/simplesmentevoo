@@ -60,7 +60,7 @@ export function AppShell({ children }: { children: ReactNode }) {
               <Plane className="size-5" />
             </span>
             <span className="font-display text-base font-semibold tracking-tight sm:text-lg">
-              Simplesmente voo
+              ViatOrbis
             </span>
           </Link>
 

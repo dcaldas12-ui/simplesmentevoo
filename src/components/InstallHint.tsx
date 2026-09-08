@@ -56,7 +56,7 @@ export function InstallHint() {
       <div className="flex items-start gap-3">
         <img
           src="/icons/icon-192.png"
-          alt="Ícone Simplesmente voo"
+          alt="Ícone ViatOrbis"
           width={40}
           height={40}
           loading="lazy"

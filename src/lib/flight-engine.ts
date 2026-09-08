@@ -291,7 +291,7 @@ export type OpcoesPesquisa = {
 };
 
 const AVISO_DEMO =
-  "Resultados de demonstração: a ligação ao Skyscanner ainda não está ativa, por isso os preços são simulados e não reserváveis.";
+  "Resultados de demonstração: a ligação ao  ainda não está ativa, por isso os preços são simulados e não reserváveis.";
 
 export async function pesquisar(
   input: PesquisaInput,
