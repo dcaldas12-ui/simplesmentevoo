@@ -10,7 +10,7 @@ import {
   Timer,
 } from "lucide-react";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { AppShell } from "@/components/AppShell";
 import { EmptyState } from "@/components/EmptyState";
@@ -35,6 +35,7 @@ type Busca = {
   duracaoMaxima: number;
   passageiros: number;
   apenasDiretos: boolean;
+  executar: number;
 };
 
 export const Route = createFileRoute("/pesquisa")({
@@ -50,6 +51,7 @@ export const Route = createFileRoute("/pesquisa")({
     duracaoMaxima: Number(search["duracaoMaxima"] ?? 0) || 0,
     passageiros: Number(search["passageiros"] ?? 1) || 1,
     apenasDiretos: search["apenasDiretos"] === true || search["apenasDiretos"] === "true",
+    executar: Number(search["executar"] ?? 0) || 0,
   }),
   head: () => ({
     meta: [
@@ -97,10 +99,15 @@ function PesquisaPage() {
   const [flexVisiveis, setFlexVisiveis] = useState(3);
 
   const { data, isFetching, error } = useQuery({
-    queryKey: ["voos", busca],
-    queryFn: () => procurar({ data: busca }),
-    enabled: Boolean(busca.dataPartida),
-  });
+  queryKey: ["voos-v4", { ...busca, executar: undefined }],
+  queryFn: () => procurar({ data: busca }),
+  enabled: busca.executar > 0,
+  staleTime: Infinity,
+  gcTime: Infinity,
+  refetchOnMount: false,
+  refetchOnWindowFocus: false,
+  refetchOnReconnect: false,
+});
 
   const { exatas, flexiveis } = useMemo(() => {
     const todas = data?.ofertas ?? [];
@@ -132,8 +139,12 @@ function PesquisaPage() {
           </p>
         </div>
 
-        <SearchForm initial={{ ...busca }} compacto />
-
+        <SearchForm
+  initial={{
+    ...busca,
+  }}
+  compacto
+/>
         {data ? <EstadoLigacao dados={data} /> : null}
 
 
@@ -165,7 +176,7 @@ function PesquisaPage() {
               />
               <Resumo
                 etiqueta="Combinações analisadas"
-                valor={`${data.combinacoesValidas} de ${data.combinacoesGeradas}`}
+                valor={`${data.combinacoesConsultadas} de ${data.combinacoesGeradas}`}
               />
             </div>
 
@@ -275,6 +286,12 @@ function CartaoOferta({
   pedido?: { partida: string; regresso: string | null };
   referencia?: number;
 }) {
+  const ofertaComRegresso = oferta as Oferta & {
+  horaPartidaRegresso?: string;
+  horaChegadaRegresso?: string;
+  duracaoMinRegresso?: number;
+  escalasRegresso?: number;
+};
   const partidaMudou = pedido ? oferta.dataPartida !== pedido.partida : false;
   const regressoMudou = pedido
     ? (oferta.dataRegresso ?? null) !== (pedido.regresso ?? null)
@@ -304,10 +321,25 @@ function CartaoOferta({
             <Timer className="size-4" /> {duracao(oferta.duracaoMin)}
           </span>
           {oferta.dataRegresso ? (
-            <span className={regressoMudou ? "font-medium text-primary" : undefined}>
-              Regresso {formatarData(oferta.dataRegresso)}
-            </span>
-          ) : null}
+  <span
+    className={
+      regressoMudou
+        ? "font-medium text-primary"
+        : "text-foreground"
+    }
+  >
+    Regresso: {formatarData(oferta.dataRegresso)} ·{" "}
+    {ofertaComRegresso.horaPartidaRegresso} →{" "}
+    {ofertaComRegresso.horaChegadaRegresso}
+  </span>
+) : null}
+{oferta.dataRegresso &&
+ofertaComRegresso.duracaoMinRegresso !== undefined ? (
+  <span className="inline-flex items-center gap-1.5">
+    <Timer className="size-4" />{" "}
+    {duracao(ofertaComRegresso.duracaoMinRegresso)}
+  </span>
+) : null}
         </p>
         {partidaMudou || regressoMudou ? (
           <p className="mt-1 text-xs text-primary">

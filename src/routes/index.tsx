@@ -63,14 +63,14 @@ function Index() {
           <h1 className="mt-5 max-w-2xl text-4xl font-semibold leading-tight tracking-tight sm:text-5xl">
             Encontre o voo mais barato dentro dos dias em que pode viajar
           </h1>
-          <p className="mt-4 max-w-xl text-primary-foreground/80">
+          <p className="mt-4 max-w-2xl text-primary-foreground/80">
             Diga-nos para onde quer ir e quantos dias de margem tem. Nós testamos todas as
             combinações de datas e mostramos as melhores opções, de forma transparente.
           </p>
         </div>
       </section>
 
-      <div className="mx-auto -mt-6 w-full max-w-6xl px-4">
+      <div className="relative z-10 mx-auto -mt-6 w-full max-w-6xl px-4">
         <SearchForm />
       </div>
 

@@ -16,7 +16,6 @@ import type { ReactNode } from "react";
 import { InstallHint } from "@/components/InstallHint";
 import { SeletorIdioma } from "@/components/SeletorIdioma";
 import { Button } from "@/components/ui/button";
-import { valoresIniciais } from "@/components/SearchForm";
 import { supabase } from "@/integrations/supabase/client";
 import { useSession } from "@/lib/auth";
 import { useIdioma } from "@/lib/i18n";
@@ -25,6 +24,105 @@ export function AppShell({ children }: { children: ReactNode }) {
   const { session } = useSession();
   const { t } = useIdioma();
   const navigate = useNavigate();
+  function abrirPesquisa(e: React.MouseEvent) {
+    e.preventDefault();
+
+    const guardada = sessionStorage.getItem("viatorbis-ultima-pesquisa");
+
+    if (!guardada) {
+      void navigate({
+  to: "/pesquisa",
+  search: {
+    origem: "LIS",
+    destino: "BCN",
+    dataPartida: "",
+    dataRegresso: "",
+    idaAntes: 0,
+    idaDepois: 0,
+    regressoAntes: 0,
+    regressoDepois: 0,
+    duracaoMaxima: 0,
+    passageiros: 1,
+    apenasDiretos: false,
+    executar: 0,
+  },
+});
+      return;
+    }
+
+    try {
+      const ultima = JSON.parse(guardada) as {
+        origem?: string;
+        destino?: string;
+        dataPartida?: string;
+        dataRegresso?: string;
+        idaAntes?: number;
+        idaDepois?: number;
+        regressoAntes?: number;
+        regressoDepois?: number;
+        duracaoMaxima?: number | "";
+        passageiros?: number;
+        apenasDiretos?: boolean;
+      };
+
+      if (!ultima.origem || !ultima.destino) {
+        void navigate({
+  to: "/pesquisa",
+  search: {
+    origem: "LIS",
+    destino: "BCN",
+    dataPartida: "",
+    dataRegresso: "",
+    idaAntes: 0,
+    idaDepois: 0,
+    regressoAntes: 0,
+    regressoDepois: 0,
+    duracaoMaxima: 0,
+    passageiros: 1,
+    apenasDiretos: false,
+    executar: 0,
+  },
+});
+        return;
+      }
+
+      void navigate({
+        to: "/pesquisa",
+        search: {
+          origem: ultima.origem,
+          destino: ultima.destino,
+          dataPartida: ultima.dataPartida ?? "",
+          dataRegresso: ultima.dataRegresso ?? "",
+          idaAntes: ultima.idaAntes ?? 0,
+          idaDepois: ultima.idaDepois ?? 0,
+          regressoAntes: ultima.regressoAntes ?? 0,
+          regressoDepois: ultima.regressoDepois ?? 0,
+          duracaoMaxima: Number(ultima.duracaoMaxima ?? 0) || 0,
+          passageiros: ultima.passageiros ?? 1,
+          apenasDiretos: ultima.apenasDiretos ?? false,
+          executar: 0,
+        },
+      });
+    } catch {
+      void navigate({
+  to: "/pesquisa",
+  search: {
+    origem: "LIS",
+    destino: "BCN",
+    dataPartida: "",
+    dataRegresso: "",
+    idaAntes: 0,
+    idaDepois: 0,
+    regressoAntes: 0,
+    regressoDepois: 0,
+    duracaoMaxima: 0,
+    passageiros: 1,
+    apenasDiretos: false,
+    executar: 0,
+  },
+});
+    }
+  }
 
   async function sair() {
     await supabase.auth.signOut();
@@ -32,14 +130,18 @@ export function AppShell({ children }: { children: ReactNode }) {
   }
 
   const ligacoes = [
-    { to: "/pesquisa" as const, search: { ...valoresIniciais }, icon: Search, label: t("nav.pesquisar") },
-    { to: "/viagens" as const, icon: Luggage, label: t("nav.viagens") },
-    session
-      ? { to: "/documentos" as const, icon: FileText, label: t("nav.documentos") }
-      : { to: "/documentos-demo" as const, icon: FileText, label: t("nav.documentos") },
-    { to: "/importar" as const, icon: CalendarPlus, label: t("nav.importar") },
-    { to: "/avisos" as const, icon: BellRing, label: t("nav.avisos") },
-  ];
+  {
+    to: "/pesquisa" as const,
+    icon: Search,
+    label: t("nav.pesquisar"),
+  },
+  { to: "/viagens" as const, icon: Luggage, label: t("nav.viagens") },
+  session
+    ? { to: "/documentos" as const, icon: FileText, label: t("nav.documentos") }
+    : { to: "/documentos-demo" as const, icon: FileText, label: t("nav.documentos") },
+  { to: "/importar" as const, icon: CalendarPlus, label: t("nav.importar") },
+  { to: "/avisos" as const, icon: BellRing, label: t("nav.avisos") },
+];
 
   const extras = [
     ...(session
@@ -72,9 +174,12 @@ export function AppShell({ children }: { children: ReactNode }) {
                     <l.icon className="size-4" /> {l.label}
                   </Link>
                 ) : (
-                  <Link to={l.to}>
-                    <l.icon className="size-4" /> {l.label}
-                  </Link>
+                  <Link
+  to={l.to}
+  onClick={l.to === "/pesquisa" ? abrirPesquisa : undefined}
+>
+  <l.icon className="size-4" /> {l.label}
+</Link>
                 )}
               </Button>
             ))}
@@ -136,10 +241,11 @@ export function AppShell({ children }: { children: ReactNode }) {
                 </Link>
               ) : (
                 <Link
-                  to={l.to}
-                  activeProps={{ className: "text-primary" }}
-                  className="flex h-16 flex-col items-center justify-center gap-1 text-[11px] font-medium text-muted-foreground"
-                >
+  to={l.to}
+  onClick={l.to === "/pesquisa" ? abrirPesquisa : undefined}
+  activeProps={{ className: "text-primary" }}
+  className="flex h-16 flex-col items-center justify-center gap-1 text-[11px] font-medium text-muted-foreground"
+>
                   <l.icon className="size-5" />
                   {l.label}
                 </Link>

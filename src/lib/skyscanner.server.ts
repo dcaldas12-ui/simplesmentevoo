@@ -24,7 +24,7 @@ export type EstadoFornecedor =
   | "limite";
 
 /** URL base oficial das  Travel APIs (substituível por env). */
-const BASE_PADRAO = "https://partners.api..net/apiservices/v3";
+const BASE_PADRAO = "https://partners.api.skyscanner.net/apiservices/v3";
 
 /** Nº máximo de combinações consultadas à API real por pesquisa. */
 export const MAX_COMBINACOES_API = 12;
@@ -34,9 +34,9 @@ export function estado(): {
   emFalta: string[];
   base: string;
 } {
-  const chave = process.env["_API_KEY"];
+  const chave = process.env["SKYSCANNER_API_KEY"];
   const emFalta: string[] = [];
-  if (!chave) emFalta.push("_API_KEY");
+  if (!chave) emFalta.push("SKYSCANNER_API_KEY");
   return {
     configurado: emFalta.length === 0,
     emFalta,
