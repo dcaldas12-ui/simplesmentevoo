@@ -94,7 +94,29 @@ function Privacidade() {
           </p>
         </Seccao>
 
-        <Seccao titulo="Subcontratantes">
+        <Seccao titulo="Integração com o Gmail">
+  <p>
+    Se o utilizador optar por ligar a sua conta Gmail ao Simplesmente voo,
+    a aplicação solicitará autorização através do Google OAuth para consultar
+    mensagens e informações relevantes para as suas viagens. Para esta
+    integração, é utilizada a permissão de leitura do Gmail
+    (<code>gmail.readonly</code>).
+  </p>
+
+  <p className="mt-3">
+    O acesso ao Gmail é opcional e só acontece após autorização expressa
+    do utilizador. Os dados obtidos são utilizados exclusivamente para
+    identificar e organizar informações relacionadas com viagens, como
+    reservas, voos, alojamentos e outros documentos ou dados relevantes.
+  </p>
+
+  <p className="mt-3">
+    O Simplesmente voo não utiliza os dados do Gmail para publicidade,
+    venda de informação ou para finalidades não relacionadas com a
+    funcionalidade de organização de viagens. O utilizador pode retirar
+    esta autorização e desligar a integração a qualquer momento.
+  </p>
+</Seccao><Seccao titulo="Subcontratantes">
           <p>
             Usamos fornecedores de alojamento, base de dados e autenticação, e um fornecedor de
             inteligência artificial para a leitura de documentos. Os dados podem ser processados
