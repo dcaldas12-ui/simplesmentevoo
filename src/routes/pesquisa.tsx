@@ -197,7 +197,7 @@ function PesquisaPage() {
                 <ul className="space-y-3">
                   {exatas.map((oferta, i) => (
                     <li key={oferta.id}>
-                      <CartaoOferta oferta={oferta} melhor={i === 0} />
+                      <CartaoOferta oferta={oferta} melhor={i === 0} passageiros={busca.passageiros} />
                     </li>
                   ))}
                 </ul>
@@ -221,6 +221,7 @@ function PesquisaPage() {
                       <CartaoOferta
                         oferta={oferta}
                         melhor={false}
+                        passageiros={busca.passageiros}
                         pedido={{
                           partida: busca.dataPartida,
                           regresso: busca.dataRegresso === "" ? null : busca.dataRegresso,
