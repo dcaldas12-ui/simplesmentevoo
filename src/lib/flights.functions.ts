@@ -46,43 +46,61 @@ function validar(data: unknown): PesquisaInput {
     );
   }
 
-  const duracaoBruta =
+  const duracaoMinimaBruta =
+    Number(d["duracaoMinima"] ?? 0) || 0;
+
+  const duracaoMaximaBruta =
     Number(d["duracaoMaxima"] ?? 0) || 0;
 
+  const duracaoMinima =
+    duracaoMinimaBruta > 0
+      ? Math.min(60, Math.round(duracaoMinimaBruta))
+      : null;
+
   const duracaoMaxima =
-  duracaoBruta > 0
-    ? Math.min(60, Math.round(duracaoBruta))
-    : null;
+    duracaoMaximaBruta > 0
+      ? Math.min(60, Math.round(duracaoMaximaBruta))
+      : null;
 
-const passageiros =
-  Math.max(
-    1,
-    Math.min(
-      9,
-      Number(d["passageiros"] ?? 1) || 1,
-    ),
-  );
+  if (
+    duracaoMinima !== null &&
+    duracaoMaxima !== null &&
+    duracaoMinima > duracaoMaxima
+  ) {
+    throw new Error(
+      "A duração mínima não pode ser superior à duração máxima.",
+    );
+  }
 
-const idadesPassageiros = Array.isArray(
-  d["idadesPassageiros"],
-)
-  ? d["idadesPassageiros"]
-      .map((idade) => Number(idade))
-      .filter(
-        (idade) =>
-          Number.isInteger(idade) &&
-          idade >= 0 &&
-          idade <= 17,
-      )
-  : [];
+  const passageiros =
+    Math.max(
+      1,
+      Math.min(
+        9,
+        Number(d["passageiros"] ?? 1) || 1,
+      ),
+    );
 
-if (idadesPassageiros.length > passageiros - 1) {
-  throw new Error(
-    "O número de menores não pode ser superior ao número de passageiros menos um adulto.",
-  );
-}
+  const idadesPassageiros = Array.isArray(
+    d["idadesPassageiros"],
+  )
+    ? d["idadesPassageiros"]
+        .map((idade) => Number(idade))
+        .filter(
+          (idade) =>
+            Number.isInteger(idade) &&
+            idade >= 0 &&
+            idade <= 17,
+        )
+    : [];
 
-return {
+  if (idadesPassageiros.length > passageiros - 1) {
+    throw new Error(
+      "O número de menores não pode ser superior ao número de passageiros menos um adulto.",
+    );
+  }
+
+  return {
     origem,
     destino,
     dataPartida,
@@ -152,12 +170,13 @@ async function procurarDuffel(
 
   const todas: ReturnType<typeof Object.assign>[] = [];
   const combosParaConsultar = combos;
+
   console.log(
-  "[Duffel] combinações:",
-  "geradas =", geradas,
-  "válidas =", combos.length,
-  "a consultar =", combosParaConsultar.length,
-);
+    "[Duffel] combinações:",
+    "geradas =", geradas,
+    "válidas =", combos.length,
+    "a consultar =", combosParaConsultar.length,
+  );
 
   for (const combo of combosParaConsultar) {
     const slices: Array<{
@@ -187,18 +206,18 @@ async function procurarDuffel(
           cabin_class: "economy",
           slices,
           passengers: [
-  ...Array.from(
-    {
-      length:
-        data.passageiros -
-        (data.idadesPassageiros?.length ?? 0),
-    },
-    () => ({ type: "adult" }),
-  ),
-  ...(data.idadesPassageiros ?? []).map(
-    (idade) => ({ age: idade }),
-  ),
-],
+            ...Array.from(
+              {
+                length:
+                  data.passageiros -
+                  (data.idadesPassageiros?.length ?? 0),
+              },
+              () => ({ type: "adult" }),
+            ),
+            ...(data.idadesPassageiros ?? []).map(
+              (idade) => ({ age: idade }),
+            ),
+          ],
           ...(data.apenasDiretos
             ? { max_connections: 0 }
             : {}),
@@ -210,113 +229,118 @@ async function procurarDuffel(
       };
     };
 
-const ofertas = resposta.data?.offers ?? [];
+    const ofertas = resposta.data?.offers ?? [];
 
-const mapeadas = ofertas.map((oferta) => {
-  const ida = oferta.slices?.[0];
-  const regresso = oferta.slices?.[1];
+    const mapeadas = ofertas.map((oferta) => {
+      const ida = oferta.slices?.[0];
+      const regresso = oferta.slices?.[1];
 
-  const segmentosIda = ida?.segments ?? [];
-  const segmentosRegresso = regresso?.segments ?? [];
+      const segmentosIda = ida?.segments ?? [];
+      const segmentosRegresso = regresso?.segments ?? [];
 
-  const primeiroSegmento = segmentosIda[0];
-  const ultimoSegmento =
-    segmentosIda[segmentosIda.length - 1];
+      const primeiroSegmento = segmentosIda[0];
+      const ultimoSegmento =
+        segmentosIda[segmentosIda.length - 1];
 
-  const primeiroSegmentoRegresso = segmentosRegresso[0];
-  const ultimoSegmentoRegresso =
-    segmentosRegresso[segmentosRegresso.length - 1];
+      const primeiroSegmentoRegresso =
+        segmentosRegresso[0];
 
-  const precoTotal =
-    Number(oferta.total_amount) || 0;
+      const ultimoSegmentoRegresso =
+        segmentosRegresso[segmentosRegresso.length - 1];
 
-  const duracaoIda = segmentosIda.reduce(
-    (total, segmento) =>
-      total + minutosDuracao(segmento.duration),
-    0,
-  );
+      const precoTotal =
+        Number(oferta.total_amount) || 0;
 
-  const duracaoRegresso = segmentosRegresso.reduce(
-    (total, segmento) =>
-      total + minutosDuracao(segmento.duration),
-    0,
-  );
+      const duracaoIda = segmentosIda.reduce(
+        (total, segmento) =>
+          total + minutosDuracao(segmento.duration),
+        0,
+      );
 
-  const escalasIda = Math.max(
-    0,
-    segmentosIda.length - 1,
-  );
+      const duracaoRegresso = segmentosRegresso.reduce(
+        (total, segmento) =>
+          total + minutosDuracao(segmento.duration),
+        0,
+      );
 
-  const escalasRegresso = Math.max(
-    0,
-    segmentosRegresso.length - 1,
-  );
+      const escalasIda = Math.max(
+        0,
+        segmentosIda.length - 1,
+      );
 
-  return {
-    id: `${oferta.id}-${combo.partida}-${combo.regresso ?? "OW"}`,
-    origem: data.origem,
-    destino: data.destino,
-    dataPartida: combo.partida,
-    dataRegresso: combo.regresso,
+      const escalasRegresso = Math.max(
+        0,
+        segmentosRegresso.length - 1,
+      );
 
-    companhia:
-      primeiroSegmento?.operating_carrier?.name ??
-      "Companhia aérea",
+      return {
+        id: `${oferta.id}-${combo.partida}-${combo.regresso ?? "OW"}`,
+        origem: data.origem,
+        destino: data.destino,
+        dataPartida: combo.partida,
+        dataRegresso: combo.regresso,
 
-    numeroVoo:
-      primeiroSegmento?.operating_carrier_flight_number ??
-      "",
+        companhia:
+          primeiroSegmento?.operating_carrier?.name ??
+          "Companhia aérea",
 
-    horaPartida:
-      primeiroSegmento?.departing_at?.slice(11, 16) ??
-      "",
+        numeroVoo:
+          primeiroSegmento?.operating_carrier_flight_number ??
+          "",
 
-    horaChegada:
-      ultimoSegmento?.arriving_at?.slice(11, 16) ??
-      "",
+        horaPartida:
+          primeiroSegmento?.departing_at?.slice(11, 16) ??
+          "",
 
-    duracaoMin: duracaoIda,
-    escalas: escalasIda,
+        horaChegada:
+          ultimoSegmento?.arriving_at?.slice(11, 16) ??
+          "",
 
-    horaPartidaRegresso:
-  primeiroSegmentoRegresso?.departing_at?.slice(11, 16) ??
-  "",
+        duracaoMin: duracaoIda,
+        escalas: escalasIda,
 
-horaChegadaRegresso:
-  ultimoSegmentoRegresso?.arriving_at?.slice(11, 16) ??
-  "",
+        horaPartidaRegresso:
+          primeiroSegmentoRegresso?.departing_at?.slice(
+            11,
+            16,
+          ) ?? "",
 
-companhiaRegresso:
-  primeiroSegmentoRegresso?.operating_carrier?.name ??
-  "",
+        horaChegadaRegresso:
+          ultimoSegmentoRegresso?.arriving_at?.slice(
+            11,
+            16,
+          ) ?? "",
 
-numeroVooRegresso:
-  primeiroSegmentoRegresso?.operating_carrier_flight_number ??
-  "",
+        companhiaRegresso:
+          primeiroSegmentoRegresso?.operating_carrier
+            ?.name ?? "",
 
-duracaoMinRegresso: duracaoRegresso,
-    escalasRegresso,
+        numeroVooRegresso:
+          primeiroSegmentoRegresso
+            ?.operating_carrier_flight_number ?? "",
 
-    precoPorPassageiro:
-      data.passageiros > 0
-        ? Math.round(
-            (precoTotal / data.passageiros) * 100,
-          ) / 100
-        : precoTotal,
+        duracaoMinRegresso: duracaoRegresso,
+        escalasRegresso,
 
-    precoTotal,
-    moeda: oferta.total_currency,
-    bagagemIncluida: false,
-    reservavel: true,
-    deeplink: null,
-    precoIndisponivel: false,
-    fonte: "api" as const,
-  };
-});
+        precoPorPassageiro:
+          data.passageiros > 0
+            ? Math.round(
+                (precoTotal / data.passageiros) * 100,
+              ) / 100
+            : precoTotal,
 
-  todas.push(...mapeadas);
+        precoTotal,
+        moeda: oferta.total_currency,
+        bagagemIncluida: false,
+        reservavel: true,
+        deeplink: null,
+        precoIndisponivel: false,
+        fonte: "api" as const,
+      };
+    });
 
-}
+    todas.push(...mapeadas);
+  }
 
   todas.sort(
     (a, b) =>
@@ -369,6 +393,278 @@ duracaoMinRegresso: duracaoRegresso,
   };
 }
 
+/* =========================================================
+   SUGESTÕES DE AEROPORTOS E CIDADES
+   ========================================================= */
+
+export type SugestaoLugar = {
+  id: string;
+  tipo: "airport" | "city";
+  nome: string;
+  cidade: string;
+  codigoIata: string;
+  codigoCidade: string | null;
+  pais: string | null;
+};
+
+type DuffelPlace = {
+  id?: string;
+  type?: "airport" | "city";
+  name?: string;
+  city_name?: string | null;
+  iata_code?: string;
+  iata_city_code?: string | null;
+  iata_country_code?: string | null;
+};
+
+function normalizarLugar(valor: string): string {
+  return valor
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim();
+}
+
+/*
+ * O Duffel trabalha com os nomes oficiais dos lugares.
+ * Para alguns nomes em português, enviamos também o nome
+ * internacional mais comum quando a primeira pesquisa
+ * não encontra resultados suficientemente relevantes.
+ */
+const ALIASES_LUGARES: Record<string, string> = {
+  milao: "Milan",
+  londres: "London",
+  munique: "Munich",
+  veneza: "Venice",
+  "florença": "Florence",
+  florenca: "Florence",
+  napoles: "Naples",
+  "nápoles": "Naples",
+  sevilha: "Seville",
+  "nova iorque": "New York",
+  "nova york": "New York",
+  bruxelas: "Brussels",
+  viena: "Vienna",
+  praga: "Prague",
+  varsovia: "Warsaw",
+  "varsóvia": "Warsaw",
+  estocolmo: "Stockholm",
+  copenhaga: "Copenhagen",
+  atenas: "Athens",
+  zurique: "Zurich",
+  genebra: "Geneva",
+  colónia: "Cologne",
+  colonia: "Cologne",
+  hamburgo: "Hamburg",
+  estugarda: "Stuttgart",
+  dusseldorf: "Dusseldorf",
+  "düsseldorf": "Dusseldorf",
+  manchester: "Manchester",
+  edimburgo: "Edinburgh",
+  dublin: "Dublin",
+};
+
+function obterConsultasLugar(query: string): string[] {
+  const original = query.trim();
+  const normalizada = normalizarLugar(original);
+  const consultas = [original];
+
+  const alias = ALIASES_LUGARES[normalizada];
+
+  if (alias && normalizarLugar(alias) !== normalizada) {
+    consultas.push(alias);
+  }
+
+  return Array.from(new Set(consultas));
+}
+
+function lugarCorresponde(
+  lugar: DuffelPlace,
+  consulta: string,
+): boolean {
+  const q = normalizarLugar(consulta);
+
+  if (!q) {
+    return false;
+  }
+
+  const nome = normalizarLugar(lugar.name ?? "");
+  const cidade = normalizarLugar(lugar.city_name ?? "");
+  const iata = normalizarLugar(lugar.iata_code ?? "");
+  const cidadeIata = normalizarLugar(
+    lugar.iata_city_code ?? "",
+  );
+
+  return (
+    iata === q ||
+    cidadeIata === q ||
+    nome === q ||
+    cidade === q ||
+    iata.startsWith(q) ||
+    cidadeIata.startsWith(q) ||
+    nome.startsWith(q) ||
+    cidade.startsWith(q) ||
+    nome.includes(q) ||
+    cidade.includes(q)
+  );
+}
+
+function pontuacaoLugar(
+  lugar: DuffelPlace,
+  consulta: string,
+): number {
+  const q = normalizarLugar(consulta);
+  const nome = normalizarLugar(lugar.name ?? "");
+  const cidade = normalizarLugar(lugar.city_name ?? "");
+  const iata = normalizarLugar(lugar.iata_code ?? "");
+  const cidadeIata = normalizarLugar(
+    lugar.iata_city_code ?? "",
+  );
+
+  if (iata === q || cidadeIata === q) return 100;
+  if (nome === q || cidade === q) return 95;
+  if (iata.startsWith(q) || cidadeIata.startsWith(q)) return 90;
+  if (nome.startsWith(q) || cidade.startsWith(q)) return 80;
+  if (nome.includes(q) || cidade.includes(q)) return 70;
+
+  return 0;
+}
+
+function mapearLugar(
+  lugar: DuffelPlace,
+): SugestaoLugar | null {
+  if (!lugar.iata_code || !lugar.name) {
+    return null;
+  }
+
+  return {
+    id:
+      lugar.id ??
+      `${lugar.type ?? "airport"}-${lugar.iata_code}`,
+    tipo:
+      lugar.type === "city"
+        ? "city"
+        : "airport",
+    nome: lugar.name,
+    cidade:
+      lugar.city_name ??
+      lugar.name,
+    codigoIata: lugar.iata_code,
+    codigoCidade:
+      lugar.iata_city_code ?? null,
+    pais:
+      lugar.iata_country_code ?? null,
+  };
+}
+
+export const sugerirLugares = createServerFn({
+  method: "GET",
+})
+  .validator((valor: unknown) => {
+    const query = String(
+      (valor as { query?: unknown })?.query ?? "",
+    )
+      .trim()
+      .slice(0, 80);
+
+    if (query.length < 2) {
+      return { query: "" };
+    }
+
+    return { query };
+  })
+  .handler(
+    async ({
+      data,
+    }): Promise<SugestaoLugar[]> => {
+      if (!data.query) {
+        return [];
+      }
+
+      const estado = estadoDuffel();
+
+      if (!estado.configurado) {
+        return [];
+      }
+
+      try {
+        const consultas = obterConsultasLugar(
+          data.query,
+        );
+
+        const resultados: DuffelPlace[] = [];
+        const vistos = new Set<string>();
+
+        for (const consulta of consultas) {
+          const resposta = (await pedirDuffel(
+            `/places/suggestions?query=${encodeURIComponent(consulta)}`,
+          )) as {
+            data?: DuffelPlace[];
+          };
+
+          for (const lugar of resposta.data ?? []) {
+            const chave =
+              lugar.id ??
+              `${lugar.type ?? "airport"}-${lugar.iata_code ?? lugar.name}`;
+
+            if (vistos.has(chave)) {
+              continue;
+            }
+
+            /*
+             * O endpoint do Duffel já faz a pesquisa relevante.
+             * Só mantemos resultados que correspondam ao texto
+             * pesquisado, mas permitimos nomes/cidades em qualquer
+             * um dos campos relevantes.
+             */
+            if (!lugarCorresponde(lugar, consulta)) {
+              continue;
+            }
+
+            vistos.add(chave);
+            resultados.push(lugar);
+          }
+
+          /*
+           * Não paramos na primeira pesquisa quando existe um alias.
+           * Assim, "Milão" também consulta "Milan" e "Londres"
+           * também consulta "London".
+           */
+        }
+
+        return resultados
+          .sort((a, b) => {
+            const scoreB = Math.max(
+              ...consultas.map((consulta) =>
+                pontuacaoLugar(b, consulta),
+              ),
+            );
+
+            const scoreA = Math.max(
+              ...consultas.map((consulta) =>
+                pontuacaoLugar(a, consulta),
+              ),
+            );
+
+            return scoreB - scoreA;
+          })
+          .map(mapearLugar)
+          .filter(
+            (lugar): lugar is SugestaoLugar =>
+              lugar !== null,
+          )
+          .slice(0, 12);
+      } catch (erro) {
+        console.error(
+          "[Duffel] erro nas sugestões de lugares:",
+          erro,
+        );
+
+        return [];
+      }
+    },
+  );
+
 export const pesquisarVoos = createServerFn({
   method: "POST",
 })
@@ -408,7 +704,9 @@ export const pesquisarVoos = createServerFn({
         precoMediano: null,
         fonte: "api",
         fornecedor: "Duffel",
-        estadoFornecedor: limiteAtingido ? "limite" : "erro",
+        estadoFornecedor: limiteAtingido
+          ? "limite"
+          : "erro",
         aviso: limiteAtingido
           ? "A pesquisa atingiu temporariamente o limite de pedidos da Duffel. Aguarde alguns segundos e tente novamente."
           : mensagem,

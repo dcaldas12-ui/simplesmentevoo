@@ -23,6 +23,8 @@ export type PesquisaInput = {
   /** Dias aceites antes/depois da data de regresso escolhida (0-7). */
   regressoAntes: number;
   regressoDepois: number;
+  /** Duração mínima da viagem em noites (opcional). */
+  duracaoMinima?: number | null;
   /** Duração máxima da viagem em noites (opcional). */
   duracaoMaxima?: number | null;
   passageiros: number;
@@ -161,6 +163,9 @@ export function descreverCriterios(input: PesquisaInput): string[] {
     c.push(
       `Regresso ${input.dataRegresso}: até ${limite(input.regressoAntes)} dia(s) antes e ${limite(input.regressoDepois)} dia(s) depois`,
     );
+    if (input.duracaoMinima != null && input.duracaoMinima > 0) {
+      c.push(`Duração mínima da viagem: ${input.duracaoMinima} dia(s)`);
+    }
     if (input.duracaoMaxima != null && input.duracaoMaxima > 0) {
       c.push(`Duração máxima da viagem: ${input.duracaoMaxima} dia(s)`);
     }
@@ -181,9 +186,13 @@ export function gerarCombinacoes(input: PesquisaInput): {
   const idaDepois = limite(input.idaDepois);
   const regAntes = limite(input.regressoAntes);
   const regDepois = limite(input.regressoDepois);
+  const duracaoMin =
+    input.duracaoMinima != null && input.duracaoMinima > 0
+      ? Math.max(1, Math.round(input.duracaoMinima))
+      : null;
   const duracaoMax =
     input.duracaoMaxima != null && input.duracaoMaxima > 0
-      ? Math.round(input.duracaoMaxima)
+      ? Math.max(1, Math.round(input.duracaoMaxima))
       : null;
 
   const combos: Combinacao[] = [];
@@ -205,6 +214,7 @@ export function gerarCombinacoes(input: PesquisaInput): {
       if (partida < hoje()) continue;
       const noites = diffDays(partida, regresso);
       if (noites < 1) continue;
+      if (duracaoMin !== null && noites < duracaoMin) continue;
       if (duracaoMax !== null && noites > duracaoMax) continue;
       combos.push({ partida, regresso, noites });
     }

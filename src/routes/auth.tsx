@@ -39,16 +39,31 @@ function AuthPage() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    if (session) void navigate({ to: "/viagens" });
+    if (!session) return;
+
+    const destino =
+      sessionStorage.getItem("viatorbis_after_auth") || "/viagens";
+
+    sessionStorage.removeItem("viatorbis_after_auth");
+
+    void navigate({
+      to: destino as "/pesquisa" | "/viagens",
+    });
   }, [session, navigate]);
 
   async function submeter(e: React.FormEvent) {
     e.preventDefault();
     setAguardar(true);
+
     try {
       if (modo === "entrar") {
-        const { error } = await supabase.auth.signInWithPassword({ email, password });
+        const { error } = await supabase.auth.signInWithPassword({
+          email,
+          password,
+        });
+
         if (error) throw error;
+
         toast.success("Bem-vindo de volta!");
       } else {
         const { error } = await supabase.auth.signUp({
@@ -59,11 +74,19 @@ function AuthPage() {
             emailRedirectTo: window.location.origin,
           },
         });
+
         if (error) throw error;
-        toast.success("Conta criada. Já pode começar a organizar as suas viagens.");
+
+        toast.success(
+          "Conta criada. Já pode começar a organizar as suas viagens.",
+        );
       }
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Não foi possível continuar.");
+      toast.error(
+        err instanceof Error
+          ? err.message
+          : "Não foi possível continuar.",
+      );
     } finally {
       setAguardar(false);
     }
@@ -73,12 +96,22 @@ function AuthPage() {
     const result = await lovable.auth.signInWithOAuth("google", {
       redirect_uri: window.location.origin,
     });
+
     if (result.error) {
       toast.error("Não foi possível entrar com o Google.");
       return;
     }
+
     if (result.redirected) return;
-    void navigate({ to: "/viagens" });
+
+    const destino =
+      sessionStorage.getItem("viatorbis_after_auth") || "/viagens";
+
+    sessionStorage.removeItem("viatorbis_after_auth");
+
+    void navigate({
+      to: destino as "/pesquisa" | "/viagens",
+    });
   }
 
   return (
@@ -87,14 +120,19 @@ function AuthPage() {
         <h1 className="font-display text-2xl font-semibold">
           {modo === "entrar" ? "Entrar" : "Criar conta"}
         </h1>
+
         <p className="mt-1 text-sm text-muted-foreground">
           Guarde viagens, voos e documentos na sua conta.
         </p>
 
-        <form onSubmit={submeter} className="mt-6 space-y-4 rounded-2xl border border-border bg-card p-5">
+        <form
+          onSubmit={submeter}
+          className="mt-6 space-y-4 rounded-2xl border border-border bg-card p-5"
+        >
           {modo === "criar" ? (
             <div>
               <Label htmlFor="nome">Nome</Label>
+
               <Input
                 id="nome"
                 value={nome}
@@ -104,8 +142,10 @@ function AuthPage() {
               />
             </div>
           ) : null}
+
           <div>
             <Label htmlFor="email">Email</Label>
+
             <Input
               id="email"
               type="email"
@@ -115,8 +155,10 @@ function AuthPage() {
               className="mt-1.5"
             />
           </div>
+
           <div>
             <Label htmlFor="password">Palavra-passe</Label>
+
             <Input
               id="password"
               type="password"
@@ -127,20 +169,35 @@ function AuthPage() {
               className="mt-1.5"
             />
           </div>
-          <Button type="submit" className="w-full" disabled={aguardar}>
+
+          <Button
+            type="submit"
+            className="w-full"
+            disabled={aguardar}
+          >
             {modo === "entrar" ? "Entrar" : "Criar conta"}
           </Button>
-          <Button type="button" variant="outline" className="w-full" onClick={() => void entrarComGoogle()}>
+
+          <Button
+            type="button"
+            variant="outline"
+            className="w-full"
+            onClick={() => void entrarComGoogle()}
+          >
             Continuar com Google
           </Button>
         </form>
 
         <button
           type="button"
-          onClick={() => setModo(modo === "entrar" ? "criar" : "entrar")}
+          onClick={() =>
+            setModo(modo === "entrar" ? "criar" : "entrar")
+          }
           className="mt-4 w-full text-sm text-muted-foreground underline underline-offset-4"
         >
-          {modo === "entrar" ? "Ainda não tenho conta" : "Já tenho conta"}
+          {modo === "entrar"
+            ? "Ainda não tenho conta"
+            : "Já tenho conta"}
         </button>
       </div>
     </AppShell>
