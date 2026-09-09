@@ -372,6 +372,9 @@ ofertaComRegresso.duracaoMinRegresso !== undefined ? (
               <p className="text-xs text-muted-foreground">
                 {passageiros} passageiro{passageiros === 1 ? "" : "s"}
               </p>
+              <p className="text-xs text-muted-foreground">
+                {fmtPreco.format(oferta.precoPorPassageiro)} por passageiro
+              </p>
             </>
           )}
         </div>
