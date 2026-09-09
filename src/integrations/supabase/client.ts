@@ -18,7 +18,10 @@ function createSupabaseFetch(supabaseKey: string): typeof fetch {
     }
 
     // New Supabase API keys are opaque strings, not bearer JWTs.
-    if (isNewSupabaseApiKey(supabaseKey) && headers.get('Authorization') === `Bearer ${supabaseKey}`) {
+    if (
+      isNewSupabaseApiKey(supabaseKey) &&
+      headers.get('Authorization') === `Bearer ${supabaseKey}`
+    ) {
       headers.delete('Authorization');
     }
 
@@ -27,18 +30,29 @@ function createSupabaseFetch(supabaseKey: string): typeof fetch {
   };
 }
 
-
 function createSupabaseClient() {
   // Use import.meta.env for client-side (Vite build-time replacement)
   // Fall back to process.env for SSR (server-side rendering)
-  const SUPABASE_URL = import.meta.env['VITE_SUPABASE_URL'] || process.env['SUPABASE_URL'];
-  const SUPABASE_PUBLISHABLE_KEY = import.meta.env['VITE_SUPABASE_PUBLISHABLE_KEY'] || process.env['SUPABASE_PUBLISHABLE_KEY'];
+  //
+  // The final fallback values below are public Supabase browser values.
+  // They are intentionally available in the frontend and protected by RLS.
+
+  const SUPABASE_URL =
+    import.meta.env['VITE_SUPABASE_URL'] ||
+    process.env['SUPABASE_URL'] ||
+    'https://fgwooadwtjhvqebgscoh.supabase.co';
+
+  const SUPABASE_PUBLISHABLE_KEY =
+    import.meta.env['VITE_SUPABASE_PUBLISHABLE_KEY'] ||
+    process.env['SUPABASE_PUBLISHABLE_KEY'] ||
+    'sb_publishable_p4baGL124zPceARBpnlrhQ_3Rn_cBR_';
 
   if (!SUPABASE_URL || !SUPABASE_PUBLISHABLE_KEY) {
     const missing = [
       ...(!SUPABASE_URL ? ['SUPABASE_URL'] : []),
       ...(!SUPABASE_PUBLISHABLE_KEY ? ['SUPABASE_PUBLISHABLE_KEY'] : []),
     ];
+
     const message = `Missing Supabase environment variable(s): ${missing.join(', ')}. Connect Supabase in Lovable Cloud.`;
     console.error(`[Supabase] ${message}`);
     throw new Error(message);
@@ -60,10 +74,15 @@ let _supabase: ReturnType<typeof createSupabaseClient> | undefined;
 
 // Import the supabase client like this:
 // import { supabase } from "@/integrations/supabase/client";
-export const supabase = new Proxy({} as ReturnType<typeof createSupabaseClient>, {
-  get(_, prop, receiver) {
-    if (!_supabase) _supabase = createSupabaseClient();
-    return Reflect.get(_supabase, prop, receiver);
-  },
-});
+export const supabase = new Proxy(
+  {} as ReturnType<typeof createSupabaseClient>,
+  {
+    get(_, prop, receiver) {
+      if (!_supabase) {
+        _supabase = createSupabaseClient();
+      }
 
+      return Reflect.get(_supabase, prop, receiver);
+    },
+  },
+);
