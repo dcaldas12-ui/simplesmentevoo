@@ -216,7 +216,7 @@ function ViagensPage() {
                   <Plus className="size-4" /> Criar viagem
                 </Button>
                 <Button asChild variant="outline">
-                  <Link to="/pesquisa" search={{ ...valoresIniciais }}>Pesquisar voos</Link>
+                  <Link to="/pesquisa" search={{ ...valoresIniciais, executar: 1 }}>Pesquisar voos</Link>
                 </Button>
               </div>
             </EmptyState>

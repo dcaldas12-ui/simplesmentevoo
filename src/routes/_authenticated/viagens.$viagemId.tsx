@@ -191,7 +191,7 @@ function DetalheViagem() {
                 descricao="Adicione um voo manualmente ou guarde um resultado da pesquisa."
               >
                 <Button asChild variant="outline">
-                  <Link to="/pesquisa" search={{ ...valoresIniciais }}>
+                  <Link to="/pesquisa" search={{ ...valoresIniciais, executar: 1 }}>
                     Pesquisar voos
                   </Link>
                 </Button>
