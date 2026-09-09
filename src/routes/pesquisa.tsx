@@ -197,7 +197,7 @@ function PesquisaPage() {
                 <ul className="space-y-3">
                   {exatas.map((oferta, i) => (
                     <li key={oferta.id}>
-                      <CartaoOferta oferta={oferta} melhor={i === 0} />
+                      <CartaoOferta oferta={oferta} melhor={i === 0} passageiros={busca.passageiros} />
                     </li>
                   ))}
                 </ul>
@@ -221,6 +221,7 @@ function PesquisaPage() {
                       <CartaoOferta
                         oferta={oferta}
                         melhor={false}
+                        passageiros={busca.passageiros}
                         pedido={{
                           partida: busca.dataPartida,
                           regresso: busca.dataRegresso === "" ? null : busca.dataRegresso,
@@ -280,11 +281,13 @@ function CartaoOferta({
   melhor,
   pedido,
   referencia,
+  passageiros,
 }: {
   oferta: Oferta;
   melhor: boolean;
   pedido?: { partida: string; regresso: string | null };
   referencia?: number;
+  passageiros: number;
 }) {
   const ofertaComRegresso = oferta as Oferta & {
   horaPartidaRegresso?: string;
@@ -362,9 +365,12 @@ ofertaComRegresso.duracaoMinRegresso !== undefined ? (
             <>
               <p className="font-display text-xl font-semibold">
                 {fmtPreco.format(oferta.precoTotal)}
+                <span className="ml-2 align-middle text-xs font-normal text-muted-foreground">
+                  Preço total da viagem
+                </span>
               </p>
               <p className="text-xs text-muted-foreground">
-                {fmtPreco.format(oferta.precoPorPassageiro)} por passageiro
+                {passageiros} passageiro{passageiros === 1 ? "" : "s"}
               </p>
             </>
           )}

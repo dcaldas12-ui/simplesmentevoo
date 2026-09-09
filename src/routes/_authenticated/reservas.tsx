@@ -126,7 +126,7 @@ function ReservasPage() {
         )}
 
         <Button asChild variant="outline">
-          <Link to="/pesquisa" search={{ ...valoresIniciais }}>
+          <Link to="/pesquisa" search={{ ...valoresIniciais, executar: 1 }}>
             Pesquisar novos voos
           </Link>
         </Button>
