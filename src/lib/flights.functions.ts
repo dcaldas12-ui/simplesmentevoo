@@ -50,11 +50,39 @@ function validar(data: unknown): PesquisaInput {
     Number(d["duracaoMaxima"] ?? 0) || 0;
 
   const duracaoMaxima =
-    duracaoBruta > 0
-      ? Math.min(60, Math.round(duracaoBruta))
-      : null;
+  duracaoBruta > 0
+    ? Math.min(60, Math.round(duracaoBruta))
+    : null;
 
-  return {
+const passageiros =
+  Math.max(
+    1,
+    Math.min(
+      9,
+      Number(d["passageiros"] ?? 1) || 1,
+    ),
+  );
+
+const idadesPassageiros = Array.isArray(
+  d["idadesPassageiros"],
+)
+  ? d["idadesPassageiros"]
+      .map((idade) => Number(idade))
+      .filter(
+        (idade) =>
+          Number.isInteger(idade) &&
+          idade >= 0 &&
+          idade <= 17,
+      )
+  : [];
+
+if (idadesPassageiros.length > passageiros - 1) {
+  throw new Error(
+    "O número de menores não pode ser superior ao número de passageiros menos um adulto.",
+  );
+}
+
+return {
     origem,
     destino,
     dataPartida,
@@ -64,13 +92,8 @@ function validar(data: unknown): PesquisaInput {
     regressoAntes: dias(d["regressoAntes"]),
     regressoDepois: dias(d["regressoDepois"]),
     duracaoMaxima,
-    passageiros: Math.max(
-      1,
-      Math.min(
-        9,
-        Number(d["passageiros"] ?? 1) || 1,
-      ),
-    ),
+    passageiros,
+    idadesPassageiros,
     apenasDiretos: Boolean(d["apenasDiretos"]),
   };
 }
@@ -163,10 +186,19 @@ async function procurarDuffel(
         data: {
           cabin_class: "economy",
           slices,
-          passengers: Array.from(
-            { length: data.passageiros },
-            () => ({ type: "adult" }),
-          ),
+          passengers: [
+  ...Array.from(
+    {
+      length:
+        data.passageiros -
+        (data.idadesPassageiros?.length ?? 0),
+    },
+    () => ({ type: "adult" }),
+  ),
+  ...(data.idadesPassageiros ?? []).map(
+    (idade) => ({ age: idade }),
+  ),
+],
           ...(data.apenasDiretos
             ? { max_connections: 0 }
             : {}),
@@ -247,14 +279,22 @@ const mapeadas = ofertas.map((oferta) => {
     escalas: escalasIda,
 
     horaPartidaRegresso:
-      primeiroSegmentoRegresso?.departing_at?.slice(11, 16) ??
-      "",
+  primeiroSegmentoRegresso?.departing_at?.slice(11, 16) ??
+  "",
 
-    horaChegadaRegresso:
-      ultimoSegmentoRegresso?.arriving_at?.slice(11, 16) ??
-      "",
+horaChegadaRegresso:
+  ultimoSegmentoRegresso?.arriving_at?.slice(11, 16) ??
+  "",
 
-    duracaoMinRegresso: duracaoRegresso,
+companhiaRegresso:
+  primeiroSegmentoRegresso?.operating_carrier?.name ??
+  "",
+
+numeroVooRegresso:
+  primeiroSegmentoRegresso?.operating_carrier_flight_number ??
+  "",
+
+duracaoMinRegresso: duracaoRegresso,
     escalasRegresso,
 
     precoPorPassageiro:
@@ -284,7 +324,7 @@ const mapeadas = ofertas.map((oferta) => {
       a.duracaoMin - b.duracaoMin,
   );
 
-  const ofertas = todas.slice(0, 40);
+  const ofertas = todas;
 
   const precos = ofertas.map(
     (oferta) => oferta.precoTotal,

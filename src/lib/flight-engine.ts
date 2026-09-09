@@ -26,6 +26,7 @@ export type PesquisaInput = {
   /** Duração máxima da viagem em noites (opcional). */
   duracaoMaxima?: number | null;
   passageiros: number;
+  idadesPassageiros?: number[];
   apenasDiretos: boolean;
 };
 
@@ -41,6 +42,12 @@ export type Oferta = {
   horaChegada: string;
   duracaoMin: number;
   escalas: number;
+  horaPartidaRegresso?: string;
+horaChegadaRegresso?: string;
+companhiaRegresso?: string;
+numeroVooRegresso?: string;
+duracaoMinRegresso?: number;
+escalasRegresso?: number;
   precoPorPassageiro: number;
   precoTotal: number;
   moeda: string;

@@ -19,6 +19,7 @@ export type SearchFormValues = {
   regressoDepois: number;
   duracaoMaxima: number;
   passageiros: number;
+  idadesPassageiros?: number[];
   apenasDiretos: boolean;
 };
 
@@ -39,6 +40,7 @@ export const valoresIniciais: SearchFormValues = {
   regressoDepois: 2,
   duracaoMaxima: 0,
   passageiros: 1,
+  idadesPassageiros: [],
   apenasDiretos: false,
 };
 
@@ -58,6 +60,90 @@ export function SearchForm({
       : "so-ida"
     : "ida-volta",
 );
+  const idadesIniciais = initial?.idadesPassageiros ?? [];
+
+const [composicao, setComposicao] = useState({
+  adultos: Math.max(
+    1,
+    (initial?.passageiros ?? 1) - idadesIniciais.length,
+  ),
+  adolescentes: idadesIniciais.filter(
+    (idade) => idade >= 12 && idade <= 17,
+  ),
+  criancas: idadesIniciais.filter(
+    (idade) => idade >= 2 && idade <= 11,
+  ),
+  bebes: idadesIniciais.filter(
+    (idade) => idade >= 0 && idade <= 1,
+  ),
+});
+  const [passageirosAberto, setPassageirosAberto] = useState(false);
+  
+  const totalPassageiros =
+    composicao.adultos +
+    composicao.adolescentes.length +
+    composicao.criancas.length +
+    composicao.bebes.length;
+      const idadesPassageiros = [
+    ...composicao.adolescentes,
+    ...composicao.criancas,
+    ...composicao.bebes,
+  ];
+
+  function alterarGrupo(
+    grupo: "adultos" | "adolescentes" | "criancas" | "bebes",
+    delta: number,
+  ) {
+    setComposicao((atual) => {
+      if (grupo === "adultos") {
+        return {
+          ...atual,
+          adultos: Math.max(
+            1,
+            Math.min(9 - (totalPassageiros - atual.adultos), atual.adultos + delta),
+          ),
+        };
+      }
+
+      if (delta > 0 && totalPassageiros >= 9) {
+        return atual;
+      }
+
+      const idades = atual[grupo];
+
+      if (delta > 0) {
+        const idadeInicial =
+          grupo === "adolescentes"
+            ? 14
+            : grupo === "criancas"
+              ? 7
+              : 1;
+
+        return {
+          ...atual,
+          [grupo]: [...idades, idadeInicial],
+        };
+      }
+
+      return {
+        ...atual,
+        [grupo]: idades.slice(0, -1),
+      };
+    });
+  }
+
+  function alterarIdade(
+    grupo: "adolescentes" | "criancas" | "bebes",
+    indice: number,
+    idade: number,
+  ) {
+    setComposicao((atual) => ({
+      ...atual,
+      [grupo]: atual[grupo].map((valor, i) =>
+        i === indice ? idade : valor,
+      ),
+    }));
+  }
 
   function set<K extends keyof SearchFormValues>(k: K, value: SearchFormValues[K]) {
     setV((prev) => ({ ...prev, [k]: value }));
@@ -80,7 +166,8 @@ export function SearchForm({
     regressoAntes: v.regressoAntes,
     regressoDepois: v.regressoDepois,
     duracaoMaxima: v.duracaoMaxima,
-    passageiros: v.passageiros,
+    passageiros: totalPassageiros,
+    idadesPassageiros,
     apenasDiretos: v.apenasDiretos,
   }),
 );
@@ -97,7 +184,8 @@ export function SearchForm({
         regressoAntes: v.regressoAntes,
         regressoDepois: v.regressoDepois,
         duracaoMaxima: v.duracaoMaxima,
-        passageiros: v.passageiros,
+        passageiros: totalPassageiros,
+        idadesPassageiros,
         apenasDiretos: v.apenasDiretos,
         executar: Date.now(),
       },
@@ -309,18 +397,259 @@ export function SearchForm({
   </div>
 ) : null}
 
-        <div>
-          <Label htmlFor="pax">Passageiros</Label>
-          <Input
-            id="pax"
-            type="number"
-            min={1}
-            max={9}
-            value={v.passageiros}
-            onChange={(e) => set("passageiros", Number(e.target.value))}
-            className="mt-1.5"
-          />
+        <div className="sm:col-span-2 lg:col-span-2">
+  <Label>Passageiros</Label>
+
+  <div className="mt-1.5 rounded-xl border border-border bg-background">
+    <button
+      type="button"
+      onClick={() => setPassageirosAberto((aberto) => !aberto)}
+      className="flex w-full items-center justify-between gap-3 p-3 text-left"
+      aria-expanded={passageirosAberto}
+    >
+      <div>
+        <p className="text-sm font-medium">
+          {composicao.adultos}{" "}
+          {composicao.adultos === 1 ? "adulto" : "adultos"}
+          {composicao.adolescentes.length > 0
+            ? ` · ${composicao.adolescentes.length} ${
+                composicao.adolescentes.length === 1
+                  ? "adolescente"
+                  : "adolescentes"
+              }`
+            : ""}
+          {composicao.criancas.length > 0
+            ? ` · ${composicao.criancas.length} ${
+                composicao.criancas.length === 1
+                  ? "criança"
+                  : "crianças"
+              }`
+            : ""}
+          {composicao.bebes.length > 0
+            ? ` · ${composicao.bebes.length} ${
+                composicao.bebes.length === 1 ? "bebé" : "bebés"
+              }`
+            : ""}
+        </p>
+        <p className="text-xs text-muted-foreground">
+          {totalPassageiros}{" "}
+          {totalPassageiros === 1 ? "passageiro" : "passageiros"} no total
+        </p>
+      </div>
+
+      <span className="text-lg text-muted-foreground">
+        {passageirosAberto ? "⌃" : "⌄"}
+      </span>
+    </button>
+
+    {passageirosAberto ? (
+      <div className="border-t border-border p-3">
+        <div className="space-y-3">
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <p className="text-sm font-medium">Adultos</p>
+              <p className="text-xs text-muted-foreground">18 ou mais</p>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                disabled={composicao.adultos <= 1}
+                onClick={() => alterarGrupo("adultos", -1)}
+              >
+                −
+              </Button>
+
+              <span className="w-6 text-center text-sm font-medium">
+                {composicao.adultos}
+              </span>
+
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                disabled={totalPassageiros >= 9}
+                onClick={() => alterarGrupo("adultos", 1)}
+              >
+                +
+              </Button>
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <p className="text-sm font-medium">Adolescentes</p>
+              <p className="text-xs text-muted-foreground">12–17 anos</p>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                disabled={composicao.adolescentes.length === 0}
+                onClick={() => alterarGrupo("adolescentes", -1)}
+              >
+                −
+              </Button>
+
+              <span className="w-6 text-center text-sm font-medium">
+                {composicao.adolescentes.length}
+              </span>
+
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                disabled={totalPassageiros >= 9}
+                onClick={() => alterarGrupo("adolescentes", 1)}
+              >
+                +
+              </Button>
+            </div>
+          </div>
+
+          {composicao.adolescentes.map((idade, indice) => (
+            <div key={`adolescente-${indice}`} className="ml-4">
+              <Label htmlFor={`adolescente-${indice}`}>
+                Adolescente {indice + 1} — idade
+              </Label>
+              <Input
+                id={`adolescente-${indice}`}
+                type="number"
+                min={12}
+                max={17}
+                value={idade}
+                onChange={(e) =>
+                  alterarIdade(
+                    "adolescentes",
+                    indice,
+                    Math.min(17, Math.max(12, Number(e.target.value))),
+                  )
+                }
+                className="mt-1.5"
+              />
+            </div>
+          ))}
+
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <p className="text-sm font-medium">Crianças</p>
+              <p className="text-xs text-muted-foreground">2–11 anos</p>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                disabled={composicao.criancas.length === 0}
+                onClick={() => alterarGrupo("criancas", -1)}
+              >
+                −
+              </Button>
+
+              <span className="w-6 text-center text-sm font-medium">
+                {composicao.criancas.length}
+              </span>
+
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                disabled={totalPassageiros >= 9}
+                onClick={() => alterarGrupo("criancas", 1)}
+              >
+                +
+              </Button>
+            </div>
+          </div>
+
+          {composicao.criancas.map((idade, indice) => (
+            <div key={`crianca-${indice}`} className="ml-4">
+              <Label htmlFor={`crianca-${indice}`}>
+                Criança {indice + 1} — idade
+              </Label>
+              <Input
+                id={`crianca-${indice}`}
+                type="number"
+                min={2}
+                max={11}
+                value={idade}
+                onChange={(e) =>
+                  alterarIdade(
+                    "criancas",
+                    indice,
+                    Math.min(11, Math.max(2, Number(e.target.value))),
+                  )
+                }
+                className="mt-1.5"
+              />
+            </div>
+          ))}
+
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <p className="text-sm font-medium">Bebés</p>
+              <p className="text-xs text-muted-foreground">0–1 ano</p>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                disabled={composicao.bebes.length === 0}
+                onClick={() => alterarGrupo("bebes", -1)}
+              >
+                −
+              </Button>
+
+              <span className="w-6 text-center text-sm font-medium">
+                {composicao.bebes.length}
+              </span>
+
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                disabled={totalPassageiros >= 9}
+                onClick={() => alterarGrupo("bebes", 1)}
+              >
+                +
+              </Button>
+            </div>
+          </div>
+
+          {composicao.bebes.map((idade, indice) => (
+            <div key={`bebe-${indice}`} className="ml-4">
+              <Label htmlFor={`bebe-${indice}`}>
+                Bebé {indice + 1} — idade
+              </Label>
+              <Input
+                id={`bebe-${indice}`}
+                type="number"
+                min={0}
+                max={1}
+                value={idade}
+                onChange={(e) =>
+                  alterarIdade(
+                    "bebes",
+                    indice,
+                    Math.min(1, Math.max(0, Number(e.target.value))),
+                  )
+                }
+                className="mt-1.5"
+              />
+            </div>
+          ))}
         </div>
+      </div>
+    ) : null}
+  </div>
+</div>
 
         <div className="flex items-center gap-3 sm:mt-6">
           <Switch
