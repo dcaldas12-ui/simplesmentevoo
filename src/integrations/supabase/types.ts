@@ -14,6 +14,62 @@ export type Database = {
   }
   public: {
     Tables: {
+      alojamentos: {
+        Row: {
+          check_in: string | null
+          check_out: string | null
+          created_at: string
+          id: string
+          moeda: string | null
+          morada: string | null
+          nome: string
+          notas: string | null
+          preco: number | null
+          referencia: string | null
+          updated_at: string
+          user_id: string
+          viagem_id: string
+        }
+        Insert: {
+          check_in?: string | null
+          check_out?: string | null
+          created_at?: string
+          id?: string
+          moeda?: string | null
+          morada?: string | null
+          nome: string
+          notas?: string | null
+          preco?: number | null
+          referencia?: string | null
+          updated_at?: string
+          user_id?: string
+          viagem_id: string
+        }
+        Update: {
+          check_in?: string | null
+          check_out?: string | null
+          created_at?: string
+          id?: string
+          moeda?: string | null
+          morada?: string | null
+          nome?: string
+          notas?: string | null
+          preco?: number | null
+          referencia?: string | null
+          updated_at?: string
+          user_id?: string
+          viagem_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "alojamentos_viagem_id_fkey"
+            columns: ["viagem_id"]
+            isOneToOne: false
+            referencedRelation: "viagens"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       app_user_connections: {
         Row: {
           connection_key_ciphertext: string
@@ -184,6 +240,44 @@ export type Database = {
             columns: ["voo_id"]
             isOneToOne: false
             referencedRelation: "voos"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      informacoes: {
+        Row: {
+          conteudo: string | null
+          created_at: string
+          id: string
+          titulo: string
+          updated_at: string
+          user_id: string
+          viagem_id: string
+        }
+        Insert: {
+          conteudo?: string | null
+          created_at?: string
+          id?: string
+          titulo: string
+          updated_at?: string
+          user_id?: string
+          viagem_id: string
+        }
+        Update: {
+          conteudo?: string | null
+          created_at?: string
+          id?: string
+          titulo?: string
+          updated_at?: string
+          user_id?: string
+          viagem_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "informacoes_viagem_id_fkey"
+            columns: ["viagem_id"]
+            isOneToOne: false
+            referencedRelation: "viagens"
             referencedColumns: ["id"]
           },
         ]
@@ -382,6 +476,68 @@ export type Database = {
             columns: ["voo_id"]
             isOneToOne: false
             referencedRelation: "voos"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      transportes: {
+        Row: {
+          chegada: string | null
+          created_at: string
+          destino: string | null
+          id: string
+          moeda: string | null
+          notas: string | null
+          operador: string | null
+          origem: string | null
+          partida: string | null
+          preco: number | null
+          referencia: string | null
+          tipo: string
+          updated_at: string
+          user_id: string
+          viagem_id: string
+        }
+        Insert: {
+          chegada?: string | null
+          created_at?: string
+          destino?: string | null
+          id?: string
+          moeda?: string | null
+          notas?: string | null
+          operador?: string | null
+          origem?: string | null
+          partida?: string | null
+          preco?: number | null
+          referencia?: string | null
+          tipo: string
+          updated_at?: string
+          user_id?: string
+          viagem_id: string
+        }
+        Update: {
+          chegada?: string | null
+          created_at?: string
+          destino?: string | null
+          id?: string
+          moeda?: string | null
+          notas?: string | null
+          operador?: string | null
+          origem?: string | null
+          partida?: string | null
+          preco?: number | null
+          referencia?: string | null
+          tipo?: string
+          updated_at?: string
+          user_id?: string
+          viagem_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "transportes_viagem_id_fkey"
+            columns: ["viagem_id"]
+            isOneToOne: false
+            referencedRelation: "viagens"
             referencedColumns: ["id"]
           },
         ]
