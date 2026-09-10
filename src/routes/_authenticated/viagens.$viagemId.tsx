@@ -998,6 +998,12 @@ function DetalheViagem() {
                             {a.notas}
                           </p>
                         ) : null}
+
+                        <AnexosItem
+                          viagemId={viagemId}
+                          categoria="alojamento"
+                          itemId={a.id}
+                        />
                       </div>
 
                       <div className="flex items-center gap-2">
@@ -1122,6 +1128,12 @@ function DetalheViagem() {
                             {t.notas}
                           </p>
                         ) : null}
+
+                        <AnexosItem
+                          viagemId={viagemId}
+                          categoria="transporte"
+                          itemId={t.id}
+                        />
                       </div>
 
                       <div className="flex items-center gap-2">
@@ -1208,6 +1220,12 @@ function DetalheViagem() {
                             {i.conteudo}
                           </p>
                         ) : null}
+
+                        <AnexosItem
+                          viagemId={viagemId}
+                          categoria="informacao"
+                          itemId={i.id}
+                        />
                       </div>
 
                       <div className="flex items-center gap-1">
@@ -1719,6 +1737,358 @@ function EditarVooDialog({
 }
 
 
+
+type AnexoCategoria = "alojamento" | "transporte" | "informacao";
+
+type AnexoViagem = Database["public"]["Tables"]["anexos_viagem"]["Row"];
+
+function validarFicheiroAnexo(file: File) {
+  if (file.type !== "application/pdf" && !file.type.startsWith("image/")) {
+    return "Formato não suportado. Escolha um PDF ou uma imagem.";
+  }
+
+  if (file.size > 20 * 1024 * 1024) {
+    return "Ficheiro demasiado grande (máximo 20 MB).";
+  }
+
+  return null;
+}
+
+function nomeSeguroFicheiro(file: File) {
+  return file.name.normalize("NFD").replace(/[^\w.-]+/g, "_");
+}
+
+async function guardarAnexoViagem({
+  viagemId,
+  categoria,
+  itemId,
+  file,
+}: {
+  viagemId: string;
+  categoria: AnexoCategoria;
+  itemId: string;
+  file: File;
+}) {
+  const erroValidacao = validarFicheiroAnexo(file);
+  if (erroValidacao) throw new Error(erroValidacao);
+
+  const { data: userData } = await supabase.auth.getUser();
+  const uid = userData.user?.id;
+
+  if (!uid) throw new Error("Sessão expirada.");
+
+  const path = `${uid}/${viagemId}/anexos/${categoria}/${itemId}/${Date.now()}-${nomeSeguroFicheiro(file)}`;
+
+  const { data: upload, error: erroUpload } = await supabase.storage
+    .from("documentos")
+    .upload(path, file, {
+      contentType: file.type || "application/octet-stream",
+      upsert: false,
+    });
+
+  if (erroUpload) throw erroUpload;
+
+  const pathGuardado = upload?.path ?? null;
+
+  if (!pathGuardado || pathGuardado.split("/")[0] !== uid) {
+    if (pathGuardado) {
+      await supabase.storage.from("documentos").remove([pathGuardado]);
+    }
+
+    throw new Error(
+      "O armazenamento não confirmou o caminho seguro do ficheiro.",
+    );
+  }
+
+  const { error } = await supabase.from("anexos_viagem").insert({
+    user_id: uid,
+    viagem_id: viagemId,
+    categoria,
+    item_id: itemId,
+    nome: file.name,
+    ficheiro_path: pathGuardado,
+    mime_type: file.type || null,
+    tamanho_bytes: file.size,
+  });
+
+  if (error) {
+    await supabase.storage.from("documentos").remove([pathGuardado]);
+    throw error;
+  }
+
+  return pathGuardado;
+}
+
+function FicheiroSelecionado({
+  file,
+  onChange,
+  disabled,
+}: {
+  file: File | null;
+  onChange: (file: File | null) => void;
+  disabled?: boolean;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  return (
+    <div className="rounded-xl border border-dashed border-border p-3">
+      <input
+        ref={inputRef}
+        type="file"
+        accept="application/pdf,image/*"
+        className="hidden"
+        onChange={(e) => {
+          const selected = e.target.files?.[0] ?? null;
+
+          if (selected) {
+            const erro = validarFicheiroAnexo(selected);
+
+            if (erro) {
+              toast.error(erro);
+              e.currentTarget.value = "";
+              return;
+            }
+          }
+
+          onChange(selected);
+        }}
+      />
+
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-sm font-medium">Ficheiro</p>
+          <p className="truncate text-xs text-muted-foreground">
+            {file
+              ? file.name
+              : "Opcional — pode adicionar um PDF ou uma imagem."}
+          </p>
+        </div>
+
+        <div className="flex items-center gap-2">
+          {file ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              disabled={disabled}
+              onClick={() => {
+                onChange(null);
+
+                if (inputRef.current) {
+                  inputRef.current.value = "";
+                }
+              }}
+            >
+              Remover
+            </Button>
+          ) : null}
+
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={disabled}
+            onClick={() => inputRef.current?.click()}
+          >
+            <Upload className="size-3.5" />
+            {file ? "Alterar ficheiro" : "Adicionar ficheiro"}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AnexosItem({
+  viagemId,
+  categoria,
+  itemId,
+}: {
+  viagemId: string;
+  categoria: AnexoCategoria;
+  itemId: string;
+}) {
+  const fileRef = useRef<HTMLInputElement>(null);
+  const queryClient = useQueryClient();
+  const [aEnviar, setAEnviar] = useState(false);
+
+  const { data: anexos, isLoading } = useQuery({
+    queryKey: ["anexos-viagem", viagemId, categoria, itemId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("anexos_viagem")
+        .select("*")
+        .eq("viagem_id", viagemId)
+        .eq("categoria", categoria)
+        .eq("item_id", itemId)
+        .order("created_at", { ascending: false });
+
+      if (error) throw error;
+
+      return data;
+    },
+  });
+
+  async function enviar(file: File) {
+    setAEnviar(true);
+
+    try {
+      await guardarAnexoViagem({
+        viagemId,
+        categoria,
+        itemId,
+        file,
+      });
+
+      await queryClient.invalidateQueries({
+        queryKey: ["anexos-viagem", viagemId, categoria, itemId],
+      });
+
+      toast.success("Ficheiro adicionado.");
+    } catch (err) {
+      toast.error(
+        err instanceof Error
+          ? err.message
+          : "Não foi possível adicionar o ficheiro.",
+      );
+    } finally {
+      setAEnviar(false);
+
+      if (fileRef.current) {
+        fileRef.current.value = "";
+      }
+    }
+  }
+
+  async function abrir(anexo: AnexoViagem) {
+    const { data, error } = await supabase.storage
+      .from("documentos")
+      .download(anexo.ficheiro_path);
+
+    if (error || !data) {
+      toast.error(
+        error?.message || "Não foi possível abrir o ficheiro.",
+      );
+      return;
+    }
+
+    const blob = new Blob([data], {
+      type:
+        anexo.mime_type ||
+        data.type ||
+        "application/octet-stream",
+    });
+
+    const url = URL.createObjectURL(blob);
+
+    window.open(url, "_blank", "noopener,noreferrer");
+
+    window.setTimeout(() => {
+      URL.revokeObjectURL(url);
+    }, 60_000);
+  }
+
+  async function remover(anexo: AnexoViagem) {
+    const { error: erroStorage } = await supabase.storage
+      .from("documentos")
+      .remove([anexo.ficheiro_path]);
+
+    if (erroStorage) {
+      toast.error(erroStorage.message);
+      return;
+    }
+
+    const { error } = await supabase
+      .from("anexos_viagem")
+      .delete()
+      .eq("id", anexo.id);
+
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
+
+    await queryClient.invalidateQueries({
+      queryKey: ["anexos-viagem", viagemId, categoria, itemId],
+    });
+
+    toast.success("Ficheiro removido.");
+  }
+
+  return (
+    <div className="mt-4 rounded-xl border border-dashed border-border p-3">
+      <input
+        ref={fileRef}
+        type="file"
+        accept="application/pdf,image/*"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+
+          if (file) {
+            void enviar(file);
+          }
+        }}
+      />
+
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <p className="text-sm font-medium">Ficheiros associados</p>
+          <p className="text-xs text-muted-foreground">
+            {isLoading
+              ? "A carregar..."
+              : anexos?.length
+                ? `${anexos.length} ficheiro${anexos.length === 1 ? "" : "s"}`
+                : "Nenhum ficheiro associado."}
+          </p>
+        </div>
+
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={aEnviar}
+          onClick={() => fileRef.current?.click()}
+        >
+          <Upload className="size-3.5" />
+          {aEnviar ? "A carregar..." : "Adicionar ficheiro"}
+        </Button>
+      </div>
+
+      {anexos && anexos.length > 0 ? (
+        <ul className="mt-3 space-y-2">
+          {anexos.map((anexo) => (
+            <li
+              key={anexo.id}
+              className="flex flex-wrap items-center gap-2 rounded-lg bg-secondary/50 px-3 py-2"
+            >
+              <FileText className="size-4 shrink-0 text-muted-foreground" />
+
+              <button
+                type="button"
+                className="min-w-0 flex-1 truncate text-left text-sm hover:underline"
+                onClick={() => void abrir(anexo)}
+                title={anexo.nome}
+              >
+                {anexo.nome}
+              </button>
+
+              <Button
+                variant="ghost"
+                size="icon"
+                className="size-8"
+                aria-label={`Remover ${anexo.nome}`}
+                onClick={() => void remover(anexo)}
+              >
+                <Trash2 className="size-3.5" />
+              </Button>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </div>
+  );
+}
+
 type AlojamentoEditavel = Database["public"]["Tables"]["alojamentos"]["Row"];
 
 function NovoAlojamentoDialog({
@@ -1730,6 +2100,7 @@ function NovoAlojamentoDialog({
 }) {
   const [aberto, setAberto] = useState(false);
   const [aGuardar, setAGuardar] = useState(false);
+  const [ficheiro, setFicheiro] = useState<File | null>(null);
   const [f, setF] = useState({
     nome: "",
     morada: "",
@@ -1766,7 +2137,9 @@ function NovoAlojamentoDialog({
     setAGuardar(true);
 
     try {
-      const { error } = await supabase.from("alojamentos").insert({
+      const { data, error } = await supabase
+        .from("alojamentos")
+        .insert({
         viagem_id: viagemId,
         nome: f.nome.trim(),
         morada: f.morada.trim() || null,
@@ -1775,14 +2148,38 @@ function NovoAlojamentoDialog({
         referencia: f.referencia.trim() || null,
         preco: f.preco ? Number(f.preco) : null,
         notas: f.notas.trim() || null,
-      });
+      })
+      .select()
+      .single();
 
       if (error) throw error;
 
+      if (ficheiro) {
+        try {
+          await guardarAnexoViagem({
+            viagemId,
+            categoria: "alojamento",
+            itemId: data.id,
+            file: ficheiro,
+          });
+        } catch (erroAnexo) {
+          await supabase
+            .from("alojamentos")
+            .delete()
+            .eq("id", data.id);
+          throw erroAnexo;
+        }
+      }
+
       await onDone();
-      toast.success("Alojamento adicionado.");
+      toast.success(
+        ficheiro
+          ? "Alojamento e ficheiro adicionados."
+          : "Alojamento adicionado.",
+      );
       setAberto(false);
       limpar();
+      setFicheiro(null);
     } catch (err) {
       toast.error(
         err instanceof Error ? err.message : "Não foi possível adicionar o alojamento.",
@@ -1885,6 +2282,13 @@ function NovoAlojamentoDialog({
               onChange={(e) => setF({ ...f, notas: e.target.value })}
               placeholder="Informações importantes..."
               className="mt-1.5 min-h-20"
+            />
+          </div>
+          <div className="sm:col-span-2">
+            <FicheiroSelecionado
+              file={ficheiro}
+              onChange={setFicheiro}
+              disabled={aGuardar}
             />
           </div>
         </div>
@@ -2099,6 +2503,7 @@ function NovoTransporteDialog({
 }) {
   const [aberto, setAberto] = useState(false);
   const [aGuardar, setAGuardar] = useState(false);
+  const [ficheiro, setFicheiro] = useState<File | null>(null);
   const [f, setF] = useState({
     tipo: "",
     operador: "",
@@ -2125,7 +2530,9 @@ function NovoTransporteDialog({
     setAGuardar(true);
 
     try {
-      const { error } = await supabase.from("transportes").insert({
+      const { data, error } = await supabase
+        .from("transportes")
+        .insert({
         viagem_id: viagemId,
         tipo: f.tipo.trim(),
         operador: f.operador.trim() || null,
@@ -2136,13 +2543,37 @@ function NovoTransporteDialog({
         referencia: f.referencia.trim() || null,
         preco: f.preco ? Number(f.preco) : null,
         notas: f.notas.trim() || null,
-      });
+      })
+      .select()
+      .single();
 
       if (error) throw error;
 
+      if (ficheiro) {
+        try {
+          await guardarAnexoViagem({
+            viagemId,
+            categoria: "transporte",
+            itemId: data.id,
+            file: ficheiro,
+          });
+        } catch (erroAnexo) {
+          await supabase
+            .from("transportes")
+            .delete()
+            .eq("id", data.id);
+          throw erroAnexo;
+        }
+      }
+
       await onDone();
-      toast.success("Transporte adicionado.");
+      toast.success(
+        ficheiro
+          ? "Transporte e ficheiro adicionados."
+          : "Transporte adicionado.",
+      );
       setAberto(false);
+      setFicheiro(null);
       setF({
         tipo: "",
         operador: "",
@@ -2274,6 +2705,13 @@ function NovoTransporteDialog({
               value={f.notas}
               onChange={(e) => setF({ ...f, notas: e.target.value })}
               className="mt-1.5 min-h-20"
+            />
+          </div>
+          <div className="sm:col-span-2">
+            <FicheiroSelecionado
+              file={ficheiro}
+              onChange={setFicheiro}
+              disabled={aGuardar}
             />
           </div>
         </div>
@@ -2514,6 +2952,7 @@ function NovaInformacaoDialog({
 }) {
   const [aberto, setAberto] = useState(false);
   const [aGuardar, setAGuardar] = useState(false);
+  const [ficheiro, setFicheiro] = useState<File | null>(null);
   const [titulo, setTitulo] = useState("");
   const [conteudo, setConteudo] = useState("");
 
@@ -2526,17 +2965,43 @@ function NovaInformacaoDialog({
     setAGuardar(true);
 
     try {
-      const { error } = await supabase.from("informacoes").insert({
+      const { data, error } = await supabase
+        .from("informacoes")
+        .insert({
         viagem_id: viagemId,
         titulo: titulo.trim(),
         conteudo: conteudo.trim() || null,
-      });
+      })
+      .select()
+      .single();
 
       if (error) throw error;
 
+      if (ficheiro) {
+        try {
+          await guardarAnexoViagem({
+            viagemId,
+            categoria: "informacao",
+            itemId: data.id,
+            file: ficheiro,
+          });
+        } catch (erroAnexo) {
+          await supabase
+            .from("informacoes")
+            .delete()
+            .eq("id", data.id);
+          throw erroAnexo;
+        }
+      }
+
       await onDone();
-      toast.success("Informação adicionada.");
+      toast.success(
+        ficheiro
+          ? "Informação e ficheiro adicionados."
+          : "Informação adicionada.",
+      );
       setAberto(false);
+      setFicheiro(null);
       setTitulo("");
       setConteudo("");
     } catch (err) {
@@ -2587,6 +3052,12 @@ function NovaInformacaoDialog({
               className="mt-1.5 min-h-28"
             />
           </div>
+
+          <FicheiroSelecionado
+            file={ficheiro}
+            onChange={setFicheiro}
+            disabled={aGuardar}
+          />
         </div>
 
         <DialogFooter>
