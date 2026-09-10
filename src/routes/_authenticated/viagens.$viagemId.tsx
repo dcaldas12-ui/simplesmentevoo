@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import {
   ArrowLeft,
+  CalendarDays,
   Download,
   FileText,
   Mail,
@@ -167,6 +168,9 @@ function DetalheViagem() {
     );
   }
 
+  const quantidadeVoos = voos?.length ?? 0;
+  const quantidadeDocumentos = documentos?.length ?? 0;
+
   return (
     <AppShell>
       <div className="mx-auto w-full max-w-4xl px-4 py-8">
@@ -180,25 +184,76 @@ function DetalheViagem() {
           <h1 className="font-display text-2xl font-semibold">
             {viagem.titulo}
           </h1>
+
           <p className="text-sm text-muted-foreground">
             {[
               viagem.destino,
               viagem.data_inicio,
               viagem.data_fim,
-            ].filter(Boolean).join(" · ") || "Sem datas definidas"}
+            ]
+              .filter(Boolean)
+              .join(" · ") || "Sem datas definidas"}
           </p>
+
           {viagem.notas ? (
             <p className="mt-3 text-sm">{viagem.notas}</p>
           ) : null}
         </header>
 
+        <div className="mt-6 grid gap-3 sm:grid-cols-3">
+          <div className="rounded-2xl border border-border bg-card p-4">
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Plane className="size-4" />
+              Voos
+            </div>
+            <p className="mt-2 font-display text-2xl font-semibold">
+              {quantidadeVoos}
+            </p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              {quantidadeVoos === 1
+                ? "voo nesta viagem"
+                : "voos nesta viagem"}
+            </p>
+          </div>
+
+          <div className="rounded-2xl border border-border bg-card p-4">
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <FileText className="size-4" />
+              Documentos
+            </div>
+            <p className="mt-2 font-display text-2xl font-semibold">
+              {quantidadeDocumentos}
+            </p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              {quantidadeDocumentos === 1
+                ? "documento associado"
+                : "documentos associados"}
+            </p>
+          </div>
+
+          <div className="rounded-2xl border border-border bg-card p-4">
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <CalendarDays className="size-4" />
+              Datas
+            </div>
+            <p className="mt-2 font-display text-lg font-semibold">
+              {viagem.data_inicio || "Sem data"}
+            </p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              {viagem.data_fim
+                ? `Até ${viagem.data_fim}`
+                : "Data de regresso não definida"}
+            </p>
+          </div>
+        </div>
+
         <Tabs defaultValue="voos" className="mt-8">
           <TabsList>
             <TabsTrigger value="voos">
-              Voos ({voos?.length ?? 0})
+              Voos ({quantidadeVoos})
             </TabsTrigger>
             <TabsTrigger value="documentos">
-              Documentos ({documentos?.length ?? 0})
+              Documentos ({quantidadeDocumentos})
             </TabsTrigger>
           </TabsList>
 
