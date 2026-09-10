@@ -3,12 +3,10 @@ import {
   BellRing,
   CircleHelp,
   CalendarPlus,
-  FileText,
   LogOut,
   Luggage,
   Plane,
   Search,
-  Ticket,
   UserCog,
 } from "lucide-react";
 import type { ReactNode } from "react";
@@ -24,6 +22,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const { session } = useSession();
   const { t } = useIdioma();
   const navigate = useNavigate();
+
   function abrirPesquisa(e: React.MouseEvent) {
     e.preventDefault();
 
@@ -31,22 +30,25 @@ export function AppShell({ children }: { children: ReactNode }) {
 
     if (!guardada) {
       void navigate({
-  to: "/pesquisa",
-  search: {
-    origem: "LIS",
-    destino: "BCN",
-    dataPartida: "",
-    dataRegresso: "",
-    idaAntes: 0,
-    idaDepois: 0,
-    regressoAntes: 0,
-    regressoDepois: 0,
-    duracaoMaxima: 0,
-    passageiros: 1,
-    apenasDiretos: false,
-    executar: 0,
-  },
-});
+        to: "/pesquisa",
+        search: {
+          origem: "LIS",
+          destino: "BCN",
+          dataPartida: "",
+          dataRegresso: "",
+          idaAntes: 0,
+          idaDepois: 0,
+          regressoAntes: 0,
+          regressoDepois: 0,
+          duracaoMinima: 0,
+          duracaoMaxima: 0,
+          passageiros: 1,
+          maxEscalas: null,
+          permitirMudancaAeroporto: false,
+          apenasDiretos: false,
+          executar: 0,
+        },
+      });
       return;
     }
 
@@ -60,29 +62,35 @@ export function AppShell({ children }: { children: ReactNode }) {
         idaDepois?: number;
         regressoAntes?: number;
         regressoDepois?: number;
+        duracaoMinima?: number | "";
         duracaoMaxima?: number | "";
         passageiros?: number;
+        maxEscalas?: number | null;
+        permitirMudancaAeroporto?: boolean;
         apenasDiretos?: boolean;
       };
 
       if (!ultima.origem || !ultima.destino) {
         void navigate({
-  to: "/pesquisa",
-  search: {
-    origem: "LIS",
-    destino: "BCN",
-    dataPartida: "",
-    dataRegresso: "",
-    idaAntes: 0,
-    idaDepois: 0,
-    regressoAntes: 0,
-    regressoDepois: 0,
-    duracaoMaxima: 0,
-    passageiros: 1,
-    apenasDiretos: false,
-    executar: 0,
-  },
-});
+          to: "/pesquisa",
+          search: {
+            origem: "LIS",
+            destino: "BCN",
+            dataPartida: "",
+            dataRegresso: "",
+            idaAntes: 0,
+            idaDepois: 0,
+            regressoAntes: 0,
+            regressoDepois: 0,
+            duracaoMinima: 0,
+            duracaoMaxima: 0,
+            passageiros: 1,
+            maxEscalas: null,
+            permitirMudancaAeroporto: false,
+            apenasDiretos: false,
+            executar: 0,
+          },
+        });
         return;
       }
 
@@ -97,30 +105,39 @@ export function AppShell({ children }: { children: ReactNode }) {
           idaDepois: ultima.idaDepois ?? 0,
           regressoAntes: ultima.regressoAntes ?? 0,
           regressoDepois: ultima.regressoDepois ?? 0,
+          duracaoMinima: Number(ultima.duracaoMinima ?? 0) || 0,
           duracaoMaxima: Number(ultima.duracaoMaxima ?? 0) || 0,
           passageiros: ultima.passageiros ?? 1,
+          maxEscalas:
+            ultima.maxEscalas ??
+            (ultima.apenasDiretos ? 0 : null),
+          permitirMudancaAeroporto:
+            ultima.permitirMudancaAeroporto ?? false,
           apenasDiretos: ultima.apenasDiretos ?? false,
           executar: 0,
         },
       });
     } catch {
       void navigate({
-  to: "/pesquisa",
-  search: {
-    origem: "LIS",
-    destino: "BCN",
-    dataPartida: "",
-    dataRegresso: "",
-    idaAntes: 0,
-    idaDepois: 0,
-    regressoAntes: 0,
-    regressoDepois: 0,
-    duracaoMaxima: 0,
-    passageiros: 1,
-    apenasDiretos: false,
-    executar: 0,
-  },
-});
+        to: "/pesquisa",
+        search: {
+          origem: "LIS",
+          destino: "BCN",
+          dataPartida: "",
+          dataRegresso: "",
+          idaAntes: 0,
+          idaDepois: 0,
+          regressoAntes: 0,
+          regressoDepois: 0,
+          duracaoMinima: 0,
+          duracaoMaxima: 0,
+          passageiros: 1,
+          maxEscalas: null,
+          permitirMudancaAeroporto: false,
+          apenasDiretos: false,
+          executar: 0,
+        },
+      });
     }
   }
 
@@ -130,27 +147,43 @@ export function AppShell({ children }: { children: ReactNode }) {
   }
 
   const ligacoes = [
-  {
-    to: "/pesquisa" as const,
-    icon: Search,
-    label: t("nav.pesquisar"),
-  },
-  { to: "/viagens" as const, icon: Luggage, label: t("nav.viagens") },
-  session
-    ? { to: "/documentos" as const, icon: FileText, label: t("nav.documentos") }
-    : { to: "/documentos-demo" as const, icon: FileText, label: t("nav.documentos") },
-  { to: "/importar" as const, icon: CalendarPlus, label: t("nav.importar") },
-  { to: "/avisos" as const, icon: BellRing, label: t("nav.avisos") },
-];
+    {
+      to: "/pesquisa" as const,
+      icon: Search,
+      label: t("nav.pesquisar"),
+    },
+    {
+      to: "/viagens" as const,
+      icon: Luggage,
+      label: t("nav.viagens"),
+    },
+    {
+      to: "/importar" as const,
+      icon: CalendarPlus,
+      label: t("nav.importar"),
+    },
+    {
+      to: "/avisos" as const,
+      icon: BellRing,
+      label: t("nav.avisos"),
+    },
+  ];
 
   const extras = [
     ...(session
       ? [
-          { to: "/reservas" as const, icon: Ticket, label: t("nav.reservas") },
-          { to: "/conta" as const, icon: UserCog, label: "Conta" },
+          {
+            to: "/conta" as const,
+            icon: UserCog,
+            label: "Conta",
+          },
         ]
       : []),
-    { to: "/ajuda" as const, icon: CircleHelp, label: t("nav.ajuda") },
+    {
+      to: "/ajuda" as const,
+      icon: CircleHelp,
+      label: t("nav.ajuda"),
+    },
   ];
 
   return (
@@ -161,6 +194,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             <span className="flex size-9 items-center justify-center rounded-xl bg-primary text-primary-foreground">
               <Plane className="size-5" />
             </span>
+
             <span className="font-display text-base font-semibold tracking-tight sm:text-lg">
               ViatOrbis
             </span>
@@ -175,11 +209,13 @@ export function AppShell({ children }: { children: ReactNode }) {
                   </Link>
                 ) : (
                   <Link
-  to={l.to}
-  onClick={l.to === "/pesquisa" ? abrirPesquisa : undefined}
->
-  <l.icon className="size-4" /> {l.label}
-</Link>
+                    to={l.to}
+                    onClick={
+                      l.to === "/pesquisa" ? abrirPesquisa : undefined
+                    }
+                  >
+                    <l.icon className="size-4" /> {l.label}
+                  </Link>
                 )}
               </Button>
             ))}
@@ -187,6 +223,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 
           <div className="ml-auto flex items-center gap-2 lg:ml-0">
             <SeletorIdioma />
+
             {session ? (
               <Button
                 variant="outline"
@@ -195,7 +232,9 @@ export function AppShell({ children }: { children: ReactNode }) {
                 className="h-10 md:h-9"
               >
                 <LogOut className="size-4" />
-                <span className="hidden sm:inline">{t("nav.sair")}</span>
+                <span className="hidden sm:inline">
+                  {t("nav.sair")}
+                </span>
               </Button>
             ) : (
               <Button asChild size="sm" className="h-10 md:h-9">
@@ -212,13 +251,19 @@ export function AppShell({ children }: { children: ReactNode }) {
 
       <footer className="hidden border-t border-border/70 py-6 text-center text-sm text-muted-foreground md:block">
         <p>{t("rodape.slogan")}</p>
+
         <p className="mt-2 flex flex-wrap items-center justify-center gap-3">
           <Link to="/ajuda" className="underline underline-offset-4">
             {t("rodape.ajuda")}
           </Link>
-          <Link to="/privacidade" className="underline underline-offset-4">
+
+          <Link
+            to="/privacidade"
+            className="underline underline-offset-4"
+          >
             {t("rodape.privacidade")}
           </Link>
+
           <Link to="/termos" className="underline underline-offset-4">
             {t("rodape.termos")}
           </Link>
@@ -241,11 +286,13 @@ export function AppShell({ children }: { children: ReactNode }) {
                 </Link>
               ) : (
                 <Link
-  to={l.to}
-  onClick={l.to === "/pesquisa" ? abrirPesquisa : undefined}
-  activeProps={{ className: "text-primary" }}
-  className="flex h-16 flex-col items-center justify-center gap-1 text-[11px] font-medium text-muted-foreground"
->
+                  to={l.to}
+                  onClick={
+                    l.to === "/pesquisa" ? abrirPesquisa : undefined
+                  }
+                  activeProps={{ className: "text-primary" }}
+                  className="flex h-16 flex-col items-center justify-center gap-1 text-[11px] font-medium text-muted-foreground"
+                >
                   <l.icon className="size-5" />
                   {l.label}
                 </Link>
