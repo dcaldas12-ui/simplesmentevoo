@@ -104,6 +104,20 @@ function dataCompleta(iso: string | null) {
   });
 }
 
+function valorParaDataHoraLocal(iso: string | null) {
+  if (!iso) return "";
+
+  const data = new Date(iso);
+
+  const ano = data.getFullYear();
+  const mes = String(data.getMonth() + 1).padStart(2, "0");
+  const dia = String(data.getDate()).padStart(2, "0");
+  const horas = String(data.getHours()).padStart(2, "0");
+  const minutos = String(data.getMinutes()).padStart(2, "0");
+
+  return `${ano}-${mes}-${dia}T${horas}:${minutos}`;
+}
+
 function DetalheViagem() {
   const { viagemId } = Route.useParams();
   const queryClient = useQueryClient();
@@ -207,7 +221,6 @@ function DetalheViagem() {
       });
 
       toast.success("Viagem atualizada.");
-
       setEditarAberto(false);
     } catch (err) {
       const mensagem =
@@ -771,28 +784,35 @@ function DetalheViagem() {
                             </span>
                           )}
 
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            aria-label="Remover voo"
-                            onClick={async () => {
-                              const { error } = await supabase
-                                .from("voos")
-                                .delete()
-                                .eq("id", v.id);
+                          <div className="flex items-center gap-1">
+                            <EditarVooDialog
+                              voo={v}
+                              onDone={invalidar}
+                            />
 
-                              if (error) {
-                                toast.error(error.message);
-                                return;
-                              }
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              aria-label="Remover voo"
+                              onClick={async () => {
+                                const { error } = await supabase
+                                  .from("voos")
+                                  .delete()
+                                  .eq("id", v.id);
 
-                              await invalidar();
+                                if (error) {
+                                  toast.error(error.message);
+                                  return;
+                                }
 
-                              toast.success("Voo removido.");
-                            }}
-                          >
-                            <Trash2 className="size-4" />
-                          </Button>
+                                await invalidar();
+
+                                toast.success("Voo removido.");
+                              }}
+                            >
+                              <Trash2 className="size-4" />
+                            </Button>
+                          </div>
                         </div>
                       </div>
                     </li>
@@ -1025,6 +1045,270 @@ function NovoVooDialog({
             disabled={!f.origem || !f.destino || aGuardar}
           >
             {aGuardar ? "A guardar..." : "Guardar voo"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+type VooEditavel = {
+  id: string;
+  companhia: string | null;
+  numero_voo: string | null;
+  origem: string;
+  destino: string;
+  partida: string | null;
+  referencia: string | null;
+  preco: number | null;
+};
+
+function EditarVooDialog({
+  voo,
+  onDone,
+}: {
+  voo: VooEditavel;
+  onDone: () => Promise<void>;
+}) {
+  const [aberto, setAberto] = useState(false);
+  const [aGuardar, setAGuardar] = useState(false);
+
+  const [f, setF] = useState({
+    companhia: "",
+    numero_voo: "",
+    origem: "",
+    destino: "",
+    partida: "",
+    referencia: "",
+    preco: "",
+  });
+
+  useEffect(() => {
+    if (!aberto) return;
+
+    setF({
+      companhia: voo.companhia ?? "",
+      numero_voo: voo.numero_voo ?? "",
+      origem: voo.origem ?? "",
+      destino: voo.destino ?? "",
+      partida: valorParaDataHoraLocal(voo.partida),
+      referencia: voo.referencia ?? "",
+      preco:
+        voo.preco != null
+          ? String(Number(voo.preco))
+          : "",
+    });
+  }, [aberto, voo]);
+
+  async function guardar() {
+    if (!f.origem.trim() || !f.destino.trim()) {
+      toast.error("Indique a origem e o destino.");
+      return;
+    }
+
+    setAGuardar(true);
+
+    try {
+      const { error } = await supabase
+        .from("voos")
+        .update({
+          companhia: f.companhia.trim() || null,
+          numero_voo: f.numero_voo.trim() || null,
+          origem: f.origem.trim().toUpperCase(),
+          destino: f.destino.trim().toUpperCase(),
+          partida: f.partida
+            ? new Date(f.partida).toISOString()
+            : null,
+          referencia: f.referencia.trim() || null,
+          preco: f.preco ? Number(f.preco) : null,
+        })
+        .eq("id", voo.id);
+
+      if (error) throw error;
+
+      await onDone();
+
+      toast.success("Voo atualizado.");
+      setAberto(false);
+    } catch (err) {
+      const mensagem =
+        err &&
+        typeof err === "object" &&
+        "message" in err &&
+        typeof err.message === "string"
+          ? err.message
+          : "Não foi possível atualizar o voo.";
+
+      toast.error(mensagem);
+      console.error("Erro ao editar voo:", err);
+    } finally {
+      setAGuardar(false);
+    }
+  }
+
+  return (
+    <Dialog open={aberto} onOpenChange={setAberto}>
+      <DialogTrigger asChild>
+        <Button
+          variant="ghost"
+          size="icon"
+          aria-label="Editar voo"
+        >
+          <Pencil className="size-4" />
+        </Button>
+      </DialogTrigger>
+
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Editar voo</DialogTitle>
+
+          <DialogDescription>
+            Altere os dados deste voo. A referência e o preço também
+            podem ser atualizados.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div>
+            <Label htmlFor="editar-voo-origem">Origem</Label>
+
+            <Input
+              id="editar-voo-origem"
+              value={f.origem}
+              onChange={(e) =>
+                setF({
+                  ...f,
+                  origem: e.target.value.toUpperCase(),
+                })
+              }
+              className="mt-1.5 uppercase"
+            />
+          </div>
+
+          <div>
+            <Label htmlFor="editar-voo-destino">Destino</Label>
+
+            <Input
+              id="editar-voo-destino"
+              value={f.destino}
+              onChange={(e) =>
+                setF({
+                  ...f,
+                  destino: e.target.value.toUpperCase(),
+                })
+              }
+              className="mt-1.5 uppercase"
+            />
+          </div>
+
+          <div>
+            <Label htmlFor="editar-voo-companhia">
+              Companhia
+            </Label>
+
+            <Input
+              id="editar-voo-companhia"
+              value={f.companhia}
+              onChange={(e) =>
+                setF({
+                  ...f,
+                  companhia: e.target.value,
+                })
+              }
+              className="mt-1.5"
+            />
+          </div>
+
+          <div>
+            <Label htmlFor="editar-voo-numero">
+              Número do voo
+            </Label>
+
+            <Input
+              id="editar-voo-numero"
+              value={f.numero_voo}
+              onChange={(e) =>
+                setF({
+                  ...f,
+                  numero_voo: e.target.value,
+                })
+              }
+              className="mt-1.5"
+            />
+          </div>
+
+          <div>
+            <Label htmlFor="editar-voo-partida">
+              Partida
+            </Label>
+
+            <Input
+              id="editar-voo-partida"
+              type="datetime-local"
+              value={f.partida}
+              onChange={(e) =>
+                setF({
+                  ...f,
+                  partida: e.target.value,
+                })
+              }
+              className="mt-1.5"
+            />
+          </div>
+
+          <div>
+            <Label htmlFor="editar-voo-preco">
+              Preço (EUR)
+            </Label>
+
+            <Input
+              id="editar-voo-preco"
+              type="number"
+              step="0.01"
+              value={f.preco}
+              onChange={(e) =>
+                setF({
+                  ...f,
+                  preco: e.target.value,
+                })
+              }
+              className="mt-1.5"
+            />
+          </div>
+
+          <div className="sm:col-span-2">
+            <Label htmlFor="editar-voo-referencia">
+              Referência da reserva
+            </Label>
+
+            <Input
+              id="editar-voo-referencia"
+              value={f.referencia}
+              onChange={(e) =>
+                setF({
+                  ...f,
+                  referencia: e.target.value,
+                })
+              }
+              className="mt-1.5"
+            />
+          </div>
+        </div>
+
+        <DialogFooter>
+          <Button
+            variant="outline"
+            onClick={() => setAberto(false)}
+            disabled={aGuardar}
+          >
+            Cancelar
+          </Button>
+
+          <Button
+            onClick={() => void guardar()}
+            disabled={aGuardar}
+          >
+            {aGuardar ? "A guardar..." : "Guardar alterações"}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -1333,7 +1617,7 @@ function DocumentosPainel({
                 )}
               </span>
 
-              <div className="flex-1">
+              <div className="min-w-0 flex-1">
                 {d.ficheiro_path ? (
                   <button
                     type="button"
@@ -1364,36 +1648,43 @@ function DocumentosPainel({
 
               <Badge variant="outline">{d.tipo}</Badge>
 
-              {d.ficheiro_path ? (
-                <>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => void abrir(d, true)}
-                  >
-                    <Maximize2 className="size-4" />
-                    Ler em ecrã inteiro
-                  </Button>
+              <div className="flex items-center gap-1">
+                <EditarDocumentoDialog
+                  documento={d}
+                  onDone={onDone}
+                />
 
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    aria-label="Abrir"
-                    onClick={() => void abrir(d)}
-                  >
-                    <Download className="size-4" />
-                  </Button>
-                </>
-              ) : null}
+                {d.ficheiro_path ? (
+                  <>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => void abrir(d, true)}
+                    >
+                      <Maximize2 className="size-4" />
+                      Ler em ecrã inteiro
+                    </Button>
 
-              <Button
-                variant="ghost"
-                size="icon"
-                aria-label="Remover documento"
-                onClick={() => void remover(d)}
-              >
-                <Trash2 className="size-4" />
-              </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      aria-label="Abrir"
+                      onClick={() => void abrir(d)}
+                    >
+                      <Download className="size-4" />
+                    </Button>
+                  </>
+                ) : null}
+
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  aria-label="Remover documento"
+                  onClick={() => void remover(d)}
+                >
+                  <Trash2 className="size-4" />
+                </Button>
+              </div>
             </li>
           ))}
         </ul>
@@ -1426,6 +1717,196 @@ function DocumentosPainel({
         }}
       />
     </div>
+  );
+}
+
+function EditarDocumentoDialog({
+  documento,
+  onDone,
+}: {
+  documento: Documento;
+  onDone: () => Promise<void>;
+}) {
+  const [aberto, setAberto] = useState(false);
+  const [aGuardar, setAGuardar] = useState(false);
+
+  const [form, setForm] = useState({
+    nome: "",
+    tipo: "",
+    qr_conteudo: "",
+    remetente_email: "",
+  });
+
+  useEffect(() => {
+    if (!aberto) return;
+
+    setForm({
+      nome: documento.nome ?? "",
+      tipo: documento.tipo ?? "",
+      qr_conteudo: documento.qr_conteudo ?? "",
+      remetente_email: documento.remetente_email ?? "",
+    });
+  }, [aberto, documento]);
+
+  async function guardar() {
+    if (!form.nome.trim()) {
+      toast.error("Indique um nome para o documento.");
+      return;
+    }
+
+    setAGuardar(true);
+
+    try {
+      const { error } = await supabase
+        .from("documentos")
+        .update({
+          nome: form.nome.trim(),
+          tipo: form.tipo.trim() || documento.tipo,
+          qr_conteudo: form.qr_conteudo.trim() || null,
+          remetente_email:
+            form.remetente_email.trim() || null,
+        })
+        .eq("id", documento.id);
+
+      if (error) throw error;
+
+      await onDone();
+
+      toast.success("Documento atualizado.");
+      setAberto(false);
+    } catch (err) {
+      const mensagem =
+        err &&
+        typeof err === "object" &&
+        "message" in err &&
+        typeof err.message === "string"
+          ? err.message
+          : "Não foi possível atualizar o documento.";
+
+      toast.error(mensagem);
+      console.error("Erro ao editar documento:", err);
+    } finally {
+      setAGuardar(false);
+    }
+  }
+
+  return (
+    <Dialog open={aberto} onOpenChange={setAberto}>
+      <DialogTrigger asChild>
+        <Button
+          variant="ghost"
+          size="icon"
+          aria-label="Editar documento"
+        >
+          <Pencil className="size-4" />
+        </Button>
+      </DialogTrigger>
+
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Editar documento</DialogTitle>
+
+          <DialogDescription>
+            Altere os dados do documento sem alterar o ficheiro original.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-4">
+          <div>
+            <Label htmlFor={`editar-documento-nome-${documento.id}`}>
+              Nome
+            </Label>
+
+            <Input
+              id={`editar-documento-nome-${documento.id}`}
+              value={form.nome}
+              onChange={(e) =>
+                setForm({
+                  ...form,
+                  nome: e.target.value,
+                })
+              }
+              className="mt-1.5"
+            />
+          </div>
+
+          <div>
+            <Label htmlFor={`editar-documento-tipo-${documento.id}`}>
+              Tipo
+            </Label>
+
+            <Input
+              id={`editar-documento-tipo-${documento.id}`}
+              value={form.tipo}
+              onChange={(e) =>
+                setForm({
+                  ...form,
+                  tipo: e.target.value,
+                })
+              }
+              placeholder="pdf, bilhete, voucher, qr..."
+              className="mt-1.5"
+            />
+          </div>
+
+          <div>
+            <Label htmlFor={`editar-documento-remetente-${documento.id}`}>
+              Remetente do email
+            </Label>
+
+            <Input
+              id={`editar-documento-remetente-${documento.id}`}
+              type="email"
+              value={form.remetente_email}
+              onChange={(e) =>
+                setForm({
+                  ...form,
+                  remetente_email: e.target.value,
+                })
+              }
+              placeholder="reservas@companhia.com"
+              className="mt-1.5"
+            />
+          </div>
+
+          <div>
+            <Label htmlFor={`editar-documento-qr-${documento.id}`}>
+              Conteúdo do QR
+            </Label>
+
+            <Textarea
+              id={`editar-documento-qr-${documento.id}`}
+              value={form.qr_conteudo}
+              onChange={(e) =>
+                setForm({
+                  ...form,
+                  qr_conteudo: e.target.value,
+                })
+              }
+              placeholder="Link ou texto do código QR"
+              className="mt-1.5"
+            />
+          </div>
+        </div>
+
+        <DialogFooter>
+          <Button
+            variant="outline"
+            onClick={() => setAberto(false)}
+            disabled={aGuardar}
+          >
+            Cancelar
+          </Button>
+
+          <Button
+            onClick={() => void guardar()}
+            disabled={aGuardar}
+          >
+            {aGuardar ? "A guardar..." : "Guardar alterações"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
