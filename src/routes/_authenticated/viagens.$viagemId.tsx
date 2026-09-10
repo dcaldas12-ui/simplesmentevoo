@@ -48,26 +48,35 @@ export const Route = createFileRoute("/_authenticated/viagens/$viagemId")({
       { property: "og:title", content: "Detalhe da viagem — Simplesmente voo" },
       {
         property: "og:description",
-        content: "Cartões de embarque, códigos QR e documentos recebidos por email.",
+        content:
+          "Cartões de embarque, códigos QR e documentos recebidos por email.",
       },
     ],
   }),
   component: DetalheViagem,
   errorComponent: ({ error }) => (
     <AppShell>
-      <p role="alert" className="mx-auto max-w-4xl px-4 py-16 text-sm text-destructive">
+      <p
+        role="alert"
+        className="mx-auto max-w-4xl px-4 py-16 text-sm text-destructive"
+      >
         {error.message}
       </p>
     </AppShell>
   ),
   notFoundComponent: () => (
     <AppShell>
-      <p className="mx-auto max-w-4xl px-4 py-16 text-sm">Viagem não encontrada.</p>
+      <p className="mx-auto max-w-4xl px-4 py-16 text-sm">
+        Viagem não encontrada.
+      </p>
     </AppShell>
   ),
 });
 
-const fmtPreco = new Intl.NumberFormat("pt-PT", { style: "currency", currency: "EUR" });
+const fmtPreco = new Intl.NumberFormat("pt-PT", {
+  style: "currency",
+  currency: "EUR",
+});
 
 function dataHora(iso: string | null) {
   if (!iso) return "—";
@@ -124,7 +133,9 @@ function DetalheViagem() {
 
   const invalidar = async () => {
     await queryClient.invalidateQueries({ queryKey: ["voos", viagemId] });
-    await queryClient.invalidateQueries({ queryKey: ["documentos", viagemId] });
+    await queryClient.invalidateQueries({
+      queryKey: ["documentos", viagemId],
+    });
   };
 
   if (isLoading) {
@@ -166,24 +177,36 @@ function DetalheViagem() {
         </Button>
 
         <header className="mt-3">
-          <h1 className="font-display text-2xl font-semibold">{viagem.titulo}</h1>
+          <h1 className="font-display text-2xl font-semibold">
+            {viagem.titulo}
+          </h1>
           <p className="text-sm text-muted-foreground">
-            {[viagem.destino, viagem.data_inicio, viagem.data_fim].filter(Boolean).join(" · ") ||
-              "Sem datas definidas"}
+            {[
+              viagem.destino,
+              viagem.data_inicio,
+              viagem.data_fim,
+            ].filter(Boolean).join(" · ") || "Sem datas definidas"}
           </p>
-          {viagem.notas ? <p className="mt-3 text-sm">{viagem.notas}</p> : null}
+          {viagem.notas ? (
+            <p className="mt-3 text-sm">{viagem.notas}</p>
+          ) : null}
         </header>
 
         <Tabs defaultValue="voos" className="mt-8">
           <TabsList>
-            <TabsTrigger value="voos">Voos ({voos?.length ?? 0})</TabsTrigger>
-            <TabsTrigger value="documentos">Documentos ({documentos?.length ?? 0})</TabsTrigger>
+            <TabsTrigger value="voos">
+              Voos ({voos?.length ?? 0})
+            </TabsTrigger>
+            <TabsTrigger value="documentos">
+              Documentos ({documentos?.length ?? 0})
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="voos" className="mt-5 space-y-4">
             <div className="flex justify-end">
               <NovoVooDialog viagemId={viagemId} onDone={invalidar} />
             </div>
+
             {!voos || voos.length === 0 ? (
               <EmptyState
                 icon={Plane}
@@ -191,7 +214,14 @@ function DetalheViagem() {
                 descricao="Adicione um voo manualmente ou guarde um resultado da pesquisa."
               >
                 <Button asChild variant="outline">
-                  <Link to="/pesquisa" search={{ ...valoresIniciais, executar: 1 }}>
+                  <Link
+                    to="/pesquisa"
+                    search={{
+                      ...valoresIniciais,
+                      apenasDiretos: false,
+                      executar: 1,
+                    }}
+                  >
                     Pesquisar voos
                   </Link>
                 </Button>
@@ -212,17 +242,22 @@ function DetalheViagem() {
                         {v.referencia ? ` · Ref. ${v.referencia}` : ""}
                       </p>
                     </div>
+
                     {v.preco != null ? (
                       <span className="font-display font-semibold">
                         {fmtPreco.format(Number(v.preco))}
                       </span>
                     ) : null}
+
                     <Button
                       variant="ghost"
                       size="icon"
                       aria-label="Remover voo"
                       onClick={async () => {
-                        await supabase.from("voos").delete().eq("id", v.id);
+                        await supabase
+                          .from("voos")
+                          .delete()
+                          .eq("id", v.id);
                         await invalidar();
                         toast.success("Voo removido.");
                       }}
@@ -248,7 +283,13 @@ function DetalheViagem() {
   );
 }
 
-function NovoVooDialog({ viagemId, onDone }: { viagemId: string; onDone: () => Promise<void> }) {
+function NovoVooDialog({
+  viagemId,
+  onDone,
+}: {
+  viagemId: string;
+  onDone: () => Promise<void>;
+}) {
   const [aberto, setAberto] = useState(false);
   const [f, setF] = useState({
     companhia: "",
@@ -272,6 +313,7 @@ function NovoVooDialog({ viagemId, onDone }: { viagemId: string; onDone: () => P
         referencia: f.referencia || null,
         preco: f.preco ? Number(f.preco) : null,
       });
+
       if (error) throw error;
     },
     onSuccess: async () => {
@@ -279,7 +321,10 @@ function NovoVooDialog({ viagemId, onDone }: { viagemId: string; onDone: () => P
       toast.success("Voo adicionado.");
       setAberto(false);
     },
-    onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao adicionar voo."),
+    onError: (e) =>
+      toast.error(
+        e instanceof Error ? e.message : "Erro ao adicionar voo.",
+      ),
   });
 
   return (
@@ -289,29 +334,37 @@ function NovoVooDialog({ viagemId, onDone }: { viagemId: string; onDone: () => P
           <Plus className="size-4" /> Adicionar voo
         </Button>
       </DialogTrigger>
+
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Adicionar voo</DialogTitle>
         </DialogHeader>
+
         <div className="grid gap-3 sm:grid-cols-2">
           <div>
             <Label htmlFor="origem">Origem</Label>
             <Input
               id="origem"
               value={f.origem}
-              onChange={(e) => setF({ ...f, origem: e.target.value.toUpperCase() })}
+              onChange={(e) =>
+                setF({ ...f, origem: e.target.value.toUpperCase() })
+              }
               className="mt-1.5 uppercase"
             />
           </div>
+
           <div>
             <Label htmlFor="destino">Destino</Label>
             <Input
               id="destino"
               value={f.destino}
-              onChange={(e) => setF({ ...f, destino: e.target.value.toUpperCase() })}
+              onChange={(e) =>
+                setF({ ...f, destino: e.target.value.toUpperCase() })
+              }
               className="mt-1.5 uppercase"
             />
           </div>
+
           <div>
             <Label htmlFor="companhia">Companhia</Label>
             <Input
@@ -321,6 +374,7 @@ function NovoVooDialog({ viagemId, onDone }: { viagemId: string; onDone: () => P
               className="mt-1.5"
             />
           </div>
+
           <div>
             <Label htmlFor="numero">Número do voo</Label>
             <Input
@@ -330,6 +384,7 @@ function NovoVooDialog({ viagemId, onDone }: { viagemId: string; onDone: () => P
               className="mt-1.5"
             />
           </div>
+
           <div>
             <Label htmlFor="partida">Partida</Label>
             <Input
@@ -340,6 +395,7 @@ function NovoVooDialog({ viagemId, onDone }: { viagemId: string; onDone: () => P
               className="mt-1.5"
             />
           </div>
+
           <div>
             <Label htmlFor="preco">Preço (EUR)</Label>
             <Input
@@ -351,6 +407,7 @@ function NovoVooDialog({ viagemId, onDone }: { viagemId: string; onDone: () => P
               className="mt-1.5"
             />
           </div>
+
           <div className="sm:col-span-2">
             <Label htmlFor="ref">Referência da reserva</Label>
             <Input
@@ -361,6 +418,7 @@ function NovoVooDialog({ viagemId, onDone }: { viagemId: string; onDone: () => P
             />
           </div>
         </div>
+
         <DialogFooter>
           <Button
             onClick={() => guardar.mutate()}
@@ -408,61 +466,104 @@ function DocumentosPainel({
 
   useEffect(
     () => () => {
-      if (urlVisualizacaoRef.current) URL.revokeObjectURL(urlVisualizacaoRef.current);
+      if (urlVisualizacaoRef.current) {
+        URL.revokeObjectURL(urlVisualizacaoRef.current);
+      }
     },
     [],
   );
 
   function mensagemLeitura(error: unknown) {
     const detalhe =
-      error && typeof error === "object" && "message" in error
+      error &&
+      typeof error === "object" &&
+      "message" in error
         ? String(error.message).toLowerCase()
         : "";
-    if (detalhe.includes("jwt") || detalhe.includes("unauthorized") || detalhe.includes("401")) {
+
+    if (
+      detalhe.includes("jwt") ||
+      detalhe.includes("unauthorized") ||
+      detalhe.includes("401")
+    ) {
       return "A sessão expirou. Atualize a página e volte a entrar.";
     }
-    if (detalhe.includes("forbidden") || detalhe.includes("403")) {
+
+    if (
+      detalhe.includes("forbidden") ||
+      detalhe.includes("403")
+    ) {
       return "O acesso foi recusado. Confirme que está na conta que carregou o ficheiro.";
     }
-    if (detalhe.includes("not found") || detalhe.includes("404")) {
+
+    if (
+      detalhe.includes("not found") ||
+      detalhe.includes("404")
+    ) {
       return "O registo existe, mas o ficheiro original não foi encontrado.";
     }
+
     return "Não foi possível transferir o ficheiro. Verifique a ligação e tente novamente.";
   }
 
   async function enviarFicheiro(file: File) {
-    if (file.type !== "application/pdf" && !file.type.startsWith("image/")) {
-      toast.error("Formato não suportado. Escolha um PDF ou uma imagem.");
+    if (
+      file.type !== "application/pdf" &&
+      !file.type.startsWith("image/")
+    ) {
+      toast.error(
+        "Formato não suportado. Escolha um PDF ou uma imagem.",
+      );
       return;
     }
+
     if (file.size > 20 * 1024 * 1024) {
       toast.error("Ficheiro demasiado grande (máximo 20 MB).");
       return;
     }
+
     setAEnviar(true);
     let pathGuardado: string | null = null;
+
     try {
       const { data: userData } = await supabase.auth.getUser();
       const uid = userData.user?.id;
+
       if (!uid) throw new Error("Sessão expirada.");
-      const nomeSeguro = file.name.normalize("NFD").replace(/[^\w.-]+/g, "_");
+
+      const nomeSeguro = file.name
+        .normalize("NFD")
+        .replace(/[^\w.-]+/g, "_");
+
       const path = `${uid}/${viagemId}/${Date.now()}-${nomeSeguro}`;
+
       const { data: upload, error: erroUpload } = await supabase.storage
         .from("documentos")
         .upload(path, file, {
           contentType: file.type || "application/octet-stream",
           upsert: false,
         });
+
       if (erroUpload) throw erroUpload;
+
       pathGuardado = upload?.path ?? null;
-      if (!pathGuardado || pathGuardado.split("/")[0] !== uid) {
-        throw new Error("O armazenamento não confirmou o caminho seguro do ficheiro.");
+
+      if (
+        !pathGuardado ||
+        pathGuardado.split("/")[0] !== uid
+      ) {
+        throw new Error(
+          "O armazenamento não confirmou o caminho seguro do ficheiro.",
+        );
       }
 
       const { error: erroLeitura } = await supabase.storage
         .from("documentos")
         .download(pathGuardado);
-      if (erroLeitura) throw new Error(mensagemLeitura(erroLeitura));
+
+      if (erroLeitura) {
+        throw new Error(mensagemLeitura(erroLeitura));
+      }
 
       const { error } = await supabase.from("documentos").insert({
         viagem_id: viagemId,
@@ -473,23 +574,51 @@ function DocumentosPainel({
         mime_type: file.type,
         tamanho_bytes: file.size,
       });
+
       if (error) throw error;
+
       await onDone();
       toast.success("Documento carregado.");
     } catch (err) {
-      if (pathGuardado) await supabase.storage.from("documentos").remove([pathGuardado]);
-      toast.error(err instanceof Error ? err.message : "Não foi possível carregar o documento.");
+      if (pathGuardado) {
+        await supabase.storage
+          .from("documentos")
+          .remove([pathGuardado]);
+      }
+
+      toast.error(
+        err instanceof Error
+          ? err.message
+          : "Não foi possível carregar o documento.",
+      );
     } finally {
       setAEnviar(false);
-      if (fileRef.current) fileRef.current.value = "";
+
+      if (fileRef.current) {
+        fileRef.current.value = "";
+      }
     }
   }
 
   async function abrir(doc: Documento, leitura = false) {
     if (!doc.ficheiro_path) return;
-    if (urlVisualizacaoRef.current) URL.revokeObjectURL(urlVisualizacaoRef.current);
-    setVisualizar({ doc, url: null, aCarregar: true, erro: null, leitura });
-    const { data, error } = await supabase.storage.from("documentos").download(doc.ficheiro_path);
+
+    if (urlVisualizacaoRef.current) {
+      URL.revokeObjectURL(urlVisualizacaoRef.current);
+    }
+
+    setVisualizar({
+      doc,
+      url: null,
+      aCarregar: true,
+      erro: null,
+      leitura,
+    });
+
+    const { data, error } = await supabase.storage
+      .from("documentos")
+      .download(doc.ficheiro_path);
+
     if (error || !data) {
       setVisualizar({
         doc,
@@ -500,19 +629,41 @@ function DocumentosPainel({
       });
       return;
     }
+
     const mimeEsperado =
-      doc.mime_type || (doc.nome.toLowerCase().endsWith(".pdf") ? "application/pdf" : data.type);
-    const blob = new Blob([data], { type: mimeEsperado || "application/octet-stream" });
+      doc.mime_type ||
+      (doc.nome.toLowerCase().endsWith(".pdf")
+        ? "application/pdf"
+        : data.type);
+
+    const blob = new Blob([data], {
+      type: mimeEsperado || "application/octet-stream",
+    });
+
     const objectUrl = URL.createObjectURL(blob);
     urlVisualizacaoRef.current = objectUrl;
-    setVisualizar({ doc, url: objectUrl, aCarregar: false, erro: null, leitura });
+
+    setVisualizar({
+      doc,
+      url: objectUrl,
+      aCarregar: false,
+      erro: null,
+      leitura,
+    });
   }
 
   async function remover(doc: Documento) {
     if (doc.ficheiro_path) {
-      await supabase.storage.from("documentos").remove([doc.ficheiro_path]);
+      await supabase.storage
+        .from("documentos")
+        .remove([doc.ficheiro_path]);
     }
-    await supabase.from("documentos").delete().eq("id", doc.id);
+
+    await supabase
+      .from("documentos")
+      .delete()
+      .eq("id", doc.id);
+
     await onDone();
     toast.success("Documento removido.");
   }
@@ -530,9 +681,15 @@ function DocumentosPainel({
             if (file) void enviarFicheiro(file);
           }}
         />
-        <Button size="sm" disabled={aEnviar} onClick={() => fileRef.current?.click()}>
+
+        <Button
+          size="sm"
+          disabled={aEnviar}
+          onClick={() => fileRef.current?.click()}
+        >
           <Upload className="size-4" /> Carregar PDF
         </Button>
+
         <QrDialog viagemId={viagemId} onDone={onDone} />
         <EmailDialog viagemId={viagemId} onDone={onDone} />
       </div>
@@ -559,6 +716,7 @@ function DocumentosPainel({
                   <FileText className="size-4" />
                 )}
               </span>
+
               <div className="flex-1">
                 {d.ficheiro_path ? (
                   <button
@@ -572,6 +730,7 @@ function DocumentosPainel({
                 ) : (
                   <p className="font-medium">{d.nome}</p>
                 )}
+
                 <p className="text-xs text-muted-foreground">
                   {d.origem === "email"
                     ? `Recebido de ${d.remetente_email ?? "email"}`
@@ -579,18 +738,26 @@ function DocumentosPainel({
                       ? "Código QR guardado"
                       : "Carregado manualmente"}
                 </p>
+
                 {d.qr_conteudo ? (
                   <p className="mt-1 break-all font-mono text-xs text-muted-foreground">
                     {d.qr_conteudo}
                   </p>
                 ) : null}
               </div>
+
               <Badge variant="outline">{d.tipo}</Badge>
+
               {d.ficheiro_path ? (
                 <>
-                  <Button variant="outline" size="sm" onClick={() => void abrir(d, true)}>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => void abrir(d, true)}
+                  >
                     <Maximize2 className="size-4" /> Ler em ecrã inteiro
                   </Button>
+
                   <Button
                     variant="ghost"
                     size="icon"
@@ -601,6 +768,7 @@ function DocumentosPainel({
                   </Button>
                 </>
               ) : null}
+
               <Button
                 variant="ghost"
                 size="icon"
@@ -613,6 +781,7 @@ function DocumentosPainel({
           ))}
         </ul>
       )}
+
       <VisualizadorDocumento
         aberto={visualizar !== null}
         nome={visualizar?.doc.nome ?? ""}
@@ -622,13 +791,16 @@ function DocumentosPainel({
         erro={visualizar?.erro ?? null}
         iniciarLeitura={visualizar?.leitura ?? false}
         onTentarNovamente={
-          visualizar ? () => void abrir(visualizar.doc, visualizar.leitura) : undefined
+          visualizar
+            ? () => void abrir(visualizar.doc, visualizar.leitura)
+            : undefined
         }
         onFechar={() => {
           if (urlVisualizacaoRef.current) {
             URL.revokeObjectURL(urlVisualizacaoRef.current);
             urlVisualizacaoRef.current = null;
           }
+
           setVisualizar(null);
         }}
       />
@@ -636,7 +808,13 @@ function DocumentosPainel({
   );
 }
 
-function QrDialog({ viagemId, onDone }: { viagemId: string; onDone: () => Promise<void> }) {
+function QrDialog({
+  viagemId,
+  onDone,
+}: {
+  viagemId: string;
+  onDone: () => Promise<void>;
+}) {
   const [aberto, setAberto] = useState(false);
   const [nome, setNome] = useState("");
   const [conteudo, setConteudo] = useState("");
@@ -649,10 +827,12 @@ function QrDialog({ viagemId, onDone }: { viagemId: string; onDone: () => Promis
       origem: "qr",
       qr_conteudo: conteudo,
     });
+
     if (error) {
       toast.error(error.message);
       return;
     }
+
     await onDone();
     toast.success("Código QR guardado.");
     setAberto(false);
@@ -667,6 +847,7 @@ function QrDialog({ viagemId, onDone }: { viagemId: string; onDone: () => Promis
           <QrCode className="size-4" /> Guardar QR
         </Button>
       </DialogTrigger>
+
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Guardar código QR</DialogTitle>
@@ -674,6 +855,7 @@ function QrDialog({ viagemId, onDone }: { viagemId: string; onDone: () => Promis
             Cole o conteúdo do código (link ou texto do cartão de embarque).
           </DialogDescription>
         </DialogHeader>
+
         <div className="space-y-4">
           <div>
             <Label htmlFor="qrnome">Nome</Label>
@@ -685,6 +867,7 @@ function QrDialog({ viagemId, onDone }: { viagemId: string; onDone: () => Promis
               className="mt-1.5"
             />
           </div>
+
           <div>
             <Label htmlFor="qrconteudo">Conteúdo do QR</Label>
             <Textarea
@@ -695,8 +878,12 @@ function QrDialog({ viagemId, onDone }: { viagemId: string; onDone: () => Promis
             />
           </div>
         </div>
+
         <DialogFooter>
-          <Button onClick={() => void guardar()} disabled={!conteudo}>
+          <Button
+            onClick={() => void guardar()}
+            disabled={!conteudo}
+          >
             Guardar
           </Button>
         </DialogFooter>
@@ -705,7 +892,13 @@ function QrDialog({ viagemId, onDone }: { viagemId: string; onDone: () => Promis
   );
 }
 
-function EmailDialog({ viagemId, onDone }: { viagemId: string; onDone: () => Promise<void> }) {
+function EmailDialog({
+  viagemId,
+  onDone,
+}: {
+  viagemId: string;
+  onDone: () => Promise<void>;
+}) {
   const [aberto, setAberto] = useState(false);
   const [nome, setNome] = useState("");
   const [remetente, setRemetente] = useState("");
@@ -719,10 +912,12 @@ function EmailDialog({ viagemId, onDone }: { viagemId: string; onDone: () => Pro
       remetente_email: remetente || null,
       recebido_em: new Date().toISOString(),
     });
+
     if (error) {
       toast.error(error.message);
       return;
     }
+
     await onDone();
     toast.success("Documento registado.");
     setAberto(false);
@@ -737,14 +932,17 @@ function EmailDialog({ viagemId, onDone }: { viagemId: string; onDone: () => Pro
           <Mail className="size-4" /> Registar email
         </Button>
       </DialogTrigger>
+
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Documento recebido por email</DialogTitle>
           <DialogDescription>
-            Registe aqui bilhetes ou confirmações que chegaram por email. A receção automática de
-            emails fica pronta a ligar quando configurar o endereço de reencaminhamento.
+            Registe aqui bilhetes ou confirmações que chegaram por email. A
+            receção automática de emails fica pronta a ligar quando configurar
+            o endereço de reencaminhamento.
           </DialogDescription>
         </DialogHeader>
+
         <div className="space-y-4">
           <div>
             <Label htmlFor="emailnome">Nome do documento</Label>
@@ -756,6 +954,7 @@ function EmailDialog({ viagemId, onDone }: { viagemId: string; onDone: () => Pro
               className="mt-1.5"
             />
           </div>
+
           <div>
             <Label htmlFor="remetente">Remetente</Label>
             <Input
@@ -768,8 +967,11 @@ function EmailDialog({ viagemId, onDone }: { viagemId: string; onDone: () => Pro
             />
           </div>
         </div>
+
         <DialogFooter>
-          <Button onClick={() => void guardar()}>Registar</Button>
+          <Button onClick={() => void guardar()}>
+            Registar
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
