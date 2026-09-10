@@ -81,11 +81,23 @@ const fmtPreco = new Intl.NumberFormat("pt-PT", {
 
 function dataHora(iso: string | null) {
   if (!iso) return "—";
+
   return new Date(iso).toLocaleString("pt-PT", {
     day: "2-digit",
     month: "short",
     hour: "2-digit",
     minute: "2-digit",
+  });
+}
+
+function dataCompleta(iso: string | null) {
+  if (!iso) return "Data de partida não definida";
+
+  return new Date(iso).toLocaleDateString("pt-PT", {
+    weekday: "long",
+    day: "2-digit",
+    month: "long",
+    year: "numeric",
   });
 }
 
@@ -101,7 +113,9 @@ function DetalheViagem() {
         .select("*")
         .eq("id", viagemId)
         .maybeSingle();
+
       if (error) throw error;
+
       return data;
     },
   });
@@ -114,7 +128,9 @@ function DetalheViagem() {
         .select("*")
         .eq("viagem_id", viagemId)
         .order("partida", { ascending: true });
+
       if (error) throw error;
+
       return data;
     },
   });
@@ -127,13 +143,18 @@ function DetalheViagem() {
         .select("*")
         .eq("viagem_id", viagemId)
         .order("created_at", { ascending: false });
+
       if (error) throw error;
+
       return data;
     },
   });
 
   const invalidar = async () => {
-    await queryClient.invalidateQueries({ queryKey: ["voos", viagemId] });
+    await queryClient.invalidateQueries({
+      queryKey: ["voos", viagemId],
+    });
+
     await queryClient.invalidateQueries({
       queryKey: ["documentos", viagemId],
     });
@@ -206,9 +227,11 @@ function DetalheViagem() {
               <Plane className="size-4" />
               Voos
             </div>
+
             <p className="mt-2 font-display text-2xl font-semibold">
               {quantidadeVoos}
             </p>
+
             <p className="mt-1 text-xs text-muted-foreground">
               {quantidadeVoos === 1
                 ? "voo nesta viagem"
@@ -221,9 +244,11 @@ function DetalheViagem() {
               <FileText className="size-4" />
               Documentos
             </div>
+
             <p className="mt-2 font-display text-2xl font-semibold">
               {quantidadeDocumentos}
             </p>
+
             <p className="mt-1 text-xs text-muted-foreground">
               {quantidadeDocumentos === 1
                 ? "documento associado"
@@ -236,9 +261,11 @@ function DetalheViagem() {
               <CalendarDays className="size-4" />
               Datas
             </div>
+
             <p className="mt-2 font-display text-lg font-semibold">
               {viagem.data_inicio || "Sem data"}
             </p>
+
             <p className="mt-1 text-xs text-muted-foreground">
               {viagem.data_fim
                 ? `Até ${viagem.data_fim}`
@@ -252,6 +279,7 @@ function DetalheViagem() {
             <TabsTrigger value="voos">
               Voos ({quantidadeVoos})
             </TabsTrigger>
+
             <TabsTrigger value="documentos">
               Documentos ({quantidadeDocumentos})
             </TabsTrigger>
@@ -283,44 +311,89 @@ function DetalheViagem() {
               </EmptyState>
             ) : (
               <ul className="space-y-3">
-                {voos.map((v) => (
-                  <li
-                    key={v.id}
-                    className="flex flex-wrap items-center gap-3 rounded-2xl border border-border bg-card p-4"
-                  >
-                    <div className="flex-1">
-                      <p className="font-display font-semibold">
-                        {v.origem} → {v.destino}
-                      </p>
-                      <p className="text-sm text-muted-foreground">
-                        {v.companhia} {v.numero_voo} · {dataHora(v.partida)}
-                        {v.referencia ? ` · Ref. ${v.referencia}` : ""}
-                      </p>
-                    </div>
+                {voos.map((v) => {
+                  const companhiaVoo = [v.companhia, v.numero_voo]
+                    .filter(Boolean)
+                    .join(" ");
 
-                    {v.preco != null ? (
-                      <span className="font-display font-semibold">
-                        {fmtPreco.format(Number(v.preco))}
-                      </span>
-                    ) : null}
-
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      aria-label="Remover voo"
-                      onClick={async () => {
-                        await supabase
-                          .from("voos")
-                          .delete()
-                          .eq("id", v.id);
-                        await invalidar();
-                        toast.success("Voo removido.");
-                      }}
+                  return (
+                    <li
+                      key={v.id}
+                      className="rounded-2xl border border-border bg-card p-5"
                     >
-                      <Trash2 className="size-4" />
-                    </Button>
-                  </li>
-                ))}
+                      <div className="flex flex-wrap items-start gap-4">
+                        <div className="flex size-11 shrink-0 items-center justify-center rounded-2xl bg-secondary">
+                          <Plane className="size-5" />
+                        </div>
+
+                        <div className="min-w-0 flex-1">
+                          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                            <p className="font-display text-lg font-semibold">
+                              {v.origem} → {v.destino}
+                            </p>
+
+                            {v.referencia ? (
+                              <Badge variant="outline">
+                                Ref. {v.referencia}
+                              </Badge>
+                            ) : null}
+                          </div>
+
+                          <div className="mt-2 flex flex-wrap gap-x-5 gap-y-2 text-sm text-muted-foreground">
+                            {companhiaVoo ? (
+                              <span>
+                                {companhiaVoo}
+                              </span>
+                            ) : null}
+
+                            {v.partida ? (
+                              <span className="inline-flex items-center gap-1.5">
+                                <CalendarDays className="size-3.5" />
+                                {dataHora(v.partida)}
+                              </span>
+                            ) : null}
+                          </div>
+
+                          {v.partida ? (
+                            <p className="mt-2 text-xs capitalize text-muted-foreground">
+                              {dataCompleta(v.partida)}
+                            </p>
+                          ) : null}
+                        </div>
+
+                        <div className="flex items-center gap-2 sm:flex-col sm:items-end">
+                          {v.preco != null ? (
+                            <span className="font-display text-lg font-semibold">
+                              {fmtPreco.format(Number(v.preco))}
+                            </span>
+                          ) : (
+                            <span className="text-sm text-muted-foreground">
+                              Preço não indicado
+                            </span>
+                          )}
+
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            aria-label="Remover voo"
+                            onClick={async () => {
+                              await supabase
+                                .from("voos")
+                                .delete()
+                                .eq("id", v.id);
+
+                              await invalidar();
+
+                              toast.success("Voo removido.");
+                            }}
+                          >
+                            <Trash2 className="size-4" />
+                          </Button>
+                        </div>
+                      </div>
+                    </li>
+                  );
+                })}
               </ul>
             )}
           </TabsContent>
@@ -346,6 +419,7 @@ function NovoVooDialog({
   onDone: () => Promise<void>;
 }) {
   const [aberto, setAberto] = useState(false);
+
   const [f, setF] = useState({
     companhia: "",
     numero_voo: "",
@@ -371,11 +445,13 @@ function NovoVooDialog({
 
       if (error) throw error;
     },
+
     onSuccess: async () => {
       await onDone();
       toast.success("Voo adicionado.");
       setAberto(false);
     },
+
     onError: (e) =>
       toast.error(
         e instanceof Error ? e.message : "Erro ao adicionar voo.",
@@ -398,11 +474,15 @@ function NovoVooDialog({
         <div className="grid gap-3 sm:grid-cols-2">
           <div>
             <Label htmlFor="origem">Origem</Label>
+
             <Input
               id="origem"
               value={f.origem}
               onChange={(e) =>
-                setF({ ...f, origem: e.target.value.toUpperCase() })
+                setF({
+                  ...f,
+                  origem: e.target.value.toUpperCase(),
+                })
               }
               className="mt-1.5 uppercase"
             />
@@ -410,11 +490,15 @@ function NovoVooDialog({
 
           <div>
             <Label htmlFor="destino">Destino</Label>
+
             <Input
               id="destino"
               value={f.destino}
               onChange={(e) =>
-                setF({ ...f, destino: e.target.value.toUpperCase() })
+                setF({
+                  ...f,
+                  destino: e.target.value.toUpperCase(),
+                })
               }
               className="mt-1.5 uppercase"
             />
@@ -422,53 +506,83 @@ function NovoVooDialog({
 
           <div>
             <Label htmlFor="companhia">Companhia</Label>
+
             <Input
               id="companhia"
               value={f.companhia}
-              onChange={(e) => setF({ ...f, companhia: e.target.value })}
+              onChange={(e) =>
+                setF({
+                  ...f,
+                  companhia: e.target.value,
+                })
+              }
               className="mt-1.5"
             />
           </div>
 
           <div>
             <Label htmlFor="numero">Número do voo</Label>
+
             <Input
               id="numero"
               value={f.numero_voo}
-              onChange={(e) => setF({ ...f, numero_voo: e.target.value })}
+              onChange={(e) =>
+                setF({
+                  ...f,
+                  numero_voo: e.target.value,
+                })
+              }
               className="mt-1.5"
             />
           </div>
 
           <div>
             <Label htmlFor="partida">Partida</Label>
+
             <Input
               id="partida"
               type="datetime-local"
               value={f.partida}
-              onChange={(e) => setF({ ...f, partida: e.target.value })}
+              onChange={(e) =>
+                setF({
+                  ...f,
+                  partida: e.target.value,
+                })
+              }
               className="mt-1.5"
             />
           </div>
 
           <div>
             <Label htmlFor="preco">Preço (EUR)</Label>
+
             <Input
               id="preco"
               type="number"
               step="0.01"
               value={f.preco}
-              onChange={(e) => setF({ ...f, preco: e.target.value })}
+              onChange={(e) =>
+                setF({
+                  ...f,
+                  preco: e.target.value,
+                })
+              }
               className="mt-1.5"
             />
           </div>
 
           <div className="sm:col-span-2">
             <Label htmlFor="ref">Referência da reserva</Label>
+
             <Input
               id="ref"
               value={f.referencia}
-              onChange={(e) => setF({ ...f, referencia: e.target.value })}
+              onChange={(e) =>
+                setF({
+                  ...f,
+                  referencia: e.target.value,
+                })
+              }
               className="mt-1.5"
             />
           </div>
@@ -477,7 +591,11 @@ function NovoVooDialog({
         <DialogFooter>
           <Button
             onClick={() => guardar.mutate()}
-            disabled={!f.origem || !f.destino || guardar.isPending}
+            disabled={
+              !f.origem ||
+              !f.destino ||
+              guardar.isPending
+            }
           >
             Guardar voo
           </Button>
@@ -510,7 +628,9 @@ function DocumentosPainel({
 }) {
   const fileRef = useRef<HTMLInputElement>(null);
   const urlVisualizacaoRef = useRef<string | null>(null);
+
   const [aEnviar, setAEnviar] = useState(false);
+
   const [visualizar, setVisualizar] = useState<{
     doc: Documento;
     url: string | null;
@@ -578,26 +698,34 @@ function DocumentosPainel({
     }
 
     setAEnviar(true);
+
     let pathGuardado: string | null = null;
 
     try {
-      const { data: userData } = await supabase.auth.getUser();
+      const { data: userData } =
+        await supabase.auth.getUser();
+
       const uid = userData.user?.id;
 
-      if (!uid) throw new Error("Sessão expirada.");
+      if (!uid) {
+        throw new Error("Sessão expirada.");
+      }
 
       const nomeSeguro = file.name
         .normalize("NFD")
         .replace(/[^\w.-]+/g, "_");
 
-      const path = `${uid}/${viagemId}/${Date.now()}-${nomeSeguro}`;
+      const path =
+        `${uid}/${viagemId}/${Date.now()}-${nomeSeguro}`;
 
-      const { data: upload, error: erroUpload } = await supabase.storage
-        .from("documentos")
-        .upload(path, file, {
-          contentType: file.type || "application/octet-stream",
-          upsert: false,
-        });
+      const { data: upload, error: erroUpload } =
+        await supabase.storage
+          .from("documentos")
+          .upload(path, file, {
+            contentType:
+              file.type || "application/octet-stream",
+            upsert: false,
+          });
 
       if (erroUpload) throw erroUpload;
 
@@ -612,27 +740,34 @@ function DocumentosPainel({
         );
       }
 
-      const { error: erroLeitura } = await supabase.storage
-        .from("documentos")
-        .download(pathGuardado);
+      const { error: erroLeitura } =
+        await supabase.storage
+          .from("documentos")
+          .download(pathGuardado);
 
       if (erroLeitura) {
-        throw new Error(mensagemLeitura(erroLeitura));
+        throw new Error(
+          mensagemLeitura(erroLeitura),
+        );
       }
 
-      const { error } = await supabase.from("documentos").insert({
-        viagem_id: viagemId,
-        nome: file.name,
-        tipo: file.type.includes("pdf") ? "pdf" : "ficheiro",
-        origem: "upload",
-        ficheiro_path: pathGuardado,
-        mime_type: file.type,
-        tamanho_bytes: file.size,
-      });
+      const { error } =
+        await supabase.from("documentos").insert({
+          viagem_id: viagemId,
+          nome: file.name,
+          tipo: file.type.includes("pdf")
+            ? "pdf"
+            : "ficheiro",
+          origem: "upload",
+          ficheiro_path: pathGuardado,
+          mime_type: file.type,
+          tamanho_bytes: file.size,
+        });
 
       if (error) throw error;
 
       await onDone();
+
       toast.success("Documento carregado.");
     } catch (err) {
       if (pathGuardado) {
@@ -655,11 +790,16 @@ function DocumentosPainel({
     }
   }
 
-  async function abrir(doc: Documento, leitura = false) {
+  async function abrir(
+    doc: Documento,
+    leitura = false,
+  ) {
     if (!doc.ficheiro_path) return;
 
     if (urlVisualizacaoRef.current) {
-      URL.revokeObjectURL(urlVisualizacaoRef.current);
+      URL.revokeObjectURL(
+        urlVisualizacaoRef.current,
+      );
     }
 
     setVisualizar({
@@ -670,9 +810,10 @@ function DocumentosPainel({
       leitura,
     });
 
-    const { data, error } = await supabase.storage
-      .from("documentos")
-      .download(doc.ficheiro_path);
+    const { data, error } =
+      await supabase.storage
+        .from("documentos")
+        .download(doc.ficheiro_path);
 
     if (error || !data) {
       setVisualizar({
@@ -687,16 +828,23 @@ function DocumentosPainel({
 
     const mimeEsperado =
       doc.mime_type ||
-      (doc.nome.toLowerCase().endsWith(".pdf")
+      (doc.nome
+        .toLowerCase()
+        .endsWith(".pdf")
         ? "application/pdf"
         : data.type);
 
     const blob = new Blob([data], {
-      type: mimeEsperado || "application/octet-stream",
+      type:
+        mimeEsperado ||
+        "application/octet-stream",
     });
 
-    const objectUrl = URL.createObjectURL(blob);
-    urlVisualizacaoRef.current = objectUrl;
+    const objectUrl =
+      URL.createObjectURL(blob);
+
+    urlVisualizacaoRef.current =
+      objectUrl;
 
     setVisualizar({
       doc,
@@ -720,6 +868,7 @@ function DocumentosPainel({
       .eq("id", doc.id);
 
     await onDone();
+
     toast.success("Documento removido.");
   }
 
@@ -733,20 +882,33 @@ function DocumentosPainel({
           className="hidden"
           onChange={(e) => {
             const file = e.target.files?.[0];
-            if (file) void enviarFicheiro(file);
+
+            if (file) {
+              void enviarFicheiro(file);
+            }
           }}
         />
 
         <Button
           size="sm"
           disabled={aEnviar}
-          onClick={() => fileRef.current?.click()}
+          onClick={() =>
+            fileRef.current?.click()
+          }
         >
-          <Upload className="size-4" /> Carregar PDF
+          <Upload className="size-4" />
+          Carregar PDF
         </Button>
 
-        <QrDialog viagemId={viagemId} onDone={onDone} />
-        <EmailDialog viagemId={viagemId} onDone={onDone} />
+        <QrDialog
+          viagemId={viagemId}
+          onDone={onDone}
+        />
+
+        <EmailDialog
+          viagemId={viagemId}
+          onDone={onDone}
+        />
       </div>
 
       {documentos.length === 0 ? (
@@ -778,12 +940,16 @@ function DocumentosPainel({
                     type="button"
                     className="cursor-pointer text-left font-medium text-primary underline underline-offset-4"
                     aria-label={`Ver o ficheiro original ${d.nome}`}
-                    onClick={() => void abrir(d)}
+                    onClick={() =>
+                      void abrir(d)
+                    }
                   >
                     {d.nome}
                   </button>
                 ) : (
-                  <p className="font-medium">{d.nome}</p>
+                  <p className="font-medium">
+                    {d.nome}
+                  </p>
                 )}
 
                 <p className="text-xs text-muted-foreground">
@@ -801,23 +967,30 @@ function DocumentosPainel({
                 ) : null}
               </div>
 
-              <Badge variant="outline">{d.tipo}</Badge>
+              <Badge variant="outline">
+                {d.tipo}
+              </Badge>
 
               {d.ficheiro_path ? (
                 <>
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={() => void abrir(d, true)}
+                    onClick={() =>
+                      void abrir(d, true)
+                    }
                   >
-                    <Maximize2 className="size-4" /> Ler em ecrã inteiro
+                    <Maximize2 className="size-4" />
+                    Ler em ecrã inteiro
                   </Button>
 
                   <Button
                     variant="ghost"
                     size="icon"
                     aria-label="Abrir"
-                    onClick={() => void abrir(d)}
+                    onClick={() =>
+                      void abrir(d)
+                    }
                   >
                     <Download className="size-4" />
                   </Button>
@@ -828,7 +1001,9 @@ function DocumentosPainel({
                 variant="ghost"
                 size="icon"
                 aria-label="Remover documento"
-                onClick={() => void remover(d)}
+                onClick={() =>
+                  void remover(d)
+                }
               >
                 <Trash2 className="size-4" />
               </Button>
@@ -841,19 +1016,37 @@ function DocumentosPainel({
         aberto={visualizar !== null}
         nome={visualizar?.doc.nome ?? ""}
         url={visualizar?.url ?? null}
-        mimeType={visualizar?.doc.mime_type ?? null}
-        aCarregar={visualizar?.aCarregar}
-        erro={visualizar?.erro ?? null}
-        iniciarLeitura={visualizar?.leitura ?? false}
+        mimeType={
+          visualizar?.doc.mime_type ?? null
+        }
+        aCarregar={
+          visualizar?.aCarregar
+        }
+        erro={
+          visualizar?.erro ?? null
+        }
+        iniciarLeitura={
+          visualizar?.leitura ?? false
+        }
         onTentarNovamente={
           visualizar
-            ? () => void abrir(visualizar.doc, visualizar.leitura)
+            ? () =>
+                void abrir(
+                  visualizar.doc,
+                  visualizar.leitura,
+                )
             : undefined
         }
         onFechar={() => {
-          if (urlVisualizacaoRef.current) {
-            URL.revokeObjectURL(urlVisualizacaoRef.current);
-            urlVisualizacaoRef.current = null;
+          if (
+            urlVisualizacaoRef.current
+          ) {
+            URL.revokeObjectURL(
+              urlVisualizacaoRef.current,
+            );
+
+            urlVisualizacaoRef.current =
+              null;
           }
 
           setVisualizar(null);
@@ -870,18 +1063,26 @@ function QrDialog({
   viagemId: string;
   onDone: () => Promise<void>;
 }) {
-  const [aberto, setAberto] = useState(false);
-  const [nome, setNome] = useState("");
-  const [conteudo, setConteudo] = useState("");
+  const [aberto, setAberto] =
+    useState(false);
+
+  const [nome, setNome] =
+    useState("");
+
+  const [conteudo, setConteudo] =
+    useState("");
 
   async function guardar() {
-    const { error } = await supabase.from("documentos").insert({
-      viagem_id: viagemId,
-      nome: nome || "Código QR",
-      tipo: "qr",
-      origem: "qr",
-      qr_conteudo: conteudo,
-    });
+    const { error } =
+      await supabase
+        .from("documentos")
+        .insert({
+          viagem_id: viagemId,
+          nome: nome || "Código QR",
+          tipo: "qr",
+          origem: "qr",
+          qr_conteudo: conteudo,
+        });
 
     if (error) {
       toast.error(error.message);
@@ -889,46 +1090,71 @@ function QrDialog({
     }
 
     await onDone();
-    toast.success("Código QR guardado.");
+
+    toast.success(
+      "Código QR guardado.",
+    );
+
     setAberto(false);
     setNome("");
     setConteudo("");
   }
 
   return (
-    <Dialog open={aberto} onOpenChange={setAberto}>
+    <Dialog
+      open={aberto}
+      onOpenChange={setAberto}
+    >
       <DialogTrigger asChild>
-        <Button size="sm" variant="outline">
-          <QrCode className="size-4" /> Guardar QR
+        <Button
+          size="sm"
+          variant="outline"
+        >
+          <QrCode className="size-4" />
+          Guardar QR
         </Button>
       </DialogTrigger>
 
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Guardar código QR</DialogTitle>
+          <DialogTitle>
+            Guardar código QR
+          </DialogTitle>
+
           <DialogDescription>
-            Cole o conteúdo do código (link ou texto do cartão de embarque).
+            Cole o conteúdo do código (link
+            ou texto do cartão de embarque).
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4">
           <div>
-            <Label htmlFor="qrnome">Nome</Label>
+            <Label htmlFor="qrnome">
+              Nome
+            </Label>
+
             <Input
               id="qrnome"
               value={nome}
-              onChange={(e) => setNome(e.target.value)}
+              onChange={(e) =>
+                setNome(e.target.value)
+              }
               placeholder="Cartão de embarque ida"
               className="mt-1.5"
             />
           </div>
 
           <div>
-            <Label htmlFor="qrconteudo">Conteúdo do QR</Label>
+            <Label htmlFor="qrconteudo">
+              Conteúdo do QR
+            </Label>
+
             <Textarea
               id="qrconteudo"
               value={conteudo}
-              onChange={(e) => setConteudo(e.target.value)}
+              onChange={(e) =>
+                setConteudo(e.target.value)
+              }
               className="mt-1.5"
             />
           </div>
@@ -936,7 +1162,9 @@ function QrDialog({
 
         <DialogFooter>
           <Button
-            onClick={() => void guardar()}
+            onClick={() =>
+              void guardar()
+            }
             disabled={!conteudo}
           >
             Guardar
@@ -954,19 +1182,31 @@ function EmailDialog({
   viagemId: string;
   onDone: () => Promise<void>;
 }) {
-  const [aberto, setAberto] = useState(false);
-  const [nome, setNome] = useState("");
-  const [remetente, setRemetente] = useState("");
+  const [aberto, setAberto] =
+    useState(false);
+
+  const [nome, setNome] =
+    useState("");
+
+  const [remetente, setRemetente] =
+    useState("");
 
   async function guardar() {
-    const { error } = await supabase.from("documentos").insert({
-      viagem_id: viagemId,
-      nome: nome || "Documento recebido por email",
-      tipo: "email",
-      origem: "email",
-      remetente_email: remetente || null,
-      recebido_em: new Date().toISOString(),
-    });
+    const { error } =
+      await supabase
+        .from("documentos")
+        .insert({
+          viagem_id: viagemId,
+          nome:
+            nome ||
+            "Documento recebido por email",
+          tipo: "email",
+          origem: "email",
+          remetente_email:
+            remetente || null,
+          recebido_em:
+            new Date().toISOString(),
+        });
 
     if (error) {
       toast.error(error.message);
@@ -974,49 +1214,78 @@ function EmailDialog({
     }
 
     await onDone();
-    toast.success("Documento registado.");
+
+    toast.success(
+      "Documento registado.",
+    );
+
     setAberto(false);
     setNome("");
     setRemetente("");
   }
 
   return (
-    <Dialog open={aberto} onOpenChange={setAberto}>
+    <Dialog
+      open={aberto}
+      onOpenChange={setAberto}
+    >
       <DialogTrigger asChild>
-        <Button size="sm" variant="outline">
-          <Mail className="size-4" /> Registar email
+        <Button
+          size="sm"
+          variant="outline"
+        >
+          <Mail className="size-4" />
+          Registar email
         </Button>
       </DialogTrigger>
 
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Documento recebido por email</DialogTitle>
+          <DialogTitle>
+            Documento recebido por email
+          </DialogTitle>
+
           <DialogDescription>
-            Registe aqui bilhetes ou confirmações que chegaram por email. A
-            receção automática de emails fica pronta a ligar quando configurar
-            o endereço de reencaminhamento.
+            Registe aqui bilhetes ou
+            confirmações que chegaram por
+            email. A receção automática de
+            emails fica pronta a ligar quando
+            configurar o endereço de
+            reencaminhamento.
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4">
           <div>
-            <Label htmlFor="emailnome">Nome do documento</Label>
+            <Label htmlFor="emailnome">
+              Nome do documento
+            </Label>
+
             <Input
               id="emailnome"
               value={nome}
-              onChange={(e) => setNome(e.target.value)}
+              onChange={(e) =>
+                setNome(e.target.value)
+              }
               placeholder="Confirmação de reserva"
               className="mt-1.5"
             />
           </div>
 
           <div>
-            <Label htmlFor="remetente">Remetente</Label>
+            <Label htmlFor="remetente">
+              Remetente
+            </Label>
+
             <Input
               id="remetente"
               type="email"
               value={remetente}
-              onChange={(e) => setRemetente(e.target.value)}
+              onChange={(e) =>
+                setRemetente(
+                  e.target.value,
+                )
+              }
               placeholder="reservas@companhia.com"
               className="mt-1.5"
             />
@@ -1024,7 +1293,11 @@ function EmailDialog({
         </div>
 
         <DialogFooter>
-          <Button onClick={() => void guardar()}>
+          <Button
+            onClick={() =>
+              void guardar()
+            }
+          >
             Registar
           </Button>
         </DialogFooter>
