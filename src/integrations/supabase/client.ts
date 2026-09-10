@@ -47,10 +47,17 @@ function isValidHttpUrl(value: unknown): value is string {
   }
 }
 
+function isValidSupabasePublishableKey(value: unknown): value is string {
+  return (
+    typeof value === 'string' &&
+    value.trim().startsWith('sb_publishable_') &&
+    value.trim().length > 'sb_publishable_'.length
+  );
+}
+
 function createSupabaseClient() {
   // Public Supabase browser configuration.
-  // The hardcoded fallback is intentional: these values are public
-  // and protected by Supabase Row Level Security (RLS).
+  // These values are public and protected by Supabase Row Level Security (RLS).
 
   const fallbackSupabaseUrl =
     'https://fgwooadwtjhvqebgscoh.supabase.co';
@@ -70,11 +77,11 @@ function createSupabaseClient() {
     ? envSupabaseUrl
     : fallbackSupabaseUrl;
 
-  const SUPABASE_PUBLISHABLE_KEY =
-    typeof envSupabasePublishableKey === 'string' &&
-    envSupabasePublishableKey.trim().length > 0
-      ? envSupabasePublishableKey
-      : fallbackSupabasePublishableKey;
+  const SUPABASE_PUBLISHABLE_KEY = isValidSupabasePublishableKey(
+    envSupabasePublishableKey,
+  )
+    ? envSupabasePublishableKey.trim()
+    : fallbackSupabasePublishableKey;
 
   return createClient<Database>(
     SUPABASE_URL,
