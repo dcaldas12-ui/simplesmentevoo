@@ -8,6 +8,7 @@ import {
   FileText,
   Mail,
   Maximize2,
+  Pencil,
   Plane,
   Plus,
   QrCode,
@@ -107,6 +108,17 @@ function DetalheViagem() {
   const { viagemId } = Route.useParams();
   const queryClient = useQueryClient();
 
+  const [editarAberto, setEditarAberto] = useState(false);
+  const [editarAguardar, setEditarAguardar] = useState(false);
+
+  const [formViagem, setFormViagem] = useState({
+    titulo: "",
+    destino: "",
+    data_inicio: "",
+    data_fim: "",
+    notas: "",
+  });
+
   const { data: viagem, isLoading } = useQuery({
     queryKey: ["viagem", viagemId],
     queryFn: async () => {
@@ -152,13 +164,82 @@ function DetalheViagem() {
     },
   });
 
+  useEffect(() => {
+    if (!editarAberto || !viagem) return;
+
+    setFormViagem({
+      titulo: viagem.titulo ?? "",
+      destino: viagem.destino ?? "",
+      data_inicio: viagem.data_inicio ?? "",
+      data_fim: viagem.data_fim ?? "",
+      notas: viagem.notas ?? "",
+    });
+  }, [editarAberto, viagem]);
+
+  async function guardarAlteracoesViagem() {
+    if (!formViagem.titulo.trim()) {
+      toast.error("Indique um nome para a viagem.");
+      return;
+    }
+
+    setEditarAguardar(true);
+
+    try {
+      const { error } = await supabase
+        .from("viagens")
+        .update({
+          titulo: formViagem.titulo.trim(),
+          destino: formViagem.destino.trim() || null,
+          data_inicio: formViagem.data_inicio || null,
+          data_fim: formViagem.data_fim || null,
+          notas: formViagem.notas.trim() || null,
+        })
+        .eq("id", viagemId);
+
+      if (error) throw error;
+
+      await queryClient.invalidateQueries({
+        queryKey: ["viagem", viagemId],
+      });
+
+      await queryClient.invalidateQueries({
+        queryKey: ["viagens"],
+      });
+
+      toast.success("Viagem atualizada.");
+
+      setEditarAberto(false);
+    } catch (err) {
+      const mensagem =
+        err &&
+        typeof err === "object" &&
+        "message" in err &&
+        typeof err.message === "string"
+          ? err.message
+          : "Não foi possível atualizar a viagem.";
+
+      toast.error(mensagem);
+      console.error("Erro ao editar viagem:", err);
+    } finally {
+      setEditarAguardar(false);
+    }
+  }
+
   const invalidar = async () => {
+    await queryClient.invalidateQueries({
+      queryKey: ["viagem", viagemId],
+    });
+
     await queryClient.invalidateQueries({
       queryKey: ["voos", viagemId],
     });
 
     await queryClient.invalidateQueries({
       queryKey: ["documentos", viagemId],
+    });
+
+    await queryClient.invalidateQueries({
+      queryKey: ["viagens"],
     });
   };
 
@@ -204,19 +285,169 @@ function DetalheViagem() {
         </Button>
 
         <header className="mt-3">
-          <h1 className="font-display text-2xl font-semibold">
-            {viagem.titulo}
-          </h1>
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="min-w-0 flex-1">
+              <h1 className="font-display text-2xl font-semibold">
+                {viagem.titulo}
+              </h1>
 
-          <p className="text-sm text-muted-foreground">
-            {[
-              viagem.destino,
-              viagem.data_inicio,
-              viagem.data_fim,
-            ]
-              .filter(Boolean)
-              .join(" · ") || "Sem datas definidas"}
-          </p>
+              <p className="text-sm text-muted-foreground">
+                {[
+                  viagem.destino,
+                  viagem.data_inicio,
+                  viagem.data_fim,
+                ]
+                  .filter(Boolean)
+                  .join(" · ") || "Sem datas definidas"}
+              </p>
+            </div>
+
+            <Dialog
+              open={editarAberto}
+              onOpenChange={setEditarAberto}
+            >
+              <DialogTrigger asChild>
+                <Button variant="outline" size="sm">
+                  <Pencil className="size-4" />
+                  Editar viagem
+                </Button>
+              </DialogTrigger>
+
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Editar viagem</DialogTitle>
+
+                  <DialogDescription>
+                    Altere o nome, destino, datas ou outras informações
+                    desta viagem.
+                  </DialogDescription>
+                </DialogHeader>
+
+                <div className="space-y-4">
+                  <div>
+                    <Label htmlFor="editar-titulo">
+                      Nome da viagem
+                    </Label>
+
+                    <Input
+                      id="editar-titulo"
+                      value={formViagem.titulo}
+                      onChange={(e) =>
+                        setFormViagem({
+                          ...formViagem,
+                          titulo: e.target.value,
+                        })
+                      }
+                      placeholder="Férias em Barcelona"
+                      className="mt-1.5"
+                    />
+                  </div>
+
+                  <div>
+                    <Label htmlFor="editar-destino">
+                      Destino
+                    </Label>
+
+                    <Input
+                      id="editar-destino"
+                      value={formViagem.destino}
+                      onChange={(e) =>
+                        setFormViagem({
+                          ...formViagem,
+                          destino: e.target.value,
+                        })
+                      }
+                      placeholder="Barcelona"
+                      className="mt-1.5"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <Label htmlFor="editar-inicio">
+                        Data de início
+                      </Label>
+
+                      <Input
+                        id="editar-inicio"
+                        type="date"
+                        value={formViagem.data_inicio}
+                        onChange={(e) =>
+                          setFormViagem({
+                            ...formViagem,
+                            data_inicio: e.target.value,
+                          })
+                        }
+                        className="mt-1.5"
+                      />
+                    </div>
+
+                    <div>
+                      <Label htmlFor="editar-fim">
+                        Data de fim
+                      </Label>
+
+                      <Input
+                        id="editar-fim"
+                        type="date"
+                        value={formViagem.data_fim}
+                        onChange={(e) =>
+                          setFormViagem({
+                            ...formViagem,
+                            data_fim: e.target.value,
+                          })
+                        }
+                        className="mt-1.5"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <Label htmlFor="editar-notas">
+                      Notas e informações
+                    </Label>
+
+                    <Textarea
+                      id="editar-notas"
+                      value={formViagem.notas}
+                      onChange={(e) =>
+                        setFormViagem({
+                          ...formViagem,
+                          notas: e.target.value,
+                        })
+                      }
+                      placeholder="Informações importantes sobre esta viagem..."
+                      className="mt-1.5 min-h-24"
+                    />
+                  </div>
+                </div>
+
+                <DialogFooter>
+                  <Button
+                    variant="outline"
+                    onClick={() => setEditarAberto(false)}
+                    disabled={editarAguardar}
+                  >
+                    Cancelar
+                  </Button>
+
+                  <Button
+                    onClick={() =>
+                      void guardarAlteracoesViagem()
+                    }
+                    disabled={
+                      !formViagem.titulo.trim() ||
+                      editarAguardar
+                    }
+                  >
+                    {editarAguardar
+                      ? "A guardar..."
+                      : "Guardar alterações"}
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+          </div>
 
           {viagem.notas ? (
             <p className="mt-3 max-w-2xl text-sm leading-relaxed">
