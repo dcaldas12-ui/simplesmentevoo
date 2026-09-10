@@ -3,6 +3,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import {
   ArrowLeft,
   BedDouble,
+  Car,
   CalendarDays,
   Download,
   FileText,
@@ -15,6 +16,7 @@ import {
   TrainFront,
   Trash2,
   Upload,
+  Info,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -39,6 +41,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { valoresIniciais } from "@/components/SearchForm";
 import { supabase } from "@/integrations/supabase/client";
+import type { Database } from "@/integrations/supabase/types";
 
 export const Route = createFileRoute("/_authenticated/viagens/$viagemId")({
   head: () => ({
@@ -178,6 +181,51 @@ function DetalheViagem() {
     },
   });
 
+  const { data: alojamentos } = useQuery({
+    queryKey: ["alojamentos", viagemId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("alojamentos")
+        .select("*")
+        .eq("viagem_id", viagemId)
+        .order("check_in", { ascending: true, nullsFirst: false });
+
+      if (error) throw error;
+
+      return data;
+    },
+  });
+
+  const { data: transportes } = useQuery({
+    queryKey: ["transportes", viagemId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("transportes")
+        .select("*")
+        .eq("viagem_id", viagemId)
+        .order("partida", { ascending: true, nullsFirst: false });
+
+      if (error) throw error;
+
+      return data;
+    },
+  });
+
+  const { data: informacoes } = useQuery({
+    queryKey: ["informacoes", viagemId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("informacoes")
+        .select("*")
+        .eq("viagem_id", viagemId)
+        .order("created_at", { ascending: false });
+
+      if (error) throw error;
+
+      return data;
+    },
+  });
+
   useEffect(() => {
     if (!editarAberto || !viagem) return;
 
@@ -252,6 +300,18 @@ function DetalheViagem() {
     });
 
     await queryClient.invalidateQueries({
+      queryKey: ["alojamentos", viagemId],
+    });
+
+    await queryClient.invalidateQueries({
+      queryKey: ["transportes", viagemId],
+    });
+
+    await queryClient.invalidateQueries({
+      queryKey: ["informacoes", viagemId],
+    });
+
+    await queryClient.invalidateQueries({
       queryKey: ["viagens"],
     });
   };
@@ -287,6 +347,9 @@ function DetalheViagem() {
 
   const quantidadeVoos = voos?.length ?? 0;
   const quantidadeDocumentos = documentos?.length ?? 0;
+  const quantidadeAlojamentos = alojamentos?.length ?? 0;
+  const quantidadeTransportes = transportes?.length ?? 0;
+  const quantidadeInformacoes = informacoes?.length ?? 0;
 
   return (
     <AppShell>
@@ -574,15 +637,21 @@ function DetalheViagem() {
                   <h3 className="font-medium">Alojamento</h3>
 
                   <p className="mt-1 truncate text-xs text-muted-foreground">
-                    Guarde reservas de hotel e outros alojamentos nesta
-                    viagem.
+                    {quantidadeAlojamentos === 0
+                      ? "Hotéis, apartamentos e outros alojamentos."
+                      : `${quantidadeAlojamentos} ${
+                          quantidadeAlojamentos === 1 ? "alojamento" : "alojamentos"
+                        } guardado${quantidadeAlojamentos === 1 ? "" : "s"}.`}
                   </p>
 
                   <div className="mt-3">
-                    <Button size="sm" variant="outline" disabled>
+                    <a
+                      href="#alojamentos"
+                      className="inline-flex h-8 items-center justify-center gap-2 rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+                    >
                       <Plus className="size-3.5" />
                       Adicionar alojamento
-                    </Button>
+                    </a>
                   </div>
                 </div>
               </div>
@@ -598,14 +667,21 @@ function DetalheViagem() {
                   <h3 className="font-medium">Transportes</h3>
 
                   <p className="mt-1 truncate text-xs text-muted-foreground">
-                    Comboios, autocarros, transfers e outros transportes.
+                    {quantidadeTransportes === 0
+                      ? "Comboios, autocarros, transfers e outros."
+                      : `${quantidadeTransportes} ${
+                          quantidadeTransportes === 1 ? "transporte" : "transportes"
+                        } guardado${quantidadeTransportes === 1 ? "" : "s"}.`}
                   </p>
 
                   <div className="mt-3">
-                    <Button size="sm" variant="outline" disabled>
+                    <a
+                      href="#transportes"
+                      className="inline-flex h-8 items-center justify-center gap-2 rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+                    >
                       <Plus className="size-3.5" />
                       Adicionar transporte
-                    </Button>
+                    </a>
                   </div>
                 </div>
               </div>
@@ -666,21 +742,28 @@ function DetalheViagem() {
             <div className="rounded-2xl border border-border bg-card p-4">
               <div className="flex items-start gap-3">
                 <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-secondary">
-                  <CalendarDays className="size-4" />
+                  <Info className="size-4" />
                 </span>
 
                 <div className="min-w-0 flex-1">
                   <h3 className="font-medium">Informações</h3>
 
                   <p className="mt-1 truncate text-xs text-muted-foreground">
-                    Notas e informações importantes sobre esta viagem.
+                    {quantidadeInformacoes === 0
+                      ? "Notas e informações importantes da viagem."
+                      : `${quantidadeInformacoes} ${
+                          quantidadeInformacoes === 1 ? "informação" : "informações"
+                        } guardada${quantidadeInformacoes === 1 ? "" : "s"}.`}
                   </p>
 
                   <div className="mt-3">
-                    <Button size="sm" variant="outline" disabled>
+                    <a
+                      href="#informacoes"
+                      className="inline-flex h-8 items-center justify-center gap-2 rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+                    >
                       <Plus className="size-3.5" />
                       Adicionar informação
-                    </Button>
+                    </a>
                   </div>
                 </div>
               </div>
@@ -841,6 +924,325 @@ function DetalheViagem() {
               documentos={documentos ?? []}
               onDone={invalidar}
             />
+          </div>
+        </section>
+
+        <section id="alojamentos" className="mt-10 scroll-mt-24">
+          <div className="flex flex-wrap items-end justify-between gap-3">
+            <div>
+              <h2 className="font-display text-xl font-semibold">
+                Alojamentos
+              </h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Hotéis, apartamentos e outros alojamentos desta viagem.
+              </p>
+            </div>
+
+            <NovoAlojamentoDialog viagemId={viagemId} onDone={invalidar} />
+          </div>
+
+          <div className="mt-4">
+            {!alojamentos || alojamentos.length === 0 ? (
+              <EmptyState
+                icon={BedDouble}
+                titulo="Sem alojamentos nesta viagem"
+                descricao="Adicione aqui um hotel, apartamento ou outro alojamento."
+              />
+            ) : (
+              <ul className="space-y-3">
+                {alojamentos.map((a) => (
+                  <li
+                    key={a.id}
+                    className="rounded-2xl border border-border bg-card p-5"
+                  >
+                    <div className="flex flex-wrap items-start gap-4">
+                      <div className="flex size-11 shrink-0 items-center justify-center rounded-2xl bg-secondary">
+                        <BedDouble className="size-5" />
+                      </div>
+
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                          <p className="font-display text-lg font-semibold">
+                            {a.nome}
+                          </p>
+                          {a.referencia ? (
+                            <Badge variant="outline">
+                              Ref. {a.referencia}
+                            </Badge>
+                          ) : null}
+                        </div>
+
+                        {a.morada ? (
+                          <p className="mt-2 text-sm text-muted-foreground">
+                            {a.morada}
+                          </p>
+                        ) : null}
+
+                        <div className="mt-2 flex flex-wrap gap-x-5 gap-y-2 text-sm text-muted-foreground">
+                          {a.check_in ? (
+                            <span className="inline-flex items-center gap-1.5">
+                              <CalendarDays className="size-3.5" />
+                              Check-in: {dataHora(a.check_in)}
+                            </span>
+                          ) : null}
+                          {a.check_out ? (
+                            <span className="inline-flex items-center gap-1.5">
+                              <CalendarDays className="size-3.5" />
+                              Check-out: {dataHora(a.check_out)}
+                            </span>
+                          ) : null}
+                        </div>
+
+                        {a.notas ? (
+                          <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+                            {a.notas}
+                          </p>
+                        ) : null}
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        {a.preco != null ? (
+                          <span className="font-display text-lg font-semibold">
+                            {fmtPreco.format(Number(a.preco))}
+                          </span>
+                        ) : null}
+
+                        <EditarAlojamentoDialog
+                          alojamento={a}
+                          onDone={invalidar}
+                        />
+
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          aria-label="Remover alojamento"
+                          onClick={async () => {
+                            const { error } = await supabase
+                              .from("alojamentos")
+                              .delete()
+                              .eq("id", a.id);
+
+                            if (error) {
+                              toast.error(error.message);
+                              return;
+                            }
+
+                            await invalidar();
+                            toast.success("Alojamento removido.");
+                          }}
+                        >
+                          <Trash2 className="size-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </section>
+
+        <section id="transportes" className="mt-10 scroll-mt-24">
+          <div className="flex flex-wrap items-end justify-between gap-3">
+            <div>
+              <h2 className="font-display text-xl font-semibold">
+                Transportes
+              </h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Comboios, autocarros, transfers, alugueres e outros transportes.
+              </p>
+            </div>
+
+            <NovoTransporteDialog viagemId={viagemId} onDone={invalidar} />
+          </div>
+
+          <div className="mt-4">
+            {!transportes || transportes.length === 0 ? (
+              <EmptyState
+                icon={TrainFront}
+                titulo="Sem transportes nesta viagem"
+                descricao="Adicione um transporte para manter o percurso organizado."
+              />
+            ) : (
+              <ul className="space-y-3">
+                {transportes.map((t) => (
+                  <li
+                    key={t.id}
+                    className="rounded-2xl border border-border bg-card p-5"
+                  >
+                    <div className="flex flex-wrap items-start gap-4">
+                      <div className="flex size-11 shrink-0 items-center justify-center rounded-2xl bg-secondary">
+                        {t.tipo.toLowerCase().includes("carro") ? (
+                          <Car className="size-5" />
+                        ) : (
+                          <TrainFront className="size-5" />
+                        )}
+                      </div>
+
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                          <p className="font-display text-lg font-semibold">
+                            {t.tipo}
+                          </p>
+                          {t.operador ? (
+                            <span className="text-sm text-muted-foreground">
+                              {t.operador}
+                            </span>
+                          ) : null}
+                          {t.referencia ? (
+                            <Badge variant="outline">
+                              Ref. {t.referencia}
+                            </Badge>
+                          ) : null}
+                        </div>
+
+                        {t.origem || t.destino ? (
+                          <p className="mt-2 text-sm">
+                            {t.origem || "—"} → {t.destino || "—"}
+                          </p>
+                        ) : null}
+
+                        <div className="mt-2 flex flex-wrap gap-x-5 gap-y-2 text-sm text-muted-foreground">
+                          {t.partida ? (
+                            <span className="inline-flex items-center gap-1.5">
+                              <CalendarDays className="size-3.5" />
+                              Partida: {dataHora(t.partida)}
+                            </span>
+                          ) : null}
+                          {t.chegada ? (
+                            <span className="inline-flex items-center gap-1.5">
+                              <CalendarDays className="size-3.5" />
+                              Chegada: {dataHora(t.chegada)}
+                            </span>
+                          ) : null}
+                        </div>
+
+                        {t.notas ? (
+                          <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+                            {t.notas}
+                          </p>
+                        ) : null}
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        {t.preco != null ? (
+                          <span className="font-display text-lg font-semibold">
+                            {fmtPreco.format(Number(t.preco))}
+                          </span>
+                        ) : null}
+
+                        <EditarTransporteDialog
+                          transporte={t}
+                          onDone={invalidar}
+                        />
+
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          aria-label="Remover transporte"
+                          onClick={async () => {
+                            const { error } = await supabase
+                              .from("transportes")
+                              .delete()
+                              .eq("id", t.id);
+
+                            if (error) {
+                              toast.error(error.message);
+                              return;
+                            }
+
+                            await invalidar();
+                            toast.success("Transporte removido.");
+                          }}
+                        >
+                          <Trash2 className="size-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </section>
+
+        <section id="informacoes" className="mt-10 scroll-mt-24">
+          <div className="flex flex-wrap items-end justify-between gap-3">
+            <div>
+              <h2 className="font-display text-xl font-semibold">
+                Informações
+              </h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Notas e informações importantes para esta viagem.
+              </p>
+            </div>
+
+            <NovaInformacaoDialog viagemId={viagemId} onDone={invalidar} />
+          </div>
+
+          <div className="mt-4">
+            {!informacoes || informacoes.length === 0 ? (
+              <EmptyState
+                icon={Info}
+                titulo="Sem informações nesta viagem"
+                descricao="Adicione notas, moradas, códigos ou outras informações úteis."
+              />
+            ) : (
+              <ul className="space-y-3">
+                {informacoes.map((i) => (
+                  <li
+                    key={i.id}
+                    className="rounded-2xl border border-border bg-card p-5"
+                  >
+                    <div className="flex items-start gap-4">
+                      <div className="flex size-11 shrink-0 items-center justify-center rounded-2xl bg-secondary">
+                        <Info className="size-5" />
+                      </div>
+
+                      <div className="min-w-0 flex-1">
+                        <p className="font-display text-lg font-semibold">
+                          {i.titulo}
+                        </p>
+                        {i.conteudo ? (
+                          <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-muted-foreground">
+                            {i.conteudo}
+                          </p>
+                        ) : null}
+                      </div>
+
+                      <div className="flex items-center gap-1">
+                        <EditarInformacaoDialog
+                          informacao={i}
+                          onDone={invalidar}
+                        />
+
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          aria-label="Remover informação"
+                          onClick={async () => {
+                            const { error } = await supabase
+                              .from("informacoes")
+                              .delete()
+                              .eq("id", i.id);
+
+                            if (error) {
+                              toast.error(error.message);
+                              return;
+                            }
+
+                            await invalidar();
+                            toast.success("Informação removida.");
+                          }}
+                        >
+                          <Trash2 className="size-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
         </section>
       </div>
@@ -1308,6 +1710,1002 @@ function EditarVooDialog({
             onClick={() => void guardar()}
             disabled={aGuardar}
           >
+            {aGuardar ? "A guardar..." : "Guardar alterações"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+
+type AlojamentoEditavel = Database["public"]["Tables"]["alojamentos"]["Row"];
+
+function NovoAlojamentoDialog({
+  viagemId,
+  onDone,
+}: {
+  viagemId: string;
+  onDone: () => Promise<void>;
+}) {
+  const [aberto, setAberto] = useState(false);
+  const [aGuardar, setAGuardar] = useState(false);
+  const [f, setF] = useState({
+    nome: "",
+    morada: "",
+    check_in: "",
+    check_out: "",
+    referencia: "",
+    preco: "",
+    notas: "",
+  });
+
+  function limpar() {
+    setF({
+      nome: "",
+      morada: "",
+      check_in: "",
+      check_out: "",
+      referencia: "",
+      preco: "",
+      notas: "",
+    });
+  }
+
+  async function guardar() {
+    if (!f.nome.trim()) {
+      toast.error("Indique o nome do alojamento.");
+      return;
+    }
+
+    if (f.check_in && f.check_out && f.check_out < f.check_in) {
+      toast.error("A data de check-out não pode ser anterior ao check-in.");
+      return;
+    }
+
+    setAGuardar(true);
+
+    try {
+      const { error } = await supabase.from("alojamentos").insert({
+        viagem_id: viagemId,
+        nome: f.nome.trim(),
+        morada: f.morada.trim() || null,
+        check_in: f.check_in ? new Date(f.check_in).toISOString() : null,
+        check_out: f.check_out ? new Date(f.check_out).toISOString() : null,
+        referencia: f.referencia.trim() || null,
+        preco: f.preco ? Number(f.preco) : null,
+        notas: f.notas.trim() || null,
+      });
+
+      if (error) throw error;
+
+      await onDone();
+      toast.success("Alojamento adicionado.");
+      setAberto(false);
+      limpar();
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : "Não foi possível adicionar o alojamento.",
+      );
+    } finally {
+      setAGuardar(false);
+    }
+  }
+
+  return (
+    <Dialog open={aberto} onOpenChange={setAberto}>
+      <DialogTrigger asChild>
+        <Button size="sm">
+          <Plus className="size-4" />
+          Adicionar alojamento
+        </Button>
+      </DialogTrigger>
+
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Adicionar alojamento</DialogTitle>
+          <DialogDescription>
+            Guarde os dados do hotel, apartamento ou outro alojamento.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div className="sm:col-span-2">
+            <Label htmlFor="novo-alojamento-nome">Nome</Label>
+            <Input
+              id="novo-alojamento-nome"
+              value={f.nome}
+              onChange={(e) => setF({ ...f, nome: e.target.value })}
+              placeholder="Hotel ou alojamento"
+              className="mt-1.5"
+            />
+          </div>
+
+          <div className="sm:col-span-2">
+            <Label htmlFor="novo-alojamento-morada">Morada</Label>
+            <Input
+              id="novo-alojamento-morada"
+              value={f.morada}
+              onChange={(e) => setF({ ...f, morada: e.target.value })}
+              placeholder="Rua, número, cidade"
+              className="mt-1.5"
+            />
+          </div>
+
+          <div>
+            <Label htmlFor="novo-alojamento-checkin">Check-in</Label>
+            <Input
+              id="novo-alojamento-checkin"
+              type="datetime-local"
+              value={f.check_in}
+              onChange={(e) => setF({ ...f, check_in: e.target.value })}
+              className="mt-1.5"
+            />
+          </div>
+
+          <div>
+            <Label htmlFor="novo-alojamento-checkout">Check-out</Label>
+            <Input
+              id="novo-alojamento-checkout"
+              type="datetime-local"
+              value={f.check_out}
+              onChange={(e) => setF({ ...f, check_out: e.target.value })}
+              className="mt-1.5"
+            />
+          </div>
+
+          <div>
+            <Label htmlFor="novo-alojamento-referencia">Referência</Label>
+            <Input
+              id="novo-alojamento-referencia"
+              value={f.referencia}
+              onChange={(e) => setF({ ...f, referencia: e.target.value })}
+              placeholder="ABC123"
+              className="mt-1.5"
+            />
+          </div>
+
+          <div>
+            <Label htmlFor="novo-alojamento-preco">Preço (EUR)</Label>
+            <Input
+              id="novo-alojamento-preco"
+              type="number"
+              step="0.01"
+              value={f.preco}
+              onChange={(e) => setF({ ...f, preco: e.target.value })}
+              className="mt-1.5"
+            />
+          </div>
+
+          <div className="sm:col-span-2">
+            <Label htmlFor="novo-alojamento-notas">Notas</Label>
+            <Textarea
+              id="novo-alojamento-notas"
+              value={f.notas}
+              onChange={(e) => setF({ ...f, notas: e.target.value })}
+              placeholder="Informações importantes..."
+              className="mt-1.5 min-h-20"
+            />
+          </div>
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={() => setAberto(false)} disabled={aGuardar}>
+            Cancelar
+          </Button>
+          <Button onClick={() => void guardar()} disabled={aGuardar}>
+            {aGuardar ? "A guardar..." : "Guardar alojamento"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function EditarAlojamentoDialog({
+  alojamento,
+  onDone,
+}: {
+  alojamento: AlojamentoEditavel;
+  onDone: () => Promise<void>;
+}) {
+  const [aberto, setAberto] = useState(false);
+  const [aGuardar, setAGuardar] = useState(false);
+  const [f, setF] = useState({
+    nome: "",
+    morada: "",
+    check_in: "",
+    check_out: "",
+    referencia: "",
+    preco: "",
+    notas: "",
+  });
+
+  useEffect(() => {
+    if (!aberto) return;
+
+    setF({
+      nome: alojamento.nome ?? "",
+      morada: alojamento.morada ?? "",
+      check_in: valorParaDataHoraLocal(alojamento.check_in),
+      check_out: valorParaDataHoraLocal(alojamento.check_out),
+      referencia: alojamento.referencia ?? "",
+      preco: alojamento.preco != null ? String(Number(alojamento.preco)) : "",
+      notas: alojamento.notas ?? "",
+    });
+  }, [aberto, alojamento]);
+
+  async function guardar() {
+    if (!f.nome.trim()) {
+      toast.error("Indique o nome do alojamento.");
+      return;
+    }
+
+    if (f.check_in && f.check_out && f.check_out < f.check_in) {
+      toast.error("A data de check-out não pode ser anterior ao check-in.");
+      return;
+    }
+
+    setAGuardar(true);
+
+    try {
+      const { error } = await supabase
+        .from("alojamentos")
+        .update({
+          nome: f.nome.trim(),
+          morada: f.morada.trim() || null,
+          check_in: f.check_in ? new Date(f.check_in).toISOString() : null,
+          check_out: f.check_out ? new Date(f.check_out).toISOString() : null,
+          referencia: f.referencia.trim() || null,
+          preco: f.preco ? Number(f.preco) : null,
+          notas: f.notas.trim() || null,
+        })
+        .eq("id", alojamento.id);
+
+      if (error) throw error;
+
+      await onDone();
+      toast.success("Alojamento atualizado.");
+      setAberto(false);
+    } catch (err) {
+      const mensagem =
+        err &&
+        typeof err === "object" &&
+        "message" in err &&
+        typeof err.message === "string"
+          ? err.message
+          : "Não foi possível atualizar o alojamento.";
+
+      toast.error(mensagem);
+      console.error("Erro ao editar alojamento:", err);
+    } finally {
+      setAGuardar(false);
+    }
+  }
+
+  return (
+    <Dialog open={aberto} onOpenChange={setAberto}>
+      <DialogTrigger asChild>
+        <Button variant="ghost" size="icon" aria-label="Editar alojamento">
+          <Pencil className="size-4" />
+        </Button>
+      </DialogTrigger>
+
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Editar alojamento</DialogTitle>
+          <DialogDescription>
+            Altere os dados deste alojamento.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div className="sm:col-span-2">
+            <Label htmlFor={`editar-alojamento-nome-${alojamento.id}`}>Nome</Label>
+            <Input
+              id={`editar-alojamento-nome-${alojamento.id}`}
+              value={f.nome}
+              onChange={(e) => setF({ ...f, nome: e.target.value })}
+              className="mt-1.5"
+            />
+          </div>
+
+          <div className="sm:col-span-2">
+            <Label htmlFor={`editar-alojamento-morada-${alojamento.id}`}>Morada</Label>
+            <Input
+              id={`editar-alojamento-morada-${alojamento.id}`}
+              value={f.morada}
+              onChange={(e) => setF({ ...f, morada: e.target.value })}
+              className="mt-1.5"
+            />
+          </div>
+
+          <div>
+            <Label htmlFor={`editar-alojamento-checkin-${alojamento.id}`}>Check-in</Label>
+            <Input
+              id={`editar-alojamento-checkin-${alojamento.id}`}
+              type="datetime-local"
+              value={f.check_in}
+              onChange={(e) => setF({ ...f, check_in: e.target.value })}
+              className="mt-1.5"
+            />
+          </div>
+
+          <div>
+            <Label htmlFor={`editar-alojamento-checkout-${alojamento.id}`}>Check-out</Label>
+            <Input
+              id={`editar-alojamento-checkout-${alojamento.id}`}
+              type="datetime-local"
+              value={f.check_out}
+              onChange={(e) => setF({ ...f, check_out: e.target.value })}
+              className="mt-1.5"
+            />
+          </div>
+
+          <div>
+            <Label htmlFor={`editar-alojamento-referencia-${alojamento.id}`}>Referência</Label>
+            <Input
+              id={`editar-alojamento-referencia-${alojamento.id}`}
+              value={f.referencia}
+              onChange={(e) => setF({ ...f, referencia: e.target.value })}
+              className="mt-1.5"
+            />
+          </div>
+
+          <div>
+            <Label htmlFor={`editar-alojamento-preco-${alojamento.id}`}>Preço (EUR)</Label>
+            <Input
+              id={`editar-alojamento-preco-${alojamento.id}`}
+              type="number"
+              step="0.01"
+              value={f.preco}
+              onChange={(e) => setF({ ...f, preco: e.target.value })}
+              className="mt-1.5"
+            />
+          </div>
+
+          <div className="sm:col-span-2">
+            <Label htmlFor={`editar-alojamento-notas-${alojamento.id}`}>Notas</Label>
+            <Textarea
+              id={`editar-alojamento-notas-${alojamento.id}`}
+              value={f.notas}
+              onChange={(e) => setF({ ...f, notas: e.target.value })}
+              className="mt-1.5 min-h-20"
+            />
+          </div>
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={() => setAberto(false)} disabled={aGuardar}>
+            Cancelar
+          </Button>
+          <Button onClick={() => void guardar()} disabled={aGuardar}>
+            {aGuardar ? "A guardar..." : "Guardar alterações"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+type TransporteEditavel = Database["public"]["Tables"]["transportes"]["Row"];
+
+function NovoTransporteDialog({
+  viagemId,
+  onDone,
+}: {
+  viagemId: string;
+  onDone: () => Promise<void>;
+}) {
+  const [aberto, setAberto] = useState(false);
+  const [aGuardar, setAGuardar] = useState(false);
+  const [f, setF] = useState({
+    tipo: "",
+    operador: "",
+    origem: "",
+    destino: "",
+    partida: "",
+    chegada: "",
+    referencia: "",
+    preco: "",
+    notas: "",
+  });
+
+  async function guardar() {
+    if (!f.tipo.trim()) {
+      toast.error("Indique o tipo de transporte.");
+      return;
+    }
+
+    if (f.partida && f.chegada && f.chegada < f.partida) {
+      toast.error("A chegada não pode ser anterior à partida.");
+      return;
+    }
+
+    setAGuardar(true);
+
+    try {
+      const { error } = await supabase.from("transportes").insert({
+        viagem_id: viagemId,
+        tipo: f.tipo.trim(),
+        operador: f.operador.trim() || null,
+        origem: f.origem.trim() || null,
+        destino: f.destino.trim() || null,
+        partida: f.partida ? new Date(f.partida).toISOString() : null,
+        chegada: f.chegada ? new Date(f.chegada).toISOString() : null,
+        referencia: f.referencia.trim() || null,
+        preco: f.preco ? Number(f.preco) : null,
+        notas: f.notas.trim() || null,
+      });
+
+      if (error) throw error;
+
+      await onDone();
+      toast.success("Transporte adicionado.");
+      setAberto(false);
+      setF({
+        tipo: "",
+        operador: "",
+        origem: "",
+        destino: "",
+        partida: "",
+        chegada: "",
+        referencia: "",
+        preco: "",
+        notas: "",
+      });
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : "Não foi possível adicionar o transporte.",
+      );
+    } finally {
+      setAGuardar(false);
+    }
+  }
+
+  return (
+    <Dialog open={aberto} onOpenChange={setAberto}>
+      <DialogTrigger asChild>
+        <Button size="sm">
+          <Plus className="size-4" />
+          Adicionar transporte
+        </Button>
+      </DialogTrigger>
+
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Adicionar transporte</DialogTitle>
+          <DialogDescription>
+            Registe comboios, autocarros, transfers, alugueres ou outros transportes.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div>
+            <Label htmlFor="novo-transporte-tipo">Tipo</Label>
+            <Input
+              id="novo-transporte-tipo"
+              value={f.tipo}
+              onChange={(e) => setF({ ...f, tipo: e.target.value })}
+              placeholder="Comboio, autocarro, transfer..."
+              className="mt-1.5"
+            />
+          </div>
+
+          <div>
+            <Label htmlFor="novo-transporte-operador">Operador</Label>
+            <Input
+              id="novo-transporte-operador"
+              value={f.operador}
+              onChange={(e) => setF({ ...f, operador: e.target.value })}
+              placeholder="CP, FlixBus..."
+              className="mt-1.5"
+            />
+          </div>
+
+          <div>
+            <Label htmlFor="novo-transporte-origem">Origem</Label>
+            <Input
+              id="novo-transporte-origem"
+              value={f.origem}
+              onChange={(e) => setF({ ...f, origem: e.target.value })}
+              className="mt-1.5"
+            />
+          </div>
+
+          <div>
+            <Label htmlFor="novo-transporte-destino">Destino</Label>
+            <Input
+              id="novo-transporte-destino"
+              value={f.destino}
+              onChange={(e) => setF({ ...f, destino: e.target.value })}
+              className="mt-1.5"
+            />
+          </div>
+
+          <div>
+            <Label htmlFor="novo-transporte-partida">Partida</Label>
+            <Input
+              id="novo-transporte-partida"
+              type="datetime-local"
+              value={f.partida}
+              onChange={(e) => setF({ ...f, partida: e.target.value })}
+              className="mt-1.5"
+            />
+          </div>
+
+          <div>
+            <Label htmlFor="novo-transporte-chegada">Chegada</Label>
+            <Input
+              id="novo-transporte-chegada"
+              type="datetime-local"
+              value={f.chegada}
+              onChange={(e) => setF({ ...f, chegada: e.target.value })}
+              className="mt-1.5"
+            />
+          </div>
+
+          <div>
+            <Label htmlFor="novo-transporte-referencia">Referência</Label>
+            <Input
+              id="novo-transporte-referencia"
+              value={f.referencia}
+              onChange={(e) => setF({ ...f, referencia: e.target.value })}
+              className="mt-1.5"
+            />
+          </div>
+
+          <div>
+            <Label htmlFor="novo-transporte-preco">Preço (EUR)</Label>
+            <Input
+              id="novo-transporte-preco"
+              type="number"
+              step="0.01"
+              value={f.preco}
+              onChange={(e) => setF({ ...f, preco: e.target.value })}
+              className="mt-1.5"
+            />
+          </div>
+
+          <div className="sm:col-span-2">
+            <Label htmlFor="novo-transporte-notas">Notas</Label>
+            <Textarea
+              id="novo-transporte-notas"
+              value={f.notas}
+              onChange={(e) => setF({ ...f, notas: e.target.value })}
+              className="mt-1.5 min-h-20"
+            />
+          </div>
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={() => setAberto(false)} disabled={aGuardar}>
+            Cancelar
+          </Button>
+          <Button onClick={() => void guardar()} disabled={aGuardar}>
+            {aGuardar ? "A guardar..." : "Guardar transporte"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function EditarTransporteDialog({
+  transporte,
+  onDone,
+}: {
+  transporte: TransporteEditavel;
+  onDone: () => Promise<void>;
+}) {
+  const [aberto, setAberto] = useState(false);
+  const [aGuardar, setAGuardar] = useState(false);
+  const [f, setF] = useState({
+    tipo: "",
+    operador: "",
+    origem: "",
+    destino: "",
+    partida: "",
+    chegada: "",
+    referencia: "",
+    preco: "",
+    notas: "",
+  });
+
+  useEffect(() => {
+    if (!aberto) return;
+
+    setF({
+      tipo: transporte.tipo ?? "",
+      operador: transporte.operador ?? "",
+      origem: transporte.origem ?? "",
+      destino: transporte.destino ?? "",
+      partida: valorParaDataHoraLocal(transporte.partida),
+      chegada: valorParaDataHoraLocal(transporte.chegada),
+      referencia: transporte.referencia ?? "",
+      preco: transporte.preco != null ? String(Number(transporte.preco)) : "",
+      notas: transporte.notas ?? "",
+    });
+  }, [aberto, transporte]);
+
+  async function guardar() {
+    if (!f.tipo.trim()) {
+      toast.error("Indique o tipo de transporte.");
+      return;
+    }
+
+    if (f.partida && f.chegada && f.chegada < f.partida) {
+      toast.error("A chegada não pode ser anterior à partida.");
+      return;
+    }
+
+    setAGuardar(true);
+
+    try {
+      const { error } = await supabase
+        .from("transportes")
+        .update({
+          tipo: f.tipo.trim(),
+          operador: f.operador.trim() || null,
+          origem: f.origem.trim() || null,
+          destino: f.destino.trim() || null,
+          partida: f.partida ? new Date(f.partida).toISOString() : null,
+          chegada: f.chegada ? new Date(f.chegada).toISOString() : null,
+          referencia: f.referencia.trim() || null,
+          preco: f.preco ? Number(f.preco) : null,
+          notas: f.notas.trim() || null,
+        })
+        .eq("id", transporte.id);
+
+      if (error) throw error;
+
+      await onDone();
+      toast.success("Transporte atualizado.");
+      setAberto(false);
+    } catch (err) {
+      const mensagem =
+        err &&
+        typeof err === "object" &&
+        "message" in err &&
+        typeof err.message === "string"
+          ? err.message
+          : "Não foi possível atualizar o transporte.";
+
+      toast.error(mensagem);
+      console.error("Erro ao editar transporte:", err);
+    } finally {
+      setAGuardar(false);
+    }
+  }
+
+  return (
+    <Dialog open={aberto} onOpenChange={setAberto}>
+      <DialogTrigger asChild>
+        <Button variant="ghost" size="icon" aria-label="Editar transporte">
+          <Pencil className="size-4" />
+        </Button>
+      </DialogTrigger>
+
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Editar transporte</DialogTitle>
+          <DialogDescription>
+            Altere os dados deste transporte.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div>
+            <Label htmlFor={`editar-transporte-tipo-${transporte.id}`}>Tipo</Label>
+            <Input
+              id={`editar-transporte-tipo-${transporte.id}`}
+              value={f.tipo}
+              onChange={(e) => setF({ ...f, tipo: e.target.value })}
+              className="mt-1.5"
+            />
+          </div>
+
+          <div>
+            <Label htmlFor={`editar-transporte-operador-${transporte.id}`}>Operador</Label>
+            <Input
+              id={`editar-transporte-operador-${transporte.id}`}
+              value={f.operador}
+              onChange={(e) => setF({ ...f, operador: e.target.value })}
+              className="mt-1.5"
+            />
+          </div>
+
+          <div>
+            <Label htmlFor={`editar-transporte-origem-${transporte.id}`}>Origem</Label>
+            <Input
+              id={`editar-transporte-origem-${transporte.id}`}
+              value={f.origem}
+              onChange={(e) => setF({ ...f, origem: e.target.value })}
+              className="mt-1.5"
+            />
+          </div>
+
+          <div>
+            <Label htmlFor={`editar-transporte-destino-${transporte.id}`}>Destino</Label>
+            <Input
+              id={`editar-transporte-destino-${transporte.id}`}
+              value={f.destino}
+              onChange={(e) => setF({ ...f, destino: e.target.value })}
+              className="mt-1.5"
+            />
+          </div>
+
+          <div>
+            <Label htmlFor={`editar-transporte-partida-${transporte.id}`}>Partida</Label>
+            <Input
+              id={`editar-transporte-partida-${transporte.id}`}
+              type="datetime-local"
+              value={f.partida}
+              onChange={(e) => setF({ ...f, partida: e.target.value })}
+              className="mt-1.5"
+            />
+          </div>
+
+          <div>
+            <Label htmlFor={`editar-transporte-chegada-${transporte.id}`}>Chegada</Label>
+            <Input
+              id={`editar-transporte-chegada-${transporte.id}`}
+              type="datetime-local"
+              value={f.chegada}
+              onChange={(e) => setF({ ...f, chegada: e.target.value })}
+              className="mt-1.5"
+            />
+          </div>
+
+          <div>
+            <Label htmlFor={`editar-transporte-referencia-${transporte.id}`}>Referência</Label>
+            <Input
+              id={`editar-transporte-referencia-${transporte.id}`}
+              value={f.referencia}
+              onChange={(e) => setF({ ...f, referencia: e.target.value })}
+              className="mt-1.5"
+            />
+          </div>
+
+          <div>
+            <Label htmlFor={`editar-transporte-preco-${transporte.id}`}>Preço (EUR)</Label>
+            <Input
+              id={`editar-transporte-preco-${transporte.id}`}
+              type="number"
+              step="0.01"
+              value={f.preco}
+              onChange={(e) => setF({ ...f, preco: e.target.value })}
+              className="mt-1.5"
+            />
+          </div>
+
+          <div className="sm:col-span-2">
+            <Label htmlFor={`editar-transporte-notas-${transporte.id}`}>Notas</Label>
+            <Textarea
+              id={`editar-transporte-notas-${transporte.id}`}
+              value={f.notas}
+              onChange={(e) => setF({ ...f, notas: e.target.value })}
+              className="mt-1.5 min-h-20"
+            />
+          </div>
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={() => setAberto(false)} disabled={aGuardar}>
+            Cancelar
+          </Button>
+          <Button onClick={() => void guardar()} disabled={aGuardar}>
+            {aGuardar ? "A guardar..." : "Guardar alterações"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+type InformacaoEditavel = Database["public"]["Tables"]["informacoes"]["Row"];
+
+function NovaInformacaoDialog({
+  viagemId,
+  onDone,
+}: {
+  viagemId: string;
+  onDone: () => Promise<void>;
+}) {
+  const [aberto, setAberto] = useState(false);
+  const [aGuardar, setAGuardar] = useState(false);
+  const [titulo, setTitulo] = useState("");
+  const [conteudo, setConteudo] = useState("");
+
+  async function guardar() {
+    if (!titulo.trim()) {
+      toast.error("Indique um título para a informação.");
+      return;
+    }
+
+    setAGuardar(true);
+
+    try {
+      const { error } = await supabase.from("informacoes").insert({
+        viagem_id: viagemId,
+        titulo: titulo.trim(),
+        conteudo: conteudo.trim() || null,
+      });
+
+      if (error) throw error;
+
+      await onDone();
+      toast.success("Informação adicionada.");
+      setAberto(false);
+      setTitulo("");
+      setConteudo("");
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : "Não foi possível adicionar a informação.",
+      );
+    } finally {
+      setAGuardar(false);
+    }
+  }
+
+  return (
+    <Dialog open={aberto} onOpenChange={setAberto}>
+      <DialogTrigger asChild>
+        <Button size="sm">
+          <Plus className="size-4" />
+          Adicionar informação
+        </Button>
+      </DialogTrigger>
+
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Adicionar informação</DialogTitle>
+          <DialogDescription>
+            Guarde uma nota, morada, código ou outra informação útil.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-4">
+          <div>
+            <Label htmlFor="nova-informacao-titulo">Título</Label>
+            <Input
+              id="nova-informacao-titulo"
+              value={titulo}
+              onChange={(e) => setTitulo(e.target.value)}
+              placeholder="Morada do alojamento"
+              className="mt-1.5"
+            />
+          </div>
+
+          <div>
+            <Label htmlFor="nova-informacao-conteudo">Informação</Label>
+            <Textarea
+              id="nova-informacao-conteudo"
+              value={conteudo}
+              onChange={(e) => setConteudo(e.target.value)}
+              placeholder="Escreva aqui a informação..."
+              className="mt-1.5 min-h-28"
+            />
+          </div>
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={() => setAberto(false)} disabled={aGuardar}>
+            Cancelar
+          </Button>
+          <Button onClick={() => void guardar()} disabled={aGuardar}>
+            {aGuardar ? "A guardar..." : "Guardar informação"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function EditarInformacaoDialog({
+  informacao,
+  onDone,
+}: {
+  informacao: InformacaoEditavel;
+  onDone: () => Promise<void>;
+}) {
+  const [aberto, setAberto] = useState(false);
+  const [aGuardar, setAGuardar] = useState(false);
+  const [titulo, setTitulo] = useState("");
+  const [conteudo, setConteudo] = useState("");
+
+  useEffect(() => {
+    if (!aberto) return;
+
+    setTitulo(informacao.titulo ?? "");
+    setConteudo(informacao.conteudo ?? "");
+  }, [aberto, informacao]);
+
+  async function guardar() {
+    if (!titulo.trim()) {
+      toast.error("Indique um título para a informação.");
+      return;
+    }
+
+    setAGuardar(true);
+
+    try {
+      const { error } = await supabase
+        .from("informacoes")
+        .update({
+          titulo: titulo.trim(),
+          conteudo: conteudo.trim() || null,
+        })
+        .eq("id", informacao.id);
+
+      if (error) throw error;
+
+      await onDone();
+      toast.success("Informação atualizada.");
+      setAberto(false);
+    } catch (err) {
+      const mensagem =
+        err &&
+        typeof err === "object" &&
+        "message" in err &&
+        typeof err.message === "string"
+          ? err.message
+          : "Não foi possível atualizar a informação.";
+
+      toast.error(mensagem);
+      console.error("Erro ao editar informação:", err);
+    } finally {
+      setAGuardar(false);
+    }
+  }
+
+  return (
+    <Dialog open={aberto} onOpenChange={setAberto}>
+      <DialogTrigger asChild>
+        <Button variant="ghost" size="icon" aria-label="Editar informação">
+          <Pencil className="size-4" />
+        </Button>
+      </DialogTrigger>
+
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Editar informação</DialogTitle>
+          <DialogDescription>
+            Altere esta informação da viagem.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-4">
+          <div>
+            <Label htmlFor={`editar-informacao-titulo-${informacao.id}`}>
+              Título
+            </Label>
+            <Input
+              id={`editar-informacao-titulo-${informacao.id}`}
+              value={titulo}
+              onChange={(e) => setTitulo(e.target.value)}
+              className="mt-1.5"
+            />
+          </div>
+
+          <div>
+            <Label htmlFor={`editar-informacao-conteudo-${informacao.id}`}>
+              Informação
+            </Label>
+            <Textarea
+              id={`editar-informacao-conteudo-${informacao.id}`}
+              value={conteudo}
+              onChange={(e) => setConteudo(e.target.value)}
+              className="mt-1.5 min-h-28"
+            />
+          </div>
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={() => setAberto(false)} disabled={aGuardar}>
+            Cancelar
+          </Button>
+          <Button onClick={() => void guardar()} disabled={aGuardar}>
             {aGuardar ? "A guardar..." : "Guardar alterações"}
           </Button>
         </DialogFooter>
