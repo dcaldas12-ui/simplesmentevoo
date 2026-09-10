@@ -1,7 +1,8 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import {
   ArrowLeft,
+  BedDouble,
   CalendarDays,
   Download,
   FileText,
@@ -10,6 +11,7 @@ import {
   Plane,
   Plus,
   QrCode,
+  TrainFront,
   Trash2,
   Upload,
 } from "lucide-react";
@@ -33,7 +35,6 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { valoresIniciais } from "@/components/SearchForm";
 import { supabase } from "@/integrations/supabase/client";
@@ -41,16 +42,17 @@ import { supabase } from "@/integrations/supabase/client";
 export const Route = createFileRoute("/_authenticated/viagens/$viagemId")({
   head: () => ({
     meta: [
-      { title: "Detalhe da viagem — Simplesmente voo" },
+      { title: "Detalhe da viagem — ViatOrbis" },
       {
         name: "description",
-        content: "Voos guardados e documentos associados a esta viagem.",
+        content:
+          "Organize voos, documentos, bilhetes, vouchers e informações da sua viagem.",
       },
-      { property: "og:title", content: "Detalhe da viagem — Simplesmente voo" },
+      { property: "og:title", content: "Detalhe da viagem — ViatOrbis" },
       {
         property: "og:description",
         content:
-          "Cartões de embarque, códigos QR e documentos recebidos por email.",
+          "Tenha tudo o que precisa para a sua viagem organizado num só lugar.",
       },
     ],
   }),
@@ -217,7 +219,9 @@ function DetalheViagem() {
           </p>
 
           {viagem.notas ? (
-            <p className="mt-3 text-sm">{viagem.notas}</p>
+            <p className="mt-3 max-w-2xl text-sm leading-relaxed">
+              {viagem.notas}
+            </p>
           ) : null}
         </header>
 
@@ -274,22 +278,188 @@ function DetalheViagem() {
           </div>
         </div>
 
-        <Tabs defaultValue="voos" className="mt-8">
-          <TabsList>
-            <TabsTrigger value="voos">
-              Voos ({quantidadeVoos})
-            </TabsTrigger>
+        <section className="mt-8">
+          <div>
+            <h2 className="font-display text-xl font-semibold">
+              Organize a sua viagem
+            </h2>
 
-            <TabsTrigger value="documentos">
-              Documentos ({quantidadeDocumentos})
-            </TabsTrigger>
-          </TabsList>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Tudo o que pertence a esta viagem fica reunido aqui.
+            </p>
+          </div>
 
-          <TabsContent value="voos" className="mt-5 space-y-4">
-            <div className="flex justify-end">
-              <NovoVooDialog viagemId={viagemId} onDone={invalidar} />
+          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+            <div className="rounded-2xl border border-border bg-card p-5">
+              <div className="flex items-start gap-3">
+                <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-secondary">
+                  <Plane className="size-5" />
+                </span>
+
+                <div className="min-w-0 flex-1">
+                  <h3 className="font-medium">Voos</h3>
+
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    {quantidadeVoos === 0
+                      ? "Ainda não adicionou voos."
+                      : `${quantidadeVoos} ${
+                          quantidadeVoos === 1 ? "voo" : "voos"
+                        } guardado${quantidadeVoos === 1 ? "" : "s"}.`}
+                  </p>
+
+                  <div className="mt-3">
+                    <a
+                      href="#voos"
+                      className="inline-flex h-9 items-center justify-center gap-2 rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+                    >
+                      <Plus className="size-4" />
+                      Adicionar voo
+                    </a>
+                  </div>
+                </div>
+              </div>
             </div>
 
+            <div className="rounded-2xl border border-border bg-card p-5">
+              <div className="flex items-start gap-3">
+                <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-secondary">
+                  <BedDouble className="size-5" />
+                </span>
+
+                <div className="min-w-0 flex-1">
+                  <h3 className="font-medium">Alojamento</h3>
+
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Guarde reservas de hotel e outros alojamentos nesta
+                    viagem.
+                  </p>
+
+                  <div className="mt-3">
+                    <Button size="sm" variant="outline" disabled>
+                      <Plus className="size-4" />
+                      Adicionar alojamento
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-border bg-card p-5">
+              <div className="flex items-start gap-3">
+                <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-secondary">
+                  <TrainFront className="size-5" />
+                </span>
+
+                <div className="min-w-0 flex-1">
+                  <h3 className="font-medium">Transportes</h3>
+
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Comboios, autocarros, transfers e outros transportes.
+                  </p>
+
+                  <div className="mt-3">
+                    <Button size="sm" variant="outline" disabled>
+                      <Plus className="size-4" />
+                      Adicionar transporte
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-border bg-card p-5">
+              <div className="flex items-start gap-3">
+                <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-secondary">
+                  <QrCode className="size-5" />
+                </span>
+
+                <div className="min-w-0 flex-1">
+                  <h3 className="font-medium">Bilhetes & vouchers</h3>
+
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Bilhetes, vouchers, códigos QR e confirmações da viagem.
+                  </p>
+
+                  <div className="mt-3">
+                    <a
+                      href="#documentos"
+                      className="inline-flex h-9 items-center justify-center gap-2 rounded-md border border-input bg-background px-3 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground"
+                    >
+                      <Plus className="size-4" />
+                      Adicionar
+                    </a>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-border bg-card p-5">
+              <div className="flex items-start gap-3">
+                <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-secondary">
+                  <FileText className="size-5" />
+                </span>
+
+                <div className="min-w-0 flex-1">
+                  <h3 className="font-medium">Documentos</h3>
+
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    PDFs, imagens e documentos associados a esta viagem.
+                  </p>
+
+                  <div className="mt-3">
+                    <a
+                      href="#documentos"
+                      className="inline-flex h-9 items-center justify-center gap-2 rounded-md border border-input bg-background px-3 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground"
+                    >
+                      <Plus className="size-4" />
+                      Adicionar documento
+                    </a>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-border bg-card p-5">
+              <div className="flex items-start gap-3">
+                <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-secondary">
+                  <CalendarDays className="size-5" />
+                </span>
+
+                <div className="min-w-0 flex-1">
+                  <h3 className="font-medium">Informações</h3>
+
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Notas e informações importantes sobre esta viagem.
+                  </p>
+
+                  <div className="mt-3">
+                    <Button size="sm" variant="outline" disabled>
+                      <Plus className="size-4" />
+                      Adicionar informação
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section id="voos" className="mt-10 scroll-mt-24">
+          <div className="flex flex-wrap items-end justify-between gap-3">
+            <div>
+              <h2 className="font-display text-xl font-semibold">
+                Voos
+              </h2>
+
+              <p className="mt-1 text-sm text-muted-foreground">
+                Voos guardados ou adicionados manualmente.
+              </p>
+            </div>
+
+            <NovoVooDialog viagemId={viagemId} onDone={invalidar} />
+          </div>
+
+          <div className="mt-4">
             {!voos || voos.length === 0 ? (
               <EmptyState
                 icon={Plane}
@@ -341,9 +511,7 @@ function DetalheViagem() {
 
                           <div className="mt-2 flex flex-wrap gap-x-5 gap-y-2 text-sm text-muted-foreground">
                             {companhiaVoo ? (
-                              <span>
-                                {companhiaVoo}
-                              </span>
+                              <span>{companhiaVoo}</span>
                             ) : null}
 
                             {v.partida ? (
@@ -377,10 +545,15 @@ function DetalheViagem() {
                             size="icon"
                             aria-label="Remover voo"
                             onClick={async () => {
-                              await supabase
+                              const { error } = await supabase
                                 .from("voos")
                                 .delete()
                                 .eq("id", v.id);
+
+                              if (error) {
+                                toast.error(error.message);
+                                return;
+                              }
 
                               await invalidar();
 
@@ -396,16 +569,29 @@ function DetalheViagem() {
                 })}
               </ul>
             )}
-          </TabsContent>
+          </div>
+        </section>
 
-          <TabsContent value="documentos" className="mt-5 space-y-4">
+        <section id="documentos" className="mt-10 scroll-mt-24">
+          <div>
+            <h2 className="font-display text-xl font-semibold">
+              Documentos, bilhetes & vouchers
+            </h2>
+
+            <p className="mt-1 text-sm text-muted-foreground">
+              Tudo o que precisa de guardar para esta viagem fica associado
+              aqui.
+            </p>
+          </div>
+
+          <div className="mt-4">
             <DocumentosPainel
               viagemId={viagemId}
               documentos={documentos ?? []}
               onDone={invalidar}
             />
-          </TabsContent>
-        </Tabs>
+          </div>
+        </section>
       </div>
     </AppShell>
   );
@@ -430,8 +616,12 @@ function NovoVooDialog({
     preco: "",
   });
 
-  const guardar = useMutation({
-    mutationFn: async () => {
+  const [aGuardar, setAGuardar] = useState(false);
+
+  async function guardar() {
+    setAGuardar(true);
+
+    try {
       const { error } = await supabase.from("voos").insert({
         viagem_id: viagemId,
         companhia: f.companhia || null,
@@ -444,19 +634,29 @@ function NovoVooDialog({
       });
 
       if (error) throw error;
-    },
 
-    onSuccess: async () => {
       await onDone();
+
       toast.success("Voo adicionado.");
       setAberto(false);
-    },
 
-    onError: (e) =>
+      setF({
+        companhia: "",
+        numero_voo: "",
+        origem: "",
+        destino: "",
+        partida: "",
+        referencia: "",
+        preco: "",
+      });
+    } catch (e) {
       toast.error(
         e instanceof Error ? e.message : "Erro ao adicionar voo.",
-      ),
-  });
+      );
+    } finally {
+      setAGuardar(false);
+    }
+  }
 
   return (
     <Dialog open={aberto} onOpenChange={setAberto}>
@@ -590,14 +790,10 @@ function NovoVooDialog({
 
         <DialogFooter>
           <Button
-            onClick={() => guardar.mutate()}
-            disabled={
-              !f.origem ||
-              !f.destino ||
-              guardar.isPending
-            }
+            onClick={() => void guardar()}
+            disabled={!f.origem || !f.destino || aGuardar}
           >
-            Guardar voo
+            {aGuardar ? "A guardar..." : "Guardar voo"}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -650,9 +846,7 @@ function DocumentosPainel({
 
   function mensagemLeitura(error: unknown) {
     const detalhe =
-      error &&
-      typeof error === "object" &&
-      "message" in error
+      error && typeof error === "object" && "message" in error
         ? String(error.message).toLowerCase()
         : "";
 
@@ -702,9 +896,7 @@ function DocumentosPainel({
     let pathGuardado: string | null = null;
 
     try {
-      const { data: userData } =
-        await supabase.auth.getUser();
-
+      const { data: userData } = await supabase.auth.getUser();
       const uid = userData.user?.id;
 
       if (!uid) {
@@ -715,15 +907,13 @@ function DocumentosPainel({
         .normalize("NFD")
         .replace(/[^\w.-]+/g, "_");
 
-      const path =
-        `${uid}/${viagemId}/${Date.now()}-${nomeSeguro}`;
+      const path = `${uid}/${viagemId}/${Date.now()}-${nomeSeguro}`;
 
       const { data: upload, error: erroUpload } =
         await supabase.storage
           .from("documentos")
           .upload(path, file, {
-            contentType:
-              file.type || "application/octet-stream",
+            contentType: file.type || "application/octet-stream",
             upsert: false,
           });
 
@@ -746,23 +936,18 @@ function DocumentosPainel({
           .download(pathGuardado);
 
       if (erroLeitura) {
-        throw new Error(
-          mensagemLeitura(erroLeitura),
-        );
+        throw new Error(mensagemLeitura(erroLeitura));
       }
 
-      const { error } =
-        await supabase.from("documentos").insert({
-          viagem_id: viagemId,
-          nome: file.name,
-          tipo: file.type.includes("pdf")
-            ? "pdf"
-            : "ficheiro",
-          origem: "upload",
-          ficheiro_path: pathGuardado,
-          mime_type: file.type,
-          tamanho_bytes: file.size,
-        });
+      const { error } = await supabase.from("documentos").insert({
+        viagem_id: viagemId,
+        nome: file.name,
+        tipo: file.type.includes("pdf") ? "pdf" : "ficheiro",
+        origem: "upload",
+        ficheiro_path: pathGuardado,
+        mime_type: file.type,
+        tamanho_bytes: file.size,
+      });
 
       if (error) throw error;
 
@@ -797,9 +982,7 @@ function DocumentosPainel({
     if (!doc.ficheiro_path) return;
 
     if (urlVisualizacaoRef.current) {
-      URL.revokeObjectURL(
-        urlVisualizacaoRef.current,
-      );
+      URL.revokeObjectURL(urlVisualizacaoRef.current);
     }
 
     setVisualizar({
@@ -810,10 +993,9 @@ function DocumentosPainel({
       leitura,
     });
 
-    const { data, error } =
-      await supabase.storage
-        .from("documentos")
-        .download(doc.ficheiro_path);
+    const { data, error } = await supabase.storage
+      .from("documentos")
+      .download(doc.ficheiro_path);
 
     if (error || !data) {
       setVisualizar({
@@ -828,23 +1010,17 @@ function DocumentosPainel({
 
     const mimeEsperado =
       doc.mime_type ||
-      (doc.nome
-        .toLowerCase()
-        .endsWith(".pdf")
+      (doc.nome.toLowerCase().endsWith(".pdf")
         ? "application/pdf"
         : data.type);
 
     const blob = new Blob([data], {
-      type:
-        mimeEsperado ||
-        "application/octet-stream",
+      type: mimeEsperado || "application/octet-stream",
     });
 
-    const objectUrl =
-      URL.createObjectURL(blob);
+    const objectUrl = URL.createObjectURL(blob);
 
-    urlVisualizacaoRef.current =
-      objectUrl;
+    urlVisualizacaoRef.current = objectUrl;
 
     setVisualizar({
       doc,
@@ -892,23 +1068,15 @@ function DocumentosPainel({
         <Button
           size="sm"
           disabled={aEnviar}
-          onClick={() =>
-            fileRef.current?.click()
-          }
+          onClick={() => fileRef.current?.click()}
         >
           <Upload className="size-4" />
-          Carregar PDF
+          {aEnviar ? "A carregar..." : "Carregar PDF"}
         </Button>
 
-        <QrDialog
-          viagemId={viagemId}
-          onDone={onDone}
-        />
+        <QrDialog viagemId={viagemId} onDone={onDone} />
 
-        <EmailDialog
-          viagemId={viagemId}
-          onDone={onDone}
-        />
+        <EmailDialog viagemId={viagemId} onDone={onDone} />
       </div>
 
       {documentos.length === 0 ? (
@@ -940,16 +1108,12 @@ function DocumentosPainel({
                     type="button"
                     className="cursor-pointer text-left font-medium text-primary underline underline-offset-4"
                     aria-label={`Ver o ficheiro original ${d.nome}`}
-                    onClick={() =>
-                      void abrir(d)
-                    }
+                    onClick={() => void abrir(d)}
                   >
                     {d.nome}
                   </button>
                 ) : (
-                  <p className="font-medium">
-                    {d.nome}
-                  </p>
+                  <p className="font-medium">{d.nome}</p>
                 )}
 
                 <p className="text-xs text-muted-foreground">
@@ -967,18 +1131,14 @@ function DocumentosPainel({
                 ) : null}
               </div>
 
-              <Badge variant="outline">
-                {d.tipo}
-              </Badge>
+              <Badge variant="outline">{d.tipo}</Badge>
 
               {d.ficheiro_path ? (
                 <>
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={() =>
-                      void abrir(d, true)
-                    }
+                    onClick={() => void abrir(d, true)}
                   >
                     <Maximize2 className="size-4" />
                     Ler em ecrã inteiro
@@ -988,9 +1148,7 @@ function DocumentosPainel({
                     variant="ghost"
                     size="icon"
                     aria-label="Abrir"
-                    onClick={() =>
-                      void abrir(d)
-                    }
+                    onClick={() => void abrir(d)}
                   >
                     <Download className="size-4" />
                   </Button>
@@ -1001,9 +1159,7 @@ function DocumentosPainel({
                 variant="ghost"
                 size="icon"
                 aria-label="Remover documento"
-                onClick={() =>
-                  void remover(d)
-                }
+                onClick={() => void remover(d)}
               >
                 <Trash2 className="size-4" />
               </Button>
@@ -1016,18 +1172,10 @@ function DocumentosPainel({
         aberto={visualizar !== null}
         nome={visualizar?.doc.nome ?? ""}
         url={visualizar?.url ?? null}
-        mimeType={
-          visualizar?.doc.mime_type ?? null
-        }
-        aCarregar={
-          visualizar?.aCarregar
-        }
-        erro={
-          visualizar?.erro ?? null
-        }
-        iniciarLeitura={
-          visualizar?.leitura ?? false
-        }
+        mimeType={visualizar?.doc.mime_type ?? null}
+        aCarregar={visualizar?.aCarregar}
+        erro={visualizar?.erro ?? null}
+        iniciarLeitura={visualizar?.leitura ?? false}
         onTentarNovamente={
           visualizar
             ? () =>
@@ -1038,15 +1186,9 @@ function DocumentosPainel({
             : undefined
         }
         onFechar={() => {
-          if (
-            urlVisualizacaoRef.current
-          ) {
-            URL.revokeObjectURL(
-              urlVisualizacaoRef.current,
-            );
-
-            urlVisualizacaoRef.current =
-              null;
+          if (urlVisualizacaoRef.current) {
+            URL.revokeObjectURL(urlVisualizacaoRef.current);
+            urlVisualizacaoRef.current = null;
           }
 
           setVisualizar(null);
@@ -1063,26 +1205,18 @@ function QrDialog({
   viagemId: string;
   onDone: () => Promise<void>;
 }) {
-  const [aberto, setAberto] =
-    useState(false);
-
-  const [nome, setNome] =
-    useState("");
-
-  const [conteudo, setConteudo] =
-    useState("");
+  const [aberto, setAberto] = useState(false);
+  const [nome, setNome] = useState("");
+  const [conteudo, setConteudo] = useState("");
 
   async function guardar() {
-    const { error } =
-      await supabase
-        .from("documentos")
-        .insert({
-          viagem_id: viagemId,
-          nome: nome || "Código QR",
-          tipo: "qr",
-          origem: "qr",
-          qr_conteudo: conteudo,
-        });
+    const { error } = await supabase.from("documentos").insert({
+      viagem_id: viagemId,
+      nome: nome || "Código QR",
+      tipo: "qr",
+      origem: "qr",
+      qr_conteudo: conteudo,
+    });
 
     if (error) {
       toast.error(error.message);
@@ -1091,9 +1225,7 @@ function QrDialog({
 
     await onDone();
 
-    toast.success(
-      "Código QR guardado.",
-    );
+    toast.success("Código QR guardado.");
 
     setAberto(false);
     setNome("");
@@ -1101,15 +1233,9 @@ function QrDialog({
   }
 
   return (
-    <Dialog
-      open={aberto}
-      onOpenChange={setAberto}
-    >
+    <Dialog open={aberto} onOpenChange={setAberto}>
       <DialogTrigger asChild>
-        <Button
-          size="sm"
-          variant="outline"
-        >
+        <Button size="sm" variant="outline">
           <QrCode className="size-4" />
           Guardar QR
         </Button>
@@ -1117,44 +1243,33 @@ function QrDialog({
 
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>
-            Guardar código QR
-          </DialogTitle>
+          <DialogTitle>Guardar código QR</DialogTitle>
 
           <DialogDescription>
-            Cole o conteúdo do código (link
-            ou texto do cartão de embarque).
+            Cole o conteúdo do código (link ou texto do cartão de embarque).
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4">
           <div>
-            <Label htmlFor="qrnome">
-              Nome
-            </Label>
+            <Label htmlFor="qrnome">Nome</Label>
 
             <Input
               id="qrnome"
               value={nome}
-              onChange={(e) =>
-                setNome(e.target.value)
-              }
+              onChange={(e) => setNome(e.target.value)}
               placeholder="Cartão de embarque ida"
               className="mt-1.5"
             />
           </div>
 
           <div>
-            <Label htmlFor="qrconteudo">
-              Conteúdo do QR
-            </Label>
+            <Label htmlFor="qrconteudo">Conteúdo do QR</Label>
 
             <Textarea
               id="qrconteudo"
               value={conteudo}
-              onChange={(e) =>
-                setConteudo(e.target.value)
-              }
+              onChange={(e) => setConteudo(e.target.value)}
               className="mt-1.5"
             />
           </div>
@@ -1162,9 +1277,7 @@ function QrDialog({
 
         <DialogFooter>
           <Button
-            onClick={() =>
-              void guardar()
-            }
+            onClick={() => void guardar()}
             disabled={!conteudo}
           >
             Guardar
@@ -1182,31 +1295,19 @@ function EmailDialog({
   viagemId: string;
   onDone: () => Promise<void>;
 }) {
-  const [aberto, setAberto] =
-    useState(false);
-
-  const [nome, setNome] =
-    useState("");
-
-  const [remetente, setRemetente] =
-    useState("");
+  const [aberto, setAberto] = useState(false);
+  const [nome, setNome] = useState("");
+  const [remetente, setRemetente] = useState("");
 
   async function guardar() {
-    const { error } =
-      await supabase
-        .from("documentos")
-        .insert({
-          viagem_id: viagemId,
-          nome:
-            nome ||
-            "Documento recebido por email",
-          tipo: "email",
-          origem: "email",
-          remetente_email:
-            remetente || null,
-          recebido_em:
-            new Date().toISOString(),
-        });
+    const { error } = await supabase.from("documentos").insert({
+      viagem_id: viagemId,
+      nome: nome || "Documento recebido por email",
+      tipo: "email",
+      origem: "email",
+      remetente_email: remetente || null,
+      recebido_em: new Date().toISOString(),
+    });
 
     if (error) {
       toast.error(error.message);
@@ -1215,9 +1316,7 @@ function EmailDialog({
 
     await onDone();
 
-    toast.success(
-      "Documento registado.",
-    );
+    toast.success("Documento registado.");
 
     setAberto(false);
     setNome("");
@@ -1225,15 +1324,9 @@ function EmailDialog({
   }
 
   return (
-    <Dialog
-      open={aberto}
-      onOpenChange={setAberto}
-    >
+    <Dialog open={aberto} onOpenChange={setAberto}>
       <DialogTrigger asChild>
-        <Button
-          size="sm"
-          variant="outline"
-        >
+        <Button size="sm" variant="outline">
           <Mail className="size-4" />
           Registar email
         </Button>
@@ -1241,51 +1334,36 @@ function EmailDialog({
 
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>
-            Documento recebido por email
-          </DialogTitle>
+          <DialogTitle>Documento recebido por email</DialogTitle>
 
           <DialogDescription>
-            Registe aqui bilhetes ou
-            confirmações que chegaram por
-            email. A receção automática de
-            emails fica pronta a ligar quando
-            configurar o endereço de
-            reencaminhamento.
+            Registe aqui bilhetes ou confirmações que chegaram por email. A
+            receção automática de emails fica pronta a ligar quando configurar
+            o endereço de reencaminhamento.
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4">
           <div>
-            <Label htmlFor="emailnome">
-              Nome do documento
-            </Label>
+            <Label htmlFor="emailnome">Nome do documento</Label>
 
             <Input
               id="emailnome"
               value={nome}
-              onChange={(e) =>
-                setNome(e.target.value)
-              }
+              onChange={(e) => setNome(e.target.value)}
               placeholder="Confirmação de reserva"
               className="mt-1.5"
             />
           </div>
 
           <div>
-            <Label htmlFor="remetente">
-              Remetente
-            </Label>
+            <Label htmlFor="remetente">Remetente</Label>
 
             <Input
               id="remetente"
               type="email"
               value={remetente}
-              onChange={(e) =>
-                setRemetente(
-                  e.target.value,
-                )
-              }
+              onChange={(e) => setRemetente(e.target.value)}
               placeholder="reservas@companhia.com"
               className="mt-1.5"
             />
@@ -1293,11 +1371,7 @@ function EmailDialog({
         </div>
 
         <DialogFooter>
-          <Button
-            onClick={() =>
-              void guardar()
-            }
-          >
+          <Button onClick={() => void guardar()}>
             Registar
           </Button>
         </DialogFooter>
