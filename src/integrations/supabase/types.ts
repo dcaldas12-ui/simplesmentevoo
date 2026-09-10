@@ -70,6 +70,53 @@ export type Database = {
           },
         ]
       }
+      anexos_viagem: {
+        Row: {
+          categoria: string
+          created_at: string
+          ficheiro_path: string
+          id: string
+          mime_type: string | null
+          nome: string
+          tamanho_bytes: number | null
+          user_id: string
+          viagem_id: string
+          item_id: string
+        }
+        Insert: {
+          categoria: string
+          created_at?: string
+          ficheiro_path: string
+          id?: string
+          mime_type?: string | null
+          nome: string
+          tamanho_bytes?: number | null
+          user_id?: string
+          viagem_id: string
+          item_id: string
+        }
+        Update: {
+          categoria?: string
+          created_at?: string
+          ficheiro_path?: string
+          id?: string
+          mime_type?: string | null
+          nome?: string
+          tamanho_bytes?: number | null
+          user_id?: string
+          viagem_id?: string
+          item_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "anexos_viagem_viagem_id_fkey"
+            columns: ["viagem_id"]
+            isOneToOne: false
+            referencedRelation: "viagens"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       app_user_connections: {
         Row: {
           connection_key_ciphertext: string

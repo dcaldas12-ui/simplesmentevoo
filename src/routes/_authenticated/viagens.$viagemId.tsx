@@ -615,13 +615,7 @@ function DetalheViagem() {
                   </p>
 
                   <div className="mt-3">
-                    <a
-                      href="#voos"
-                      className="inline-flex h-8 items-center justify-center gap-2 rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90"
-                    >
-                      <Plus className="size-3.5" />
-                      Adicionar voo
-                    </a>
+                    <NovoVooDialog viagemId={viagemId} onDone={invalidar} />
                   </div>
                 </div>
               </div>
@@ -645,13 +639,7 @@ function DetalheViagem() {
                   </p>
 
                   <div className="mt-3">
-                    <a
-                      href="#alojamentos"
-                      className="inline-flex h-8 items-center justify-center gap-2 rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90"
-                    >
-                      <Plus className="size-3.5" />
-                      Adicionar alojamento
-                    </a>
+                    <NovoAlojamentoDialog viagemId={viagemId} onDone={invalidar} />
                   </div>
                 </div>
               </div>
@@ -675,13 +663,7 @@ function DetalheViagem() {
                   </p>
 
                   <div className="mt-3">
-                    <a
-                      href="#transportes"
-                      className="inline-flex h-8 items-center justify-center gap-2 rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90"
-                    >
-                      <Plus className="size-3.5" />
-                      Adicionar transporte
-                    </a>
+                    <NovoTransporteDialog viagemId={viagemId} onDone={invalidar} />
                   </div>
                 </div>
               </div>
@@ -701,13 +683,7 @@ function DetalheViagem() {
                   </p>
 
                   <div className="mt-3">
-                    <a
-                      href="#documentos"
-                      className="inline-flex h-8 items-center justify-center gap-2 rounded-md border border-input bg-background px-3 text-xs font-medium transition-colors hover:bg-accent hover:text-accent-foreground"
-                    >
-                      <Plus className="size-3.5" />
-                      Adicionar
-                    </a>
+                    <NovoDocumentoDialog viagemId={viagemId} tipo="bilhete" onDone={invalidar} />
                   </div>
                 </div>
               </div>
@@ -727,13 +703,7 @@ function DetalheViagem() {
                   </p>
 
                   <div className="mt-3">
-                    <a
-                      href="#documentos"
-                      className="inline-flex h-8 items-center justify-center gap-2 rounded-md border border-input bg-background px-3 text-xs font-medium transition-colors hover:bg-accent hover:text-accent-foreground"
-                    >
-                      <Plus className="size-3.5" />
-                      Adicionar documento
-                    </a>
+                    <NovoDocumentoDialog viagemId={viagemId} tipo="documento" onDone={invalidar} />
                   </div>
                 </div>
               </div>
@@ -757,13 +727,7 @@ function DetalheViagem() {
                   </p>
 
                   <div className="mt-3">
-                    <a
-                      href="#informacoes"
-                      className="inline-flex h-8 items-center justify-center gap-2 rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90"
-                    >
-                      <Plus className="size-3.5" />
-                      Adicionar informação
-                    </a>
+                    <NovaInformacaoDialog viagemId={viagemId} onDone={invalidar} />
                   </div>
                 </div>
               </div>
@@ -1276,6 +1240,7 @@ function NovoVooDialog({
   onDone: () => Promise<void>;
 }) {
   const [aberto, setAberto] = useState(false);
+  const [ficheiro, setFicheiro] = useState<File | null>(null);
 
   const [f, setF] = useState({
     companhia: "",
@@ -1289,37 +1254,67 @@ function NovoVooDialog({
 
   const [aGuardar, setAGuardar] = useState(false);
 
+  function limpar() {
+    setF({
+      companhia: "",
+      numero_voo: "",
+      origem: "",
+      destino: "",
+      partida: "",
+      referencia: "",
+      preco: "",
+    });
+    setFicheiro(null);
+  }
+
   async function guardar() {
+    if (!f.origem.trim() || !f.destino.trim()) {
+      toast.error("Indique a origem e o destino.");
+      return;
+    }
+
     setAGuardar(true);
 
     try {
-      const { error } = await supabase.from("voos").insert({
-        viagem_id: viagemId,
-        companhia: f.companhia || null,
-        numero_voo: f.numero_voo || null,
-        origem: f.origem.toUpperCase(),
-        destino: f.destino.toUpperCase(),
-        partida: f.partida ? new Date(f.partida).toISOString() : null,
-        referencia: f.referencia || null,
-        preco: f.preco ? Number(f.preco) : null,
-      });
+      const { data, error } = await supabase
+        .from("voos")
+        .insert({
+          viagem_id: viagemId,
+          companhia: f.companhia.trim() || null,
+          numero_voo: f.numero_voo.trim() || null,
+          origem: f.origem.trim().toUpperCase(),
+          destino: f.destino.trim().toUpperCase(),
+          partida: f.partida ? new Date(f.partida).toISOString() : null,
+          referencia: f.referencia.trim() || null,
+          preco: f.preco ? Number(f.preco) : null,
+        })
+        .select()
+        .single();
 
       if (error) throw error;
 
+      if (ficheiro) {
+        try {
+          await guardarDocumentoViagem({
+            viagemId,
+            file: ficheiro,
+          });
+        } catch (erroFicheiro) {
+          await supabase.from("voos").delete().eq("id", data.id);
+          throw erroFicheiro;
+        }
+      }
+
       await onDone();
 
-      toast.success("Voo adicionado.");
-      setAberto(false);
+      toast.success(
+        ficheiro
+          ? "Voo e ficheiro adicionados."
+          : "Voo adicionado.",
+      );
 
-      setF({
-        companhia: "",
-        numero_voo: "",
-        origem: "",
-        destino: "",
-        partida: "",
-        referencia: "",
-        preco: "",
-      });
+      setAberto(false);
+      limpar();
     } catch (e) {
       toast.error(
         e instanceof Error ? e.message : "Erro ao adicionar voo.",
@@ -1332,20 +1327,22 @@ function NovoVooDialog({
   return (
     <Dialog open={aberto} onOpenChange={setAberto}>
       <DialogTrigger asChild>
-        <Button size="sm">
-          <Plus className="size-4" /> Adicionar voo
+        <Button size="sm" className="h-8 text-xs">
+          <Plus className="size-3.5" /> Adicionar voo
         </Button>
       </DialogTrigger>
 
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Adicionar voo</DialogTitle>
+          <DialogDescription>
+            Registe os dados do voo e, se quiser, associe um ficheiro.
+          </DialogDescription>
         </DialogHeader>
 
         <div className="grid gap-3 sm:grid-cols-2">
           <div>
             <Label htmlFor="origem">Origem</Label>
-
             <Input
               id="origem"
               value={f.origem}
@@ -1361,7 +1358,6 @@ function NovoVooDialog({
 
           <div>
             <Label htmlFor="destino">Destino</Label>
-
             <Input
               id="destino"
               value={f.destino}
@@ -1377,7 +1373,6 @@ function NovoVooDialog({
 
           <div>
             <Label htmlFor="companhia">Companhia</Label>
-
             <Input
               id="companhia"
               value={f.companhia}
@@ -1393,7 +1388,6 @@ function NovoVooDialog({
 
           <div>
             <Label htmlFor="numero">Número do voo</Label>
-
             <Input
               id="numero"
               value={f.numero_voo}
@@ -1409,7 +1403,6 @@ function NovoVooDialog({
 
           <div>
             <Label htmlFor="partida">Partida</Label>
-
             <Input
               id="partida"
               type="datetime-local"
@@ -1426,7 +1419,6 @@ function NovoVooDialog({
 
           <div>
             <Label htmlFor="preco">Preço (EUR)</Label>
-
             <Input
               id="preco"
               type="number"
@@ -1444,7 +1436,6 @@ function NovoVooDialog({
 
           <div className="sm:col-span-2">
             <Label htmlFor="ref">Referência da reserva</Label>
-
             <Input
               id="ref"
               value={f.referencia}
@@ -1457,9 +1448,25 @@ function NovoVooDialog({
               className="mt-1.5"
             />
           </div>
+
+          <div className="sm:col-span-2">
+            <FicheiroSelecionado
+              file={ficheiro}
+              onChange={setFicheiro}
+              disabled={aGuardar}
+            />
+          </div>
         </div>
 
         <DialogFooter>
+          <Button
+            variant="outline"
+            onClick={() => setAberto(false)}
+            disabled={aGuardar}
+          >
+            Cancelar
+          </Button>
+
           <Button
             onClick={() => void guardar()}
             disabled={!f.origem || !f.destino || aGuardar}
@@ -1756,6 +1763,64 @@ function validarFicheiroAnexo(file: File) {
 
 function nomeSeguroFicheiro(file: File) {
   return file.name.normalize("NFD").replace(/[^\w.-]+/g, "_");
+}
+
+async function guardarDocumentoViagem({
+  viagemId,
+  file,
+  tipo = "ficheiro",
+}: {
+  viagemId: string;
+  file: File;
+  tipo?: string;
+}) {
+  const erroValidacao = validarFicheiroAnexo(file);
+  if (erroValidacao) throw new Error(erroValidacao);
+
+  const { data: userData } = await supabase.auth.getUser();
+  const uid = userData.user?.id;
+
+  if (!uid) throw new Error("Sessão expirada.");
+
+  const path = `${uid}/${viagemId}/${Date.now()}-${nomeSeguroFicheiro(file)}`;
+
+  const { data: upload, error: erroUpload } = await supabase.storage
+    .from("documentos")
+    .upload(path, file, {
+      contentType: file.type || "application/octet-stream",
+      upsert: false,
+    });
+
+  if (erroUpload) throw erroUpload;
+
+  const pathGuardado = upload?.path ?? null;
+
+  if (!pathGuardado || pathGuardado.split("/")[0] !== uid) {
+    if (pathGuardado) {
+      await supabase.storage.from("documentos").remove([pathGuardado]);
+    }
+
+    throw new Error(
+      "O armazenamento não confirmou o caminho seguro do ficheiro.",
+    );
+  }
+
+  const { error } = await supabase.from("documentos").insert({
+    viagem_id: viagemId,
+    nome: file.name,
+    tipo,
+    origem: "upload",
+    ficheiro_path: pathGuardado,
+    mime_type: file.type || null,
+    tamanho_bytes: file.size,
+  });
+
+  if (error) {
+    await supabase.storage.from("documentos").remove([pathGuardado]);
+    throw error;
+  }
+
+  return pathGuardado;
 }
 
 async function guardarAnexoViagem({
@@ -3196,6 +3261,110 @@ type Documento = {
   recebido_em: string | null;
   mime_type: string | null;
 };
+
+function NovoDocumentoDialog({
+  viagemId,
+  tipo,
+  onDone,
+}: {
+  viagemId: string;
+  tipo: "documento" | "bilhete";
+  onDone: () => Promise<void>;
+}) {
+  const [aberto, setAberto] = useState(false);
+  const [ficheiro, setFicheiro] = useState<File | null>(null);
+  const [aGuardar, setAGuardar] = useState(false);
+
+  async function guardar() {
+    if (!ficheiro) {
+      toast.error("Selecione um ficheiro.");
+      return;
+    }
+
+    setAGuardar(true);
+
+    try {
+      await guardarDocumentoViagem({
+        viagemId,
+        file: ficheiro,
+        tipo: tipo === "bilhete" ? "bilhete" : "documento",
+      });
+
+      await onDone();
+
+      toast.success(
+        tipo === "bilhete"
+          ? "Bilhete ou voucher adicionado."
+          : "Documento adicionado.",
+      );
+
+      setAberto(false);
+      setFicheiro(null);
+    } catch (err) {
+      toast.error(
+        err instanceof Error
+          ? err.message
+          : "Não foi possível adicionar o ficheiro.",
+      );
+    } finally {
+      setAGuardar(false);
+    }
+  }
+
+  return (
+    <Dialog open={aberto} onOpenChange={setAberto}>
+      <DialogTrigger asChild>
+        <Button
+          size="sm"
+          variant="outline"
+          className="h-8 text-xs"
+        >
+          <Plus className="size-3.5" />
+          {tipo === "bilhete" ? "Adicionar" : "Adicionar documento"}
+        </Button>
+      </DialogTrigger>
+
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>
+            {tipo === "bilhete"
+              ? "Adicionar bilhete ou voucher"
+              : "Adicionar documento"}
+          </DialogTitle>
+
+          <DialogDescription>
+            {tipo === "bilhete"
+              ? "Carregue o bilhete, voucher, código QR ou comprovativo."
+              : "Carregue um PDF, imagem ou outro documento desta viagem."}
+          </DialogDescription>
+        </DialogHeader>
+
+        <FicheiroSelecionado
+          file={ficheiro}
+          onChange={setFicheiro}
+          disabled={aGuardar}
+        />
+
+        <DialogFooter>
+          <Button
+            variant="outline"
+            onClick={() => setAberto(false)}
+            disabled={aGuardar}
+          >
+            Cancelar
+          </Button>
+
+          <Button
+            onClick={() => void guardar()}
+            disabled={!ficheiro || aGuardar}
+          >
+            {aGuardar ? "A carregar..." : "Guardar"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
 
 function DocumentosPainel({
   viagemId,
