@@ -4,201 +4,120 @@ import { toast } from "sonner";
 
 import { AppShell } from "@/components/AppShell";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { supabase } from "@/integrations/supabase/client";
 import { lovable } from "@/integrations/lovable/index";
 import { useSession } from "@/lib/auth";
 
 export const Route = createFileRoute("/auth")({
   head: () => ({
     meta: [
-      { title: "Entrar — Simplesmente voo" },
+      { title: "Entrar — ViatOrbis" },
       {
         name: "description",
         content:
-          "Entre na sua conta Simplesmente voo para guardar viagens, voos e documentos de viagem.",
+          "Entre no ViatOrbis com a sua conta Google para guardar viagens, voos e documentos.",
       },
-      { property: "og:title", content: "Entrar — Simplesmente voo" },
+      { property: "og:title", content: "Entrar — ViatOrbis" },
       {
         property: "og:description",
-        content: "Aceda às suas viagens, voos guardados e documentos.",
+        content:
+          "Aceda às suas viagens, voos guardados e documentos através da sua conta.",
       },
     ],
   }),
   component: AuthPage,
 });
 
+function obterDestinoDepoisDoLogin(): string {
+  const destino =
+    sessionStorage.getItem("viatorbis_after_auth") || "/viagens";
+
+  sessionStorage.removeItem("viatorbis_after_auth");
+
+  if (destino.startsWith("/")) {
+    return destino;
+  }
+
+  return "/viagens";
+}
+
 function AuthPage() {
-  const [modo, setModo] = useState<"entrar" | "criar">("entrar");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [nome, setNome] = useState("");
-  const [aguardar, setAguardar] = useState(false);
   const { session } = useSession();
   const navigate = useNavigate();
+  const [aguardar, setAguardar] = useState(false);
 
   useEffect(() => {
     if (!session) return;
 
-    const destino =
-      sessionStorage.getItem("viatorbis_after_auth") || "/viagens";
-
-    sessionStorage.removeItem("viatorbis_after_auth");
+    const destino = obterDestinoDepoisDoLogin();
 
     void navigate({
-      to: destino as "/pesquisa" | "/viagens",
+      to: destino,
     });
   }, [session, navigate]);
 
-  async function submeter(e: React.FormEvent) {
-    e.preventDefault();
+  async function entrarComGoogle() {
     setAguardar(true);
 
     try {
-      if (modo === "entrar") {
-        const { error } = await supabase.auth.signInWithPassword({
-          email,
-          password,
-        });
+      const result = await lovable.auth.signInWithOAuth("google", {
+        redirect_uri: window.location.origin,
+      });
 
-        if (error) throw error;
-
-        toast.success("Bem-vindo de volta!");
-      } else {
-        const { error } = await supabase.auth.signUp({
-          email,
-          password,
-          options: {
-            data: { nome },
-            emailRedirectTo: window.location.origin,
-          },
-        });
-
-        if (error) throw error;
-
-        toast.success(
-          "Conta criada. Já pode começar a organizar as suas viagens.",
-        );
+      if (result.error) {
+        toast.error("Não foi possível entrar com o Google.");
+        setAguardar(false);
+        return;
       }
+
+      if (result.redirected) {
+        return;
+      }
+
+      const destino = obterDestinoDepoisDoLogin();
+
+      void navigate({
+        to: destino,
+      });
     } catch (err) {
       toast.error(
         err instanceof Error
           ? err.message
-          : "Não foi possível continuar.",
+          : "Não foi possível entrar com o Google.",
       );
-    } finally {
       setAguardar(false);
     }
-  }
-
-  async function entrarComGoogle() {
-    const result = await lovable.auth.signInWithOAuth("google", {
-      redirect_uri: window.location.origin,
-    });
-
-    if (result.error) {
-      toast.error("Não foi possível entrar com o Google.");
-      return;
-    }
-
-    if (result.redirected) return;
-
-    const destino =
-      sessionStorage.getItem("viatorbis_after_auth") || "/viagens";
-
-    sessionStorage.removeItem("viatorbis_after_auth");
-
-    void navigate({
-      to: destino as "/pesquisa" | "/viagens",
-    });
   }
 
   return (
     <AppShell>
       <div className="mx-auto w-full max-w-md px-4 py-14">
-        <h1 className="font-display text-2xl font-semibold">
-          {modo === "entrar" ? "Entrar" : "Criar conta"}
-        </h1>
+        <div className="text-center">
+          <h1 className="font-display text-2xl font-semibold">
+            Entrar no ViatOrbis
+          </h1>
 
-        <p className="mt-1 text-sm text-muted-foreground">
-          Guarde viagens, voos e documentos na sua conta.
-        </p>
+          <p className="mt-2 text-sm text-muted-foreground">
+            Entre com a sua conta Google para guardar viagens, voos e
+            documentos.
+          </p>
+        </div>
 
-        <form
-          onSubmit={submeter}
-          className="mt-6 space-y-4 rounded-2xl border border-border bg-card p-5"
-        >
-          {modo === "criar" ? (
-            <div>
-              <Label htmlFor="nome">Nome</Label>
-
-              <Input
-                id="nome"
-                value={nome}
-                onChange={(e) => setNome(e.target.value)}
-                className="mt-1.5"
-                placeholder="O seu nome"
-              />
-            </div>
-          ) : null}
-
-          <div>
-            <Label htmlFor="email">Email</Label>
-
-            <Input
-              id="email"
-              type="email"
-              required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="mt-1.5"
-            />
-          </div>
-
-          <div>
-            <Label htmlFor="password">Palavra-passe</Label>
-
-            <Input
-              id="password"
-              type="password"
-              required
-              minLength={6}
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="mt-1.5"
-            />
-          </div>
-
-          <Button
-            type="submit"
-            className="w-full"
-            disabled={aguardar}
-          >
-            {modo === "entrar" ? "Entrar" : "Criar conta"}
-          </Button>
-
+        <div className="mt-6 rounded-2xl border border-border bg-card p-6">
           <Button
             type="button"
             variant="outline"
             className="w-full"
+            disabled={aguardar}
             onClick={() => void entrarComGoogle()}
           >
-            Continuar com Google
+            {aguardar ? "A ligar ao Google..." : "Continuar com Google"}
           </Button>
-        </form>
 
-        <button
-          type="button"
-          onClick={() =>
-            setModo(modo === "entrar" ? "criar" : "entrar")
-          }
-          className="mt-4 w-full text-sm text-muted-foreground underline underline-offset-4"
-        >
-          {modo === "entrar"
-            ? "Ainda não tenho conta"
-            : "Já tenho conta"}
-        </button>
+          <p className="mt-4 text-center text-xs leading-relaxed text-muted-foreground">
+            O ViatOrbis não cria uma palavra-passe própria. A sua conta é
+            protegida através do Google.
+          </p>
+        </div>
       </div>
     </AppShell>
   );
