@@ -3,6 +3,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import {
   BedDouble,
   CalendarDays,
+  AlertTriangle,
   FileText,
   Info,
   Luggage,
@@ -1003,6 +1004,7 @@ function ViagensPage() {
   const queryClient = useQueryClient();
   const [aberto, setAberto] = useState(false);
   const [categoriaAberta, setCategoriaAberta] = useState<CategoriaAdicionar | null>(null);
+  const [viagemParaApagar, setViagemParaApagar] = useState<ViagemEscolha | null>(null);
 
   const [form, setForm] = useState({
     titulo: "",
@@ -1029,6 +1031,29 @@ function ViagensPage() {
 
       return data;
     },
+  });
+
+  const apagar = useMutation({
+    mutationFn: async (viagemId: string) => {
+      const { error } = await supabase
+        .from("viagens")
+        .delete()
+        .eq("id", viagemId);
+
+      if (error) throw error;
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({
+        queryKey: ["viagens"],
+      });
+
+      toast.success("Viagem apagada.");
+      setViagemParaApagar(null);
+    },
+    onError: (e) =>
+      toast.error(
+        e instanceof Error ? e.message : "Não foi possível apagar a viagem.",
+      ),
   });
 
   const criar = useMutation({
@@ -1338,13 +1363,14 @@ function ViagensPage() {
 
                   return (
                     <li key={v.id}>
-                      <Link
-                        to="/viagens/$viagemId"
-                        params={{
-                          viagemId: v.id,
-                        }}
-                        className="block h-full rounded-2xl border border-border bg-card p-5 transition-colors hover:border-primary/50"
-                      >
+                      <div className="relative h-full rounded-2xl border border-border bg-card transition-colors hover:border-primary/50">
+                        <Link
+                          to="/viagens/$viagemId"
+                          params={{
+                            viagemId: v.id,
+                          }}
+                          className="block h-full p-5 pb-16"
+                        >
                         <div className="flex items-start justify-between gap-3">
                           <div className="min-w-0">
                             <h3 className="truncate font-display text-lg font-semibold">
@@ -1420,7 +1446,24 @@ function ViagensPage() {
                             </span>
                           ) : null}
                         </div>
-                      </Link>
+                        </Link>
+
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="absolute bottom-3 right-3 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                          onClick={() =>
+                            setViagemParaApagar({
+                              id: v.id,
+                              titulo: v.titulo,
+                              destino: v.destino,
+                            })
+                          }
+                        >
+                          Apagar viagem
+                        </Button>
+                      </div>
                     </li>
                   );
                 })}
@@ -1428,6 +1471,64 @@ function ViagensPage() {
             )}
           </div>
         </section>
+
+        <Dialog
+          open={viagemParaApagar !== null}
+          onOpenChange={(open) => {
+            if (!open && !apagar.isPending) {
+              setViagemParaApagar(null);
+            }
+          }}
+        >
+          <DialogContent>
+            <DialogHeader>
+              <div className="flex items-center gap-3">
+                <div className="flex size-10 shrink-0 items-center justify-center rounded-full bg-destructive/10 text-destructive">
+                  <AlertTriangle className="size-5" />
+                </div>
+                <div>
+                  <DialogTitle>Apagar viagem?</DialogTitle>
+                  <DialogDescription>
+                    Esta ação irá apagar a viagem e os elementos associados.
+                    Não pode ser desfeita.
+                  </DialogDescription>
+                </div>
+              </div>
+            </DialogHeader>
+
+            {viagemParaApagar ? (
+              <div className="rounded-xl border border-border bg-secondary/40 p-4">
+                <p className="font-medium">{viagemParaApagar.titulo}</p>
+                {viagemParaApagar.destino ? (
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    {viagemParaApagar.destino}
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
+
+            <DialogFooter>
+              <Button
+                variant="outline"
+                onClick={() => setViagemParaApagar(null)}
+                disabled={apagar.isPending}
+              >
+                Cancelar
+              </Button>
+              <Button
+                variant="destructive"
+                onClick={() => {
+                  if (viagemParaApagar) {
+                    apagar.mutate(viagemParaApagar.id);
+                  }
+                }}
+                disabled={apagar.isPending || !viagemParaApagar}
+              >
+                {apagar.isPending ? "A apagar..." : "Apagar viagem"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     </AppShell>
   );
