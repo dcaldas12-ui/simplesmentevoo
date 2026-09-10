@@ -289,17 +289,17 @@ function DetalheViagem() {
             </p>
           </div>
 
-          <div className="mt-4 grid gap-3 sm:grid-cols-2">
-            <div className="rounded-2xl border border-border bg-card p-5">
+          <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="rounded-2xl border border-border bg-card p-4">
               <div className="flex items-start gap-3">
-                <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-secondary">
-                  <Plane className="size-5" />
+                <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-secondary">
+                  <Plane className="size-4" />
                 </span>
 
                 <div className="min-w-0 flex-1">
                   <h3 className="font-medium">Voos</h3>
 
-                  <p className="mt-1 text-sm text-muted-foreground">
+                  <p className="mt-1 truncate text-xs text-muted-foreground">
                     {quantidadeVoos === 0
                       ? "Ainda não adicionou voos."
                       : `${quantidadeVoos} ${
@@ -310,9 +310,9 @@ function DetalheViagem() {
                   <div className="mt-3">
                     <a
                       href="#voos"
-                      className="inline-flex h-9 items-center justify-center gap-2 rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+                      className="inline-flex h-8 items-center justify-center gap-2 rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90"
                     >
-                      <Plus className="size-4" />
+                      <Plus className="size-3.5" />
                       Adicionar voo
                     </a>
                   </div>
@@ -320,23 +320,23 @@ function DetalheViagem() {
               </div>
             </div>
 
-            <div className="rounded-2xl border border-border bg-card p-5">
+            <div className="rounded-2xl border border-border bg-card p-4">
               <div className="flex items-start gap-3">
-                <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-secondary">
-                  <BedDouble className="size-5" />
+                <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-secondary">
+                  <BedDouble className="size-4" />
                 </span>
 
                 <div className="min-w-0 flex-1">
                   <h3 className="font-medium">Alojamento</h3>
 
-                  <p className="mt-1 text-sm text-muted-foreground">
+                  <p className="mt-1 truncate text-xs text-muted-foreground">
                     Guarde reservas de hotel e outros alojamentos nesta
                     viagem.
                   </p>
 
                   <div className="mt-3">
                     <Button size="sm" variant="outline" disabled>
-                      <Plus className="size-4" />
+                      <Plus className="size-3.5" />
                       Adicionar alojamento
                     </Button>
                   </div>
@@ -344,22 +344,22 @@ function DetalheViagem() {
               </div>
             </div>
 
-            <div className="rounded-2xl border border-border bg-card p-5">
+            <div className="rounded-2xl border border-border bg-card p-4">
               <div className="flex items-start gap-3">
-                <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-secondary">
-                  <TrainFront className="size-5" />
+                <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-secondary">
+                  <TrainFront className="size-4" />
                 </span>
 
                 <div className="min-w-0 flex-1">
                   <h3 className="font-medium">Transportes</h3>
 
-                  <p className="mt-1 text-sm text-muted-foreground">
+                  <p className="mt-1 truncate text-xs text-muted-foreground">
                     Comboios, autocarros, transfers e outros transportes.
                   </p>
 
                   <div className="mt-3">
                     <Button size="sm" variant="outline" disabled>
-                      <Plus className="size-4" />
+                      <Plus className="size-3.5" />
                       Adicionar transporte
                     </Button>
                   </div>
@@ -367,25 +367,25 @@ function DetalheViagem() {
               </div>
             </div>
 
-            <div className="rounded-2xl border border-border bg-card p-5">
+            <div className="rounded-2xl border border-border bg-card p-4">
               <div className="flex items-start gap-3">
-                <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-secondary">
-                  <QrCode className="size-5" />
+                <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-secondary">
+                  <QrCode className="size-4" />
                 </span>
 
                 <div className="min-w-0 flex-1">
                   <h3 className="font-medium">Bilhetes & vouchers</h3>
 
-                  <p className="mt-1 text-sm text-muted-foreground">
+                  <p className="mt-1 truncate text-xs text-muted-foreground">
                     Bilhetes, vouchers, códigos QR e confirmações da viagem.
                   </p>
 
                   <div className="mt-3">
                     <a
                       href="#documentos"
-                      className="inline-flex h-9 items-center justify-center gap-2 rounded-md border border-input bg-background px-3 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground"
+                      className="inline-flex h-8 items-center justify-center gap-2 rounded-md border border-input bg-background px-3 text-xs font-medium transition-colors hover:bg-accent hover:text-accent-foreground"
                     >
-                      <Plus className="size-4" />
+                      <Plus className="size-3.5" />
                       Adicionar
                     </a>
                   </div>
@@ -393,25 +393,25 @@ function DetalheViagem() {
               </div>
             </div>
 
-            <div className="rounded-2xl border border-border bg-card p-5">
+            <div className="rounded-2xl border border-border bg-card p-4">
               <div className="flex items-start gap-3">
-                <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-secondary">
-                  <FileText className="size-5" />
+                <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-secondary">
+                  <FileText className="size-4" />
                 </span>
 
                 <div className="min-w-0 flex-1">
                   <h3 className="font-medium">Documentos</h3>
 
-                  <p className="mt-1 text-sm text-muted-foreground">
+                  <p className="mt-1 truncate text-xs text-muted-foreground">
                     PDFs, imagens e documentos associados a esta viagem.
                   </p>
 
                   <div className="mt-3">
                     <a
                       href="#documentos"
-                      className="inline-flex h-9 items-center justify-center gap-2 rounded-md border border-input bg-background px-3 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground"
+                      className="inline-flex h-8 items-center justify-center gap-2 rounded-md border border-input bg-background px-3 text-xs font-medium transition-colors hover:bg-accent hover:text-accent-foreground"
                     >
-                      <Plus className="size-4" />
+                      <Plus className="size-3.5" />
                       Adicionar documento
                     </a>
                   </div>
@@ -419,22 +419,22 @@ function DetalheViagem() {
               </div>
             </div>
 
-            <div className="rounded-2xl border border-border bg-card p-5">
+            <div className="rounded-2xl border border-border bg-card p-4">
               <div className="flex items-start gap-3">
-                <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-secondary">
-                  <CalendarDays className="size-5" />
+                <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-secondary">
+                  <CalendarDays className="size-4" />
                 </span>
 
                 <div className="min-w-0 flex-1">
                   <h3 className="font-medium">Informações</h3>
 
-                  <p className="mt-1 text-sm text-muted-foreground">
+                  <p className="mt-1 truncate text-xs text-muted-foreground">
                     Notas e informações importantes sobre esta viagem.
                   </p>
 
                   <div className="mt-3">
                     <Button size="sm" variant="outline" disabled>
-                      <Plus className="size-4" />
+                      <Plus className="size-3.5" />
                       Adicionar informação
                     </Button>
                   </div>
