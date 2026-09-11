@@ -14,6 +14,7 @@ import {
   iniciarLigacaoGmail,
 } from "@/lib/gmail.functions";
 import { eventosDeTexto } from "@/lib/eventos-telemovel";
+import { analisarDocumento } from "@/lib/documentos-ia.functions";
 
 const CONNECTOR_ID = "google_mail";
 
@@ -70,6 +71,51 @@ function esperarConclusao(popup: Window) {
   });
 }
 
+type EmailEncontrado = {
+  id: string;
+  assunto: string;
+  texto: string;
+};
+
+type ResultadoAnalise = {
+  email: EmailEncontrado;
+  estado: "a_analisar" | "analisado" | "erro";
+  resultado?: unknown;
+  erro?: string;
+};
+
+function valorDaFicha(ficha: unknown, campo: string): string | null {
+  if (!ficha || typeof ficha !== "object") {
+    return null;
+  }
+
+  const valor = (ficha as Record<string, unknown>)[campo];
+
+  if (typeof valor === "string" && valor.trim()) {
+    return valor.trim();
+  }
+
+  if (typeof valor === "number") {
+    return String(valor);
+  }
+
+  return null;
+}
+
+function fichaDaAnalise(resultado: unknown): unknown {
+  if (!resultado || typeof resultado !== "object") {
+    return null;
+  }
+
+  const objeto = resultado as Record<string, unknown>;
+
+  if ("ficha" in objeto) {
+    return objeto["ficha"];
+  }
+
+  return resultado;
+}
+
 export function LigacaoGmail() {
   const { session } = useSession();
   const queryClient = useQueryClient();
@@ -78,17 +124,14 @@ export function LigacaoGmail() {
   const concluir = useServerFn(concluirLigacaoGmail);
   const desligar = useServerFn(desligarGmail);
   const procurarEmails = useServerFn(emailsDeViagem);
+  const analisar = useServerFn(analisarDocumento);
 
   const [ocupado, setOcupado] = useState(false);
   const [aProcurar, setAProcurar] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
-  const [resultados, setResultados] = useState<
-    Array<{
-      id: string;
-      assunto: string;
-      texto: string;
-    }>
-  >([]);
+
+  const [resultados, setResultados] = useState<EmailEncontrado[]>([]);
+  const [analises, setAnalises] = useState<ResultadoAnalise[]>([]);
 
   const estado = useQuery({
     queryKey: ["gmail", "estado"],
@@ -151,6 +194,7 @@ export function LigacaoGmail() {
     setAProcurar(true);
     setErro(null);
     setResultados([]);
+    setAnalises([]);
 
     try {
       const emails = await procurarEmails();
@@ -159,11 +203,63 @@ export function LigacaoGmail() {
 
       if (emails.length === 0) {
         toast.info("Não encontrámos emails de viagem.");
-      } else {
-        toast.success(
-          `${emails.length} email(s) de viagem encontrado(s).`,
-        );
+        return;
       }
+
+      toast.success(
+        `${emails.length} email(s) encontrado(s). A analisar…`,
+      );
+
+      const estadosIniciais: ResultadoAnalise[] = emails.map((email) => ({
+        email,
+        estado: "a_analisar",
+      }));
+
+      setAnalises(estadosIniciais);
+
+      for (const email of emails) {
+        try {
+          const textoCompleto = `${email.assunto}\n\n${email.texto}`.trim();
+
+          const resultado = await analisar({
+            data: {
+              nome: email.assunto || "Email Gmail",
+              texto: textoCompleto,
+            },
+          });
+
+          setAnalises((anteriores) =>
+            anteriores.map((item) =>
+              item.email.id === email.id
+                ? {
+                    ...item,
+                    estado: "analisado",
+                    resultado,
+                  }
+                : item,
+            ),
+          );
+        } catch (e) {
+          const msg =
+            e instanceof Error
+              ? e.message
+              : "Não foi possível analisar este email.";
+
+          setAnalises((anteriores) =>
+            anteriores.map((item) =>
+              item.email.id === email.id
+                ? {
+                    ...item,
+                    estado: "erro",
+                    erro: msg,
+                  }
+                : item,
+            ),
+          );
+        }
+      }
+
+      toast.success("Análise dos emails concluída.");
     } catch (e) {
       const msg =
         e instanceof Error
@@ -181,6 +277,7 @@ export function LigacaoGmail() {
     setOcupado(true);
     setErro(null);
     setResultados([]);
+    setAnalises([]);
 
     try {
       await desligar();
@@ -246,7 +343,7 @@ export function LigacaoGmail() {
               onClick={() => void procurar()}
             >
               {aProcurar
-                ? "A procurar emails…"
+                ? "A procurar e analisar emails…"
                 : "Procurar emails de viagem"}
             </Button>
 
@@ -260,46 +357,209 @@ export function LigacaoGmail() {
             </Button>
           </div>
 
-          {resultados.length > 0 ? (
+          {analises.length > 0 ? (
+            <div className="mt-5 space-y-3">
+              <p className="text-sm font-medium">
+                Análise dos emails ({analises.length})
+              </p>
+
+              {analises.map((item) => {
+                const ficha = fichaDaAnalise(item.resultado);
+
+                const categoria = valorDaFicha(ficha, "categoria");
+                const fornecedor = valorDaFicha(ficha, "fornecedor");
+                const operador = valorDaFicha(ficha, "operador");
+                const referencia = valorDaFicha(ficha, "referencia");
+                const dataHora = valorDaFicha(ficha, "dataHora");
+                const dataHoraFim = valorDaFicha(ficha, "dataHoraFim");
+                const companhia = valorDaFicha(ficha, "companhia");
+                const numeroVoo = valorDaFicha(ficha, "numeroVoo");
+                const origem = valorDaFicha(ficha, "origem");
+                const destino = valorDaFicha(ficha, "destino");
+                const local = valorDaFicha(ficha, "local");
+
+                return (
+                  <div
+                    key={item.email.id}
+                    className="rounded-xl border border-border bg-card p-4"
+                  >
+                    <p className="text-sm font-medium">
+                      {item.email.assunto || "Email sem assunto"}
+                    </p>
+
+                    {item.estado === "a_analisar" ? (
+                      <p className="mt-2 text-sm text-muted-foreground">
+                        A analisar este email…
+                      </p>
+                    ) : item.estado === "erro" ? (
+                      <p className="mt-2 text-sm text-destructive">
+                        Erro na análise: {item.erro}
+                      </p>
+                    ) : (
+                      <>
+                        {categoria ||
+                        fornecedor ||
+                        operador ||
+                        referencia ||
+                        dataHora ||
+                        dataHoraFim ||
+                        companhia ||
+                        numeroVoo ||
+                        origem ||
+                        destino ||
+                        local ? (
+                          <div className="mt-3 space-y-1 text-sm">
+                            {categoria ? (
+                              <p>
+                                <span className="font-medium">
+                                  Tipo:
+                                </span>{" "}
+                                {categoria}
+                              </p>
+                            ) : null}
+
+                            {fornecedor ? (
+                              <p>
+                                <span className="font-medium">
+                                  Fornecedor:
+                                </span>{" "}
+                                {fornecedor}
+                              </p>
+                            ) : null}
+
+                            {operador ? (
+                              <p>
+                                <span className="font-medium">
+                                  Operador:
+                                </span>{" "}
+                                {operador}
+                              </p>
+                            ) : null}
+
+                            {referencia ? (
+                              <p>
+                                <span className="font-medium">
+                                  Referência:
+                                </span>{" "}
+                                {referencia}
+                              </p>
+                            ) : null}
+
+                            {companhia ? (
+                              <p>
+                                <span className="font-medium">
+                                  Companhia:
+                                </span>{" "}
+                                {companhia}
+                              </p>
+                            ) : null}
+
+                            {numeroVoo ? (
+                              <p>
+                                <span className="font-medium">
+                                  Voo:
+                                </span>{" "}
+                                {numeroVoo}
+                              </p>
+                            ) : null}
+
+                            {origem || destino ? (
+                              <p>
+                                <span className="font-medium">
+                                  Percurso:
+                                </span>{" "}
+                                {origem || "?"} → {destino || "?"}
+                              </p>
+                            ) : null}
+
+                            {local ? (
+                              <p>
+                                <span className="font-medium">
+                                  Local:
+                                </span>{" "}
+                                {local}
+                              </p>
+                            ) : null}
+
+                            {dataHora ? (
+                              <p>
+                                <span className="font-medium">
+                                  Data:
+                                </span>{" "}
+                                {dataHora}
+                              </p>
+                            ) : null}
+
+                            {dataHoraFim ? (
+                              <p>
+                                <span className="font-medium">
+                                  Até:
+                                </span>{" "}
+                                {dataHoraFim}
+                              </p>
+                            ) : null}
+                          </div>
+                        ) : (
+                          <p className="mt-2 text-sm text-muted-foreground">
+                            A IA analisou o email, mas não encontrou dados
+                            de viagem suficientemente claros.
+                          </p>
+                        )}
+
+                        <details className="mt-3">
+                          <summary className="cursor-pointer text-xs text-muted-foreground">
+                            Ver resultado técnico da análise
+                          </summary>
+
+                          <pre className="mt-2 max-h-80 overflow-auto rounded-lg bg-muted p-3 text-xs">
+                            {JSON.stringify(item.resultado, null, 2)}
+                          </pre>
+                        </details>
+
+                        {eventosDeTexto(
+                          `${item.email.assunto}\n${item.email.texto}`,
+                        ).length > 0 ? (
+                          <div className="mt-3 border-t border-border pt-3">
+                            <p className="text-xs font-medium text-muted-foreground">
+                              Eventos identificados pelo importador:
+                            </p>
+
+                            <div className="mt-1 space-y-1">
+                              {eventosDeTexto(
+                                `${item.email.assunto}\n${item.email.texto}`,
+                              ).map((evento) => (
+                                <p
+                                  key={`${item.email.id}-${evento.id}`}
+                                  className="text-sm text-muted-foreground"
+                                >
+                                  {evento.titulo}
+                                </p>
+                              ))}
+                            </div>
+                          </div>
+                        ) : null}
+                      </>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          ) : resultados.length > 0 ? (
             <div className="mt-4 space-y-3">
               <p className="text-sm font-medium">
                 Emails encontrados ({resultados.length})
               </p>
 
-              {resultados.map((email) => {
-                const eventos = eventosDeTexto(
-                  `${email.assunto}\n${email.texto}`,
-                );
-
-                return (
-                  <div
-                    key={email.id}
-                    className="rounded-xl border border-border bg-card p-4"
-                  >
-                    <p className="text-sm font-medium">
-                      {email.assunto || "Email sem assunto"}
-                    </p>
-
-                    {eventos.length > 0 ? (
-                      <div className="mt-2 space-y-1">
-                        {eventos.map((evento) => (
-                          <p
-                            key={`${email.id}-${evento.id}`}
-                            className="text-sm text-muted-foreground"
-                          >
-                            {evento.titulo}
-                          </p>
-                        ))}
-                      </div>
-                    ) : (
-                      <p className="mt-2 text-xs text-muted-foreground">
-                        Email encontrado, mas ainda não foi possível
-                        identificar um evento de viagem.
-                      </p>
-                    )}
-                  </div>
-                );
-              })}
+              {resultados.map((email) => (
+                <div
+                  key={email.id}
+                  className="rounded-xl border border-border bg-card p-4"
+                >
+                  <p className="text-sm font-medium">
+                    {email.assunto || "Email sem assunto"}
+                  </p>
+                </div>
+              ))}
             </div>
           ) : (
             <p className="mt-2 text-xs text-muted-foreground">

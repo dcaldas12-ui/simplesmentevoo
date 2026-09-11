@@ -10,86 +10,207 @@ import {
 export type AnaliseDocumentoInput = {
   /** Nome do ficheiro ou assunto do email. */
   nome: string;
-  /** Texto conhecido do documento (corpo do email, conteúdo do QR, notas). */
+
+  /** Texto conhecido do documento ou corpo do email. */
   texto?: string | null;
+
   /** Imagem em data URL (image/*) para leitura visual, quando existir. */
   imagem?: string | null;
+
   /** PDF em data URL (application/pdf) para leitura estruturada, quando existir. */
   pdf?: string | null;
 };
 
 export type AnaliseDocumentoResultado = {
   ficha: FichaDocumento;
+
   /** true quando a extração foi feita por IA; false quando foi heurística local. */
   porIa: boolean;
+
   nota: string;
 };
 
 function validar(data: unknown): AnaliseDocumentoInput {
   const d = (data ?? {}) as Record<string, unknown>;
-  const nome = String(d["nome"] ?? "").trim().slice(0, 200);
-  if (!nome) throw new Error("Indique o nome do documento.");
-  const texto = d["texto"] ? String(d["texto"]).slice(0, 8000) : null;
-  const imagemBruta = d["imagem"] ? String(d["imagem"]) : null;
+
+  const nome = String(d["nome"] ?? "")
+    .trim()
+    .slice(0, 200);
+
+  if (!nome) {
+    throw new Error("Indique o nome do documento.");
+  }
+
+  const texto = d["texto"]
+    ? String(d["texto"]).slice(0, 12000)
+    : null;
+
+  const imagemBruta = d["imagem"]
+    ? String(d["imagem"])
+    : null;
+
   const imagem =
-    imagemBruta && imagemBruta.startsWith("data:image/") && imagemBruta.length < 6_000_000
+    imagemBruta &&
+    imagemBruta.startsWith("data:image/") &&
+    imagemBruta.length < 6_000_000
       ? imagemBruta
       : null;
-  const pdfBruto = d["pdf"] ? String(d["pdf"]) : null;
+
+  const pdfBruto = d["pdf"]
+    ? String(d["pdf"])
+    : null;
+
   const pdf =
-    pdfBruto && pdfBruto.startsWith("data:application/pdf") && pdfBruto.length < 12_000_000
+    pdfBruto &&
+    pdfBruto.startsWith("data:application/pdf") &&
+    pdfBruto.length < 12_000_000
       ? pdfBruto
       : null;
-  return { nome, texto, imagem, pdf };
+
+  return {
+    nome,
+    texto,
+    imagem,
+    pdf,
+  };
 }
 
-const campoTexto = (description: string) => ({ type: "string", description });
+const campoTexto = (description: string) => ({
+  type: "string",
+  description,
+});
 
 const ESQUEMA = {
   type: "object",
+
   properties: {
     categoria: {
       type: "string",
-      enum: ["voo", "hotel", "transfer", "outro"],
-      description: "Categoria principal do documento.",
+
+      enum: [
+        "voo",
+        "hotel",
+        "transporte",
+        "transfer",
+        "bilhete",
+        "documento",
+        "informacao",
+        "outro",
+      ],
+
+      description:
+        "Categoria principal. Escolhe voo para viagens aéreas; hotel para alojamento; transporte para comboio, autocarro, metro, barco ou outro transporte regular; transfer para transporte privado de/para aeroporto ou alojamento; bilhete para entradas, espetáculos, tours ou atividades; documento para comprovativos, seguros, vistos, passaportes, faturas ou documentos de viagem; informacao para instruções, horários, moradas, regras ou outras informações úteis; outro apenas quando não for possível enquadrar.",
     },
+
     tipoDocumento: campoTexto(
-      "Designação concreta: Cartão de embarque, Voucher de hotel, Reserva de transfer, Seguro…",
+      "Designação concreta do conteúdo: Cartão de embarque, Reserva de voo, Confirmação de hotel, Voucher de hotel, Bilhete de comboio, Bilhete de autocarro, Bilhete de entrada, Reserva de atividade, Reserva de transfer, Seguro de viagem, Comprovativo, Informação de viagem, etc.",
     ),
-    fornecedor: campoTexto("Companhia aérea, hotel, operador do transfer ou emissor."),
-    passageiro: campoTexto("Nome do passageiro ou hóspede."),
-    local: campoTexto("Nome do alojamento, local de recolha ou local principal."),
-    referencia: campoTexto("Referência da reserva, PNR ou booking code."),
+
+    fornecedor: campoTexto(
+      "Empresa, companhia aérea, hotel, operador turístico, plataforma de reservas ou entidade que emitiu a reserva/documento.",
+    ),
+
+    operador: campoTexto(
+      "Operador efetivo do serviço, quando diferente do fornecedor. Exemplos: companhia ferroviária, empresa de autocarros, companhia aérea, operador turístico ou empresa de transfer.",
+    ),
+
+    passageiro: campoTexto(
+      "Nome do passageiro, viajante, hóspede ou titular da reserva.",
+    ),
+
+    local: campoTexto(
+      "Nome do hotel, aeroporto, estação, terminal, atração, recinto, ponto de recolha ou outro local principal.",
+    ),
+
+    referencia: campoTexto(
+      "Referência da reserva, PNR, booking code, confirmation number ou outro código identificador da reserva.",
+    ),
+
     dataHora: campoTexto(
-      "Momento principal (partida do voo, check-in do hotel, recolha do transfer) em AAAA-MM-DDTHH:MM",
+      "Momento principal do evento em AAAA-MM-DDTHH:MM. Para voo/transporte usa partida; para hotel usa check-in; para transfer usa recolha; para bilhete/atividade usa início.",
     ),
-    dataHoraFim: campoTexto("Fim relevante (check-out, chegada) em AAAA-MM-DDTHH:MM, ou vazio."),
-    codigo: campoTexto("Conteúdo do código de barras/QR quando legível."),
-    companhia: campoTexto("Companhia aérea (voo)."),
-    numeroVoo: campoTexto("Número do voo, por exemplo TP1234."),
-    origem: campoTexto("Origem: código IATA e/ou nome do aeroporto."),
-    destino: campoTexto("Destino: código IATA e/ou nome, ou destino do transfer."),
-    horaEmbarque: campoTexto("Hora de embarque em AAAA-MM-DDTHH:MM, ou vazio."),
-    terminal: campoTexto("Terminal."),
-    porta: campoTexto("Porta de embarque."),
-    assento: campoTexto("Assento."),
-    grupoEmbarque: campoTexto("Grupo/zona de embarque."),
-    bagagem: campoTexto("Bagagem incluída ou despachada."),
-    morada: campoTexto("Morada completa do alojamento."),
-    quarto: campoTexto("Quarto ou tipologia."),
-    condicoes: campoTexto("Condições relevantes (cancelamento, pagamento, notas)."),
-    contacto: campoTexto("Telefone ou email de contacto."),
+
+    dataHoraFim: campoTexto(
+      "Fim relevante em AAAA-MM-DDTHH:MM. Para voo/transporte usa chegada quando disponível; para hotel usa check-out; para atividade usa fim quando disponível; caso contrário deixa vazio.",
+    ),
+
+    codigo: campoTexto(
+      "Conteúdo de código de barras ou QR quando estiver efetivamente legível no documento.",
+    ),
+
+    companhia: campoTexto(
+      "Companhia aérea, quando se tratar de voo.",
+    ),
+
+    numeroVoo: campoTexto(
+      "Número do voo, por exemplo TP1234, FR1234 ou U21234.",
+    ),
+
+    origem: campoTexto(
+      "Origem da viagem: código IATA e/ou nome do aeroporto, estação, terminal ou local de partida.",
+    ),
+
+    destino: campoTexto(
+      "Destino da viagem: código IATA e/ou nome do aeroporto, estação, terminal ou local de chegada.",
+    ),
+
+    horaEmbarque: campoTexto(
+      "Hora/data de embarque ou apresentação, em AAAA-MM-DDTHH:MM, quando existir.",
+    ),
+
+    terminal: campoTexto(
+      "Terminal do aeroporto ou terminal de transporte.",
+    ),
+
+    porta: campoTexto(
+      "Porta/gate de embarque ou outro ponto de acesso quando existir.",
+    ),
+
+    assento: campoTexto(
+      "Lugar/assento atribuído ao passageiro.",
+    ),
+
+    grupoEmbarque: campoTexto(
+      "Grupo, zona ou prioridade de embarque.",
+    ),
+
+    bagagem: campoTexto(
+      "Bagagem incluída, bagagem de mão, bagagem de porão ou outras condições de bagagem.",
+    ),
+
+    morada: campoTexto(
+      "Morada completa do hotel, alojamento, local de recolha ou outro local relevante.",
+    ),
+
+    quarto: campoTexto(
+      "Quarto, tipologia ou tipo de alojamento.",
+    ),
+
+    condicoes: campoTexto(
+      "Condições relevantes: cancelamento, pagamento, alterações, requisitos, regras, restrições ou outras notas importantes.",
+    ),
+
+    contacto: campoTexto(
+      "Telefone, email ou outro contacto relevante do fornecedor/operador.",
+    ),
+
     porConfirmar: {
       type: "array",
-      items: { type: "string" },
+
+      items: {
+        type: "string",
+      },
+
       description:
-        "Nomes dos campos acima cujo valor foi deduzido ou está pouco legível e precisa de confirmação humana.",
+        "Lista dos nomes dos campos cujo valor foi deduzido, é ambíguo, está incompleto ou precisa de confirmação humana. Não incluir campos que estejam claramente indicados.",
     },
   },
+
   required: [
     "categoria",
     "tipoDocumento",
     "fornecedor",
+    "operador",
     "passageiro",
     "local",
     "referencia",
@@ -112,157 +233,433 @@ const ESQUEMA = {
     "contacto",
     "porConfirmar",
   ],
+
   additionalProperties: false,
 } as const;
 
-/** Extração local simples, usada quando a IA não está disponível. */
-function heuristica(input: AnaliseDocumentoInput): FichaDocumento {
-  const base = `${input.nome} ${input.texto ?? ""}`;
-  const categoria = categoriaPorTexto(base);
-  const referencia = /\b([A-Z0-9]{6})\b/.exec(base)?.[1] ?? "";
-  const numeroVoo = /\b([A-Z]{2}\s?\d{2,4})\b/.exec(base)?.[1]?.replace(/\s/g, "") ?? "";
-  const data = /\b(\d{4}-\d{2}-\d{2})(?:[T ](\d{2}:\d{2}))?\b/.exec(base);
-  const tipo =
-    categoria === "voo"
-      ? "Cartão de embarque"
-      : categoria === "hotel"
-        ? "Reserva de alojamento"
-        : categoria === "transfer"
-          ? "Reserva de transfer"
-          : "Documento";
-  return {
-    ...fichaVazia,
-    categoria,
-    tipoDocumento: tipo,
-    referencia,
-    numeroVoo: categoria === "voo" ? numeroVoo : "",
-    dataHora: data ? `${data[1]}T${data[2] ?? "00:00"}` : "",
-    porConfirmar: "todos",
-  };
+/**
+ * Normaliza texto para permitir deteção simples de palavras
+ * independentemente de maiúsculas/minúsculas e acentos.
+ */
+function normalizarTexto(texto: string): string {
+  return texto
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
 }
 
-function limpar(bruto: unknown, nome: string): FichaDocumento {
-  const o = (bruto ?? {}) as Record<string, unknown>;
-  const txt = (k: string, max = 200) => String(o[k] ?? "").trim().slice(0, max);
-  const chaves = Object.keys(fichaVazia).filter(
-    (k) => k !== "categoria" && k !== "porConfirmar",
-  ) as Array<keyof FichaDocumento>;
-  const ficha = { ...fichaVazia };
-  for (const k of chaves) ficha[k] = txt(k, k === "condicoes" || k === "morada" ? 400 : 200);
-  ficha.categoria = categoriaValida(txt("categoria", 20) || categoriaPorTexto(`${nome}`));
-  const porConfirmar = Array.isArray(o["porConfirmar"])
-    ? (o["porConfirmar"] as unknown[])
-        .map((v) => String(v).trim())
-        .filter((v) => v && v in fichaVazia)
-    : [];
-  ficha.porConfirmar = porConfirmar.join(",");
+/**
+ * Extração local simples, usada quando a IA não está disponível.
+ *
+ * Não pretende substituir a IA. Serve apenas para conseguir
+ * preencher alguns dados básicos e manter a aplicação funcional.
+ */
+function heuristica(input: AnaliseDocumentoInput): FichaDocumento {
+  const base = `${input.nome}\n${input.texto ?? ""}`;
+
+  const normalizado = normalizarTexto(base);
+
+  const categoria = categoriaPorTexto(base);
+
+  const referencia =
+    /\b(?:PNR|booking|reservation|confirmation|referencia|reserva|booking\s*code)?\s*[:#-]?\s*([A-Z0-9]{6})\b/i.exec(
+      base,
+    )?.[1] ?? "";
+
+  const numeroVoo =
+    /\b([A-Z]{2}\s?\d{2,4})\b/.exec(base)?.[1]?.replace(/\s/g, "") ?? "";
+
+  const data =
+    /\b(\d{4}-\d{2}-\d{2})(?:[T ](\d{2}:\d{2}))?\b/.exec(base);
+
+  const tipo =
+    categoria === "voo"
+      ? "Reserva de voo"
+      : categoria === "hotel"
+        ? "Reserva de alojamento"
+        : categoria === "transporte"
+          ? "Reserva de transporte"
+          : categoria === "transfer"
+            ? "Reserva de transfer"
+            : categoria === "bilhete"
+              ? "Bilhete"
+              : categoria === "documento"
+                ? "Documento de viagem"
+                : categoria === "informacao"
+                  ? "Informação de viagem"
+                  : "Documento";
+
+  let fornecedor = "";
+
+  const linhas = base
+    .split(/\r?\n/)
+    .map((linha) => linha.trim())
+    .filter(Boolean);
+
+  const linhaFornecedor = linhas.find((linha) => {
+    const l = normalizarTexto(linha);
+
+    return (
+      l.startsWith("from:") ||
+      l.startsWith("de:") ||
+      l.startsWith("companhia:") ||
+      l.startsWith("airline:") ||
+      l.startsWith("hotel:") ||
+      l.startsWith("operador:") ||
+      l.startsWith("provider:") ||
+      l.startsWith("fornecedor:")
+    );
+  });
+
+  if (linhaFornecedor) {
+    fornecedor = linhaFornecedor
+      .split(/[:\-]/, 2)[1]
+      ?.trim()
+      .slice(0, 200) ?? "";
+  }
+
+  const ficha: FichaDocumento = {
+    ...fichaVazia,
+
+    categoria,
+
+    tipoDocumento: tipo,
+
+    fornecedor,
+
+    operador: "",
+
+    referencia,
+
+    numeroVoo:
+      categoria === "voo"
+        ? numeroVoo
+        : "",
+
+    dataHora:
+      data
+        ? `${data[1]}T${data[2] ?? "00:00"}`
+        : "",
+
+    porConfirmar: "todos",
+  };
+
+  /*
+   * Se encontrarmos sinais fortes de uma reserva, mantemos
+   * a informação para posterior confirmação humana.
+   */
+  if (
+    normalizado.includes("booking") ||
+    normalizado.includes("reservation") ||
+    normalizado.includes("reserva") ||
+    normalizado.includes("confirmation") ||
+    normalizado.includes("voucher") ||
+    normalizado.includes("bilhete")
+  ) {
+    ficha.porConfirmar = "fornecedor,passageiro,dataHora,referencia";
+  }
+
   return ficha;
 }
 
-export const analisarDocumento = createServerFn({ method: "POST" })
-  .inputValidator(validar)
-  .handler(async ({ data }): Promise<AnaliseDocumentoResultado> => {
-    const apiKey = process.env["LOVABLE_API_KEY"];
-    if (!apiKey) {
-      return {
-        ficha: heuristica(data),
-        porIa: false,
-        nota: "Leitura automática simples. Reveja e complete os campos.",
-      };
-    }
+function limpar(
+  bruto: unknown,
+  nome: string,
+): FichaDocumento {
+  const o = (bruto ?? {}) as Record<string, unknown>;
 
-    const conteudo: Array<Record<string, unknown>> = [
-      {
-        type: "text",
-        text: [
-          `Nome do documento: ${data.nome}`,
-          data.texto ? `Conteúdo conhecido: ${data.texto}` : "",
-          `Data de hoje: ${new Date().toISOString().slice(0, 10)}. Se o documento não indicar o ano, assume a próxima ocorrência futura.`,
-          "Lê o documento de viagem com atenção e extrai TODOS os campos pedidos.",
-          "Se for um cartão de embarque: passageiro, companhia, número do voo, origem e destino (IATA e nome), data e hora de partida, hora de embarque, terminal, porta, assento, grupo de embarque, bagagem, referência/PNR e o conteúdo do código de barras/QR.",
-          "Se for um alojamento: nome, morada, hóspede, check-in, check-out, referência, quarto e condições.",
-          "Se for um transfer: fornecedor, passageiro, local de recolha, destino, data e hora, referência e contacto.",
-          "Usa strings vazias quando o documento não indicar o valor. Nunca inventes. Lista em porConfirmar os campos deduzidos ou pouco legíveis.",
-        ]
-          .filter(Boolean)
-          .join("\n"),
-      },
-    ];
-    if (data.imagem) {
-      conteudo.push({ type: "image_url", image_url: { url: data.imagem } });
-    }
-    if (data.pdf) {
-      conteudo.push({
-        type: "file",
-        file: { filename: data.nome.endsWith(".pdf") ? data.nome : `${data.nome}.pdf`, file_data: data.pdf },
-      });
-    }
+  const txt = (
+    k: string,
+    max = 200,
+  ) =>
+    String(o[k] ?? "")
+      .trim()
+      .slice(0, max);
 
-    try {
-      const resposta = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          model: "google/gemini-2.5-flash",
-          messages: [
-            {
-              role: "system",
-              content:
-                "És um assistente que lê documentos de viagem em português e devolve dados estruturados campo a campo. Nunca inventes informação.",
+  const chaves = Object.keys(fichaVazia).filter(
+    (k) =>
+      k !== "categoria" &&
+      k !== "porConfirmar",
+  ) as Array<keyof FichaDocumento>;
+
+  const ficha = {
+    ...fichaVazia,
+  };
+
+  for (const k of chaves) {
+    ficha[k] = txt(
+      k,
+      k === "condicoes" ||
+      k === "morada"
+        ? 600
+        : 200,
+    );
+  }
+
+  ficha.categoria = categoriaValida(
+    txt("categoria", 30) ||
+      categoriaPorTexto(nome),
+  );
+
+  const porConfirmar =
+    Array.isArray(o["porConfirmar"])
+      ? (o["porConfirmar"] as unknown[])
+          .map((v) =>
+            String(v).trim(),
+          )
+          .filter(
+            (v) =>
+              v &&
+              v in fichaVazia,
+          )
+      : [];
+
+  ficha.porConfirmar =
+    porConfirmar.join(",");
+
+  return ficha;
+}
+
+export const analisarDocumento =
+  createServerFn({ method: "POST" })
+    .inputValidator(validar)
+    .handler(
+      async ({
+        data,
+      }): Promise<AnaliseDocumentoResultado> => {
+        const apiKey =
+          process.env["LOVABLE_API_KEY"];
+
+        if (!apiKey) {
+          return {
+            ficha: heuristica(data),
+            porIa: false,
+            nota:
+              "Leitura automática simples. Reveja e complete os campos.",
+          };
+        }
+
+        const conteudo:
+          Array<Record<string, unknown>> = [
+          {
+            type: "text",
+
+            text: [
+              `Nome do documento/email: ${data.nome}`,
+
+              data.texto
+                ? `Conteúdo disponível:\n${data.texto}`
+                : "",
+
+              `Data de hoje: ${new Date()
+                .toISOString()
+                .slice(0, 10)}.`,
+
+              "Analisa este conteúdo como um documento ou email relacionado com uma viagem.",
+
+              "O objetivo é identificar uma reserva, bilhete, serviço de transporte, alojamento, transfer, atividade, documento ou informação útil para uma viagem.",
+
+              "Não assumes que um email é uma reserva apenas porque contém palavras como booking, flight, hotel ou travel. Distingue emails promocionais, newsletters e publicidade de confirmações ou documentos efetivamente relacionados com uma viagem.",
+
+              "Se for um email promocional ou não houver uma viagem/reserva concreta, usa a categoria informacao ou outro e não inventes dados.",
+
+              "Se houver uma reserva concreta, extrai todos os dados disponíveis e relevantes.",
+
+              "Para um voo: passageiro, companhia, número do voo, origem, destino, aeroportos IATA, data e hora de partida, chegada, hora de embarque, terminal, porta, assento, grupo de embarque, bagagem, referência/PNR e código QR ou código de barras quando estiver disponível.",
+
+              "Para um hotel: nome do alojamento, fornecedor, hóspede, morada, check-in, check-out, referência, quarto/tipologia, condições e contacto.",
+
+              "Para um transporte: operador, fornecedor, passageiro, origem, destino, data/hora de partida e chegada, referência, lugar e outras informações disponíveis.",
+
+              "Para um transfer: fornecedor/operador, passageiro, local de recolha, destino, data/hora, referência, morada e contacto.",
+
+              "Para um bilhete ou atividade: entidade, passageiro/titular, local, data/hora, data/hora de fim, referência, código de entrada e condições.",
+
+              "Para documentos de viagem: identifica o tipo de documento, entidade emissora, titular, referência, datas e condições relevantes.",
+
+              "Para informações: extrai apenas informações úteis para a viagem, como horários, moradas, instruções, regras, contactos, requisitos ou procedimentos.",
+
+              "Se existirem várias datas, distingue a data de emissão/envio da data efetiva da viagem.",
+
+              "Se existirem várias referências ou códigos, identifica como referência o código principal da reserva e coloca códigos adicionais nas condições quando forem relevantes.",
+
+              "Nunca inventes nomes, datas, horas, códigos, aeroportos, números de voo ou outros dados.",
+
+              "Usa strings vazias quando um campo não estiver indicado.",
+
+              "Quando um valor for apenas inferido, ambíguo ou pouco legível, coloca o nome desse campo em porConfirmar.",
+
+              "Se o ano não estiver indicado numa data, considera o contexto do documento/email e assinala a data em porConfirmar em vez de inventar um ano com confiança.",
+
+              "Responde exclusivamente através da função registar_ficha.",
+            ]
+              .filter(Boolean)
+              .join("\n"),
+          },
+        ];
+
+        if (data.imagem) {
+          conteudo.push({
+            type: "image_url",
+            image_url: {
+              url: data.imagem,
             },
-            { role: "user", content: conteudo },
-          ],
-          tools: [
+          });
+        }
+
+        if (data.pdf) {
+          conteudo.push({
+            type: "file",
+
+            file: {
+              filename: data.nome.endsWith(".pdf")
+                ? data.nome
+                : `${data.nome}.pdf`,
+
+              file_data: data.pdf,
+            },
+          });
+        }
+
+        try {
+          const resposta = await fetch(
+            "https://ai.gateway.lovable.dev/v1/chat/completions",
             {
-              type: "function",
-              function: {
-                name: "registar_ficha",
-                description: "Regista os dados extraídos do documento de viagem.",
-                parameters: ESQUEMA,
+              method: "POST",
+
+              headers: {
+                Authorization: `Bearer ${apiKey}`,
+                "Content-Type":
+                  "application/json",
               },
+
+              body: JSON.stringify({
+                model:
+                  "google/gemini-2.5-flash",
+
+                messages: [
+                  {
+                    role: "system",
+
+                    content:
+                      "És um assistente especializado em interpretar documentos e emails de viagem em português. Devolve apenas dados estruturados através da função indicada. Nunca inventes informação e distingue reservas reais de mensagens promocionais.",
+                  },
+
+                  {
+                    role: "user",
+                    content: conteudo,
+                  },
+                ],
+
+                tools: [
+                  {
+                    type: "function",
+
+                    function: {
+                      name: "registar_ficha",
+
+                      description:
+                        "Regista os dados estruturados extraídos de um documento ou email de viagem.",
+
+                      parameters:
+                        ESQUEMA,
+                    },
+                  },
+                ],
+
+                tool_choice: {
+                  type: "function",
+
+                  function: {
+                    name: "registar_ficha",
+                  },
+                },
+              }),
             },
-          ],
-          tool_choice: { type: "function", function: { name: "registar_ficha" } },
-        }),
-      });
+          );
 
-      if (resposta.status === 429 || resposta.status === 402) {
-        return {
-          ficha: heuristica(data),
-          porIa: false,
-          nota:
+          if (
             resposta.status === 429
-              ? "Muitos pedidos de análise seguidos. Tente novamente daqui a pouco."
-              : "Créditos de IA esgotados. Preencha a ficha manualmente.",
-        };
-      }
-      if (!resposta.ok) throw new Error(`gateway ${resposta.status}`);
+          ) {
+            return {
+              ficha: heuristica(data),
+              porIa: false,
+              nota:
+                "A análise automática está temporariamente indisponível. Reveja os dados apresentados.",
+            };
+          }
 
-      const json = (await resposta.json()) as {
-        choices?: Array<{
-          message?: { tool_calls?: Array<{ function?: { arguments?: string } }> };
-        }>;
-      };
-      const args = json.choices?.[0]?.message?.tool_calls?.[0]?.function?.arguments;
-      if (!args) throw new Error("resposta sem dados");
+          if (
+            resposta.status === 402
+          ) {
+            return {
+              ficha: heuristica(data),
+              porIa: false,
+              nota:
+                "A análise automática não está disponível neste momento. Reveja e complete os campos.",
+            };
+          }
 
-      const ficha = limpar(JSON.parse(args), data.nome);
-      return {
-        ficha,
-        porIa: true,
-        nota: ficha.porConfirmar
-          ? "Dados lidos automaticamente. Alguns campos precisam de confirmação."
-          : "Dados lidos automaticamente. Confirme antes de guardar.",
-      };
-    } catch (erro) {
-      console.error("analisarDocumento", erro);
-      return {
-        ficha: heuristica(data),
-        porIa: false,
-        nota: "Não foi possível ler o documento automaticamente. Complete a ficha à mão.",
-      };
-    }
-  });
+          if (!resposta.ok) {
+            throw new Error(
+              `gateway ${resposta.status}`,
+            );
+          }
+
+          const json =
+            (await resposta.json()) as {
+              choices?: Array<{
+                message?: {
+                  tool_calls?: Array<{
+                    function?: {
+                      arguments?: string;
+                    };
+                  }>;
+                };
+              }>;
+            };
+
+          const args =
+            json.choices?.[0]
+              ?.message
+              ?.tool_calls?.[0]
+              ?.function
+              ?.arguments;
+
+          if (!args) {
+            throw new Error(
+              "resposta sem dados",
+            );
+          }
+
+          const ficha = limpar(
+            JSON.parse(args),
+            data.nome,
+          );
+
+          return {
+            ficha,
+
+            porIa: true,
+
+            nota: ficha.porConfirmar
+              ? "Dados lidos automaticamente. Alguns campos precisam de confirmação."
+              : "Dados lidos automaticamente. Confirme antes de guardar.",
+          };
+        } catch (erro) {
+          console.error(
+            "analisarDocumento",
+            erro,
+          );
+
+          return {
+            ficha: heuristica(data),
+
+            porIa: false,
+
+            nota:
+              "Não foi possível ler o conteúdo automaticamente. Complete ou confirme a ficha manualmente.",
+          };
+        }
+      },
+    );
