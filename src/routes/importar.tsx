@@ -182,17 +182,7 @@ function Importar() {
           </div>
         </div>
 
-        <div className="mt-4 rounded-2xl border border-dashed border-border bg-secondary/40 p-5">
-          <h2 className="font-display text-base font-semibold">{t("importar.ligarGoogle")}</h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            A ligação direta ao Google Calendar e ao Gmail está preparada, mas ainda não está ativa:
-            precisa de credenciais Google aprovadas para esta app. Enquanto isso, a importação por
-            ficheiro e por texto acima funciona em iPhone e Android.
-          </p>
-          <Button variant="outline" className="mt-3 h-11" disabled>
-            {t("importar.ligarGoogle")}
-          </Button>
-        </div>
+        <LigacaoGmail />
 
         {eventos ? (
           <section className="mt-8">
