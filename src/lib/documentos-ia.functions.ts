@@ -278,6 +278,13 @@ function relevanciaHeuristica(
 ): { relevante: boolean; motivoRelevancia: string } {
   const base = normalizarTexto(`${input.nome}\n${input.texto ?? ""}`);
 
+  // A relevância tem de ser comprovada pelo conteúdo original do email.
+  // Nunca confiamos apenas num campo que a IA possa ter deduzido ou inventado.
+  const textoTem = (valor: string | undefined): boolean => {
+    const v = normalizarTexto(valor ?? "").trim();
+    return Boolean(v) && v.length >= 3 && base.includes(v);
+  };
+
   const promocional = [
     "newsletter", "unsubscribe", "subscricao", "promocao", "promocional",
     "oferta", "desconto", "black friday", "sale", "campaign", "marketing",
@@ -285,7 +292,7 @@ function relevanciaHeuristica(
     "special offer", "book now", "reserve agora", "compre agora",
   ].some((termo) => base.includes(termo));
 
-  const temConfirmacao = [
+  const confirmacao = [
     "reserva confirmada", "reserva confirmado", "booking confirmed",
     "reservation confirmed", "confirmation number", "booking reference",
     "booking code", "reservation number", "confirmation code", "pnr",
@@ -298,22 +305,24 @@ function relevanciaHeuristica(
     "a sua reserva", "a sua viagem", "o seu voo", "o seu bilhete",
   ].some((termo) => base.includes(termo));
 
-  const temReferencia = Boolean(ficha.referencia?.trim());
-  const temCodigo = Boolean(ficha.codigo?.trim());
-  const temData = Boolean(ficha.dataHora?.trim());
-  const temFornecedor = Boolean(
-    ficha.fornecedor?.trim() || ficha.operador?.trim() || ficha.companhia?.trim(),
-  );
-  const temOrigemDestino = Boolean(
-    ficha.origem?.trim() && ficha.destino?.trim(),
-  );
-  const temNumeroVoo = Boolean(ficha.numeroVoo?.trim());
+  const referenciaNoTexto = textoTem(ficha.referencia);
+  const codigoNoTexto = textoTem(ficha.codigo);
+  const fornecedorNoTexto =
+    textoTem(ficha.fornecedor) ||
+    textoTem(ficha.operador) ||
+    textoTem(ficha.companhia);
+  const numeroVooNoTexto = textoTem(ficha.numeroVoo);
+  const origemNoTexto = textoTem(ficha.origem);
+  const destinoNoTexto = textoTem(ficha.destino);
+
+  const temDataNoTexto =
+    /\b(?:\d{4}[-\/]\d{1,2}[-\/]\d{1,2}|\d{1,2}[-\/]\d{1,2}[-\/]\d{4}|\d{1,2}\s+(?:de\s+)?(?:janeiro|fevereiro|marco|abril|maio|junho|julho|agosto|setembro|outubro|novembro|dezembro)|(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\s+\d{1,2})\b/i.test(base);
+
+  const temOrigemDestinoNoTexto = origemNoTexto && destinoNoTexto;
   const categoria = ficha.categoria;
 
   const sinaisTransacionais =
-    temConfirmacao ||
-    temReferencia ||
-    temCodigo;
+    confirmacao || referenciaNoTexto || codigoNoTexto;
 
   if (promocional && !sinaisTransacionais) {
     return {
@@ -324,26 +333,26 @@ function relevanciaHeuristica(
 
   if (categoria === "voo") {
     const vooConcreto =
-      (temNumeroVoo && temData) ||
-      (temOrigemDestino && temData && temFornecedor) ||
-      (temReferencia && temFornecedor);
+      (numeroVooNoTexto && temDataNoTexto) ||
+      (temOrigemDestinoNoTexto && temDataNoTexto && fornecedorNoTexto) ||
+      (referenciaNoTexto && fornecedorNoTexto && (confirmacao || temDataNoTexto));
 
     if (!vooConcreto) {
       return {
         relevante: false,
-        motivoRelevancia: "Não há evidência suficiente de um voo reservado ou atribuído ao utilizador.",
+        motivoRelevancia: "Não há evidência suficiente no email de um voo reservado ou atribuído ao utilizador.",
       };
     }
   } else if (categoria === "hotel") {
     const hotelConcreto =
-      (temReferencia && temFornecedor) ||
-      (temConfirmacao && temData && temFornecedor) ||
-      (temData && Boolean(ficha.local?.trim()) && temFornecedor && sinaisTransacionais);
+      (referenciaNoTexto && fornecedorNoTexto && (confirmacao || temDataNoTexto)) ||
+      (confirmacao && temDataNoTexto && fornecedorNoTexto) ||
+      (temDataNoTexto && textoTem(ficha.local) && fornecedorNoTexto && sinaisTransacionais);
 
     if (!hotelConcreto) {
       return {
         relevante: false,
-        motivoRelevancia: "Não há evidência suficiente de uma reserva de alojamento concreta.",
+        motivoRelevancia: "Não há evidência suficiente no email de uma reserva de alojamento concreta.",
       };
     }
   } else if (
@@ -352,34 +361,33 @@ function relevanciaHeuristica(
     categoria === "bilhete"
   ) {
     const servicoConcreto =
-      (temReferencia && temFornecedor) ||
-      (temCodigo && temFornecedor) ||
-      (temConfirmacao && temData && temFornecedor);
+      (referenciaNoTexto && fornecedorNoTexto && (confirmacao || temDataNoTexto)) ||
+      (codigoNoTexto && fornecedorNoTexto && (confirmacao || temDataNoTexto)) ||
+      (confirmacao && temDataNoTexto && fornecedorNoTexto);
 
     if (!servicoConcreto) {
       return {
         relevante: false,
-        motivoRelevancia: "Não há evidência suficiente de uma reserva, compra ou bilhete concreto.",
+        motivoRelevancia: "Não há evidência suficiente no email de uma reserva, compra ou bilhete concreto.",
       };
     }
   } else if (categoria === "documento") {
     const documentoConcreto =
-      temReferencia ||
-      temCodigo ||
-      temConfirmacao ||
-      (temFornecedor && temData && sinaisTransacionais);
+      (referenciaNoTexto && (confirmacao || fornecedorNoTexto || temDataNoTexto)) ||
+      (codigoNoTexto && (confirmacao || fornecedorNoTexto || temDataNoTexto)) ||
+      (confirmacao && fornecedorNoTexto && temDataNoTexto);
 
     if (!documentoConcreto) {
       return {
         relevante: false,
-        motivoRelevancia: "Não há evidência suficiente de um documento de viagem concreto.",
+        motivoRelevancia: "Não há evidência suficiente no email de um documento de viagem concreto.",
       };
     }
   } else if (categoria === "informacao") {
     const informacaoConcreta =
-      temConfirmacao ||
-      temReferencia ||
-      (temData && temFornecedor && sinaisTransacionais);
+      (confirmacao && (temDataNoTexto || fornecedorNoTexto)) ||
+      (referenciaNoTexto && fornecedorNoTexto) ||
+      (codigoNoTexto && fornecedorNoTexto);
 
     if (!informacaoConcreta) {
       return {
@@ -396,7 +404,7 @@ function relevanciaHeuristica(
 
   return {
     relevante: true,
-    motivoRelevancia: "Foram encontrados sinais concretos de uma reserva, compra, bilhete ou serviço de viagem.",
+    motivoRelevancia: "Foram encontrados sinais concretos no email de uma reserva, compra, bilhete ou serviço de viagem.",
   };
 }
 
