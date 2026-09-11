@@ -12,7 +12,6 @@ import {
   estadoGmail,
   iniciarLigacaoGmail,
 } from "@/lib/gmail.functions";
-import { useIdioma } from "@/lib/i18n";
 
 const CONNECTOR_ID = "google_mail";
 
@@ -51,7 +50,6 @@ function esperarConclusao(popup: Window) {
 }
 
 export function LigacaoGmail() {
-  const { t } = useIdioma();
   const { session } = useSession();
   const queryClient = useQueryClient();
   const iniciar = useServerFn(iniciarLigacaoGmail);
