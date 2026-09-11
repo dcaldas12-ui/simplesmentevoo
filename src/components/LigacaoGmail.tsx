@@ -69,10 +69,13 @@ export function LigacaoGmail() {
   async function ligar() {
     const popup = window.open("", "lovable-oauth", "width=600,height=720");
     if (!popup) {
-      toast.error("Permita janelas pop-up para autorizar o Gmail.");
+      const msg = "Permita as janelas pop-up no seu navegador para autorizar o Gmail.";
+      setErro(msg);
+      toast.error(msg);
       return;
     }
     setOcupado(true);
+    setErro(null);
     try {
       const { authorizationUrl } = await iniciar();
       const conclusao = esperarConclusao(popup);
@@ -83,22 +86,9 @@ export function LigacaoGmail() {
       toast.success("Gmail ligado à sua conta.");
     } catch (e) {
       popup.close();
-      toast.error(e instanceof Error ? e.message : "Não foi possível ligar o Gmail.");
-    } finally {
-      setOcupado(false);
-    }
-  }
-
-  async function procurar() {
-    setOcupado(true);
-    try {
-      const emails = await lerEmails();
-      const encontrados = emails.flatMap((e) =>
-        eventosDeTexto(e.texto).map((ev) => ({ ...ev, id: `${e.id}:${ev.id}` })),
-      );
-      aoEncontrar(encontrados);
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Não foi possível ler os emails.");
+      const msg = e instanceof Error ? e.message : "Não foi possível ligar o Gmail.";
+      setErro(msg);
+      toast.error(msg);
     } finally {
       setOcupado(false);
     }
@@ -106,10 +96,15 @@ export function LigacaoGmail() {
 
   async function terminar() {
     setOcupado(true);
+    setErro(null);
     try {
       await desligar();
       await queryClient.invalidateQueries({ queryKey: ["gmail", "estado"] });
       toast.success("Ligação ao Gmail terminada.");
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Não foi possível desligar o Gmail.";
+      setErro(msg);
+      toast.error(msg);
     } finally {
       setOcupado(false);
     }
