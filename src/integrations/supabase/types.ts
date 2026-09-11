@@ -76,36 +76,36 @@ export type Database = {
           created_at: string
           ficheiro_path: string
           id: string
+          item_id: string
           mime_type: string | null
           nome: string
           tamanho_bytes: number | null
           user_id: string
           viagem_id: string
-          item_id: string
         }
         Insert: {
           categoria: string
           created_at?: string
           ficheiro_path: string
           id?: string
+          item_id: string
           mime_type?: string | null
           nome: string
           tamanho_bytes?: number | null
           user_id?: string
           viagem_id: string
-          item_id: string
         }
         Update: {
           categoria?: string
           created_at?: string
           ficheiro_path?: string
           id?: string
+          item_id?: string
           mime_type?: string | null
           nome?: string
           tamanho_bytes?: number | null
           user_id?: string
           viagem_id?: string
-          item_id?: string
         }
         Relationships: [
           {

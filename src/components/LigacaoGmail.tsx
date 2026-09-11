@@ -9,12 +9,9 @@ import { useSession } from "@/lib/auth";
 import {
   concluirLigacaoGmail,
   desligarGmail,
-  emailsDeViagem,
   estadoGmail,
   iniciarLigacaoGmail,
 } from "@/lib/gmail.functions";
-import { eventosDeTexto, type EventoEncontrado } from "@/lib/eventos-telemovel";
-import { useIdioma } from "@/lib/i18n";
 
 const CONNECTOR_ID = "google_mail";
 
@@ -52,21 +49,14 @@ function esperarConclusao(popup: Window) {
   });
 }
 
-export function LigacaoGmail({
-  autorizou,
-  aoEncontrar,
-}: {
-  autorizou: boolean;
-  aoEncontrar: (eventos: EventoEncontrado[]) => void;
-}) {
-  const { t } = useIdioma();
+export function LigacaoGmail() {
   const { session } = useSession();
   const queryClient = useQueryClient();
   const iniciar = useServerFn(iniciarLigacaoGmail);
   const concluir = useServerFn(concluirLigacaoGmail);
   const desligar = useServerFn(desligarGmail);
-  const lerEmails = useServerFn(emailsDeViagem);
   const [ocupado, setOcupado] = useState(false);
+  const [erro, setErro] = useState<string | null>(null);
 
   const estado = useQuery({
     queryKey: ["gmail", "estado"],
@@ -77,10 +67,13 @@ export function LigacaoGmail({
   async function ligar() {
     const popup = window.open("", "lovable-oauth", "width=600,height=720");
     if (!popup) {
-      toast.error("Permita janelas pop-up para autorizar o Gmail.");
+      const msg = "Permita as janelas pop-up no seu navegador para autorizar o Gmail.";
+      setErro(msg);
+      toast.error(msg);
       return;
     }
     setOcupado(true);
+    setErro(null);
     try {
       const { authorizationUrl } = await iniciar();
       const conclusao = esperarConclusao(popup);
@@ -91,22 +84,9 @@ export function LigacaoGmail({
       toast.success("Gmail ligado à sua conta.");
     } catch (e) {
       popup.close();
-      toast.error(e instanceof Error ? e.message : "Não foi possível ligar o Gmail.");
-    } finally {
-      setOcupado(false);
-    }
-  }
-
-  async function procurar() {
-    setOcupado(true);
-    try {
-      const emails = await lerEmails();
-      const encontrados = emails.flatMap((e) =>
-        eventosDeTexto(e.texto).map((ev) => ({ ...ev, id: `${e.id}:${ev.id}` })),
-      );
-      aoEncontrar(encontrados);
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Não foi possível ler os emails.");
+      const msg = e instanceof Error ? e.message : "Não foi possível ligar o Gmail.";
+      setErro(msg);
+      toast.error(msg);
     } finally {
       setOcupado(false);
     }
@@ -114,10 +94,15 @@ export function LigacaoGmail({
 
   async function terminar() {
     setOcupado(true);
+    setErro(null);
     try {
       await desligar();
       await queryClient.invalidateQueries({ queryKey: ["gmail", "estado"] });
       toast.success("Ligação ao Gmail terminada.");
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Não foi possível desligar o Gmail.";
+      setErro(msg);
+      toast.error(msg);
     } finally {
       setOcupado(false);
     }
@@ -129,26 +114,28 @@ export function LigacaoGmail({
   return (
     <div className="mt-4 rounded-2xl border border-dashed border-border bg-secondary/40 p-5">
       <h2 className="flex items-center gap-2 font-display text-base font-semibold">
-        <Mail className="size-4" aria-hidden /> {t("importar.ligarGoogle")}
+        <Mail className="size-4" aria-hidden /> Ligar Gmail
       </h2>
 
       {!session ? (
         <p className="mt-1 text-sm text-muted-foreground">
-          Entre na sua conta para ligar o seu Gmail e procurar reservas nos seus emails.
+          Precisa de iniciar sessão na sua conta ViatOrbis para ligar o seu Gmail.
         </p>
       ) : !configurado ? (
         <p className="mt-1 text-sm text-muted-foreground">
           A ligação ao Gmail ainda não está configurada nesta app.
         </p>
+      ) : estado.isLoading ? (
+        <p className="mt-1 text-sm text-muted-foreground">A verificar a ligação…</p>
       ) : ligado ? (
         <>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Ligado a {estado.data?.email || "a sua conta Google"}. Procuramos apenas emails recentes
-            com indícios de viagem e nada é guardado sem a sua escolha.
-          </p>
+          <p className="mt-1 text-sm font-medium text-foreground">✓ Gmail ligado</p>
+          {estado.data?.email ? (
+            <p className="mt-1 text-sm text-muted-foreground">Conta: {estado.data.email}</p>
+          ) : null}
           <div className="mt-3 flex flex-wrap gap-2">
-            <Button className="h-11" disabled={!autorizou || ocupado} onClick={() => void procurar()}>
-              {ocupado ? "A procurar…" : "Procurar reservas no Gmail"}
+            <Button variant="secondary" className="h-11" disabled>
+              Procurar emails de viagem
             </Button>
             <Button
               variant="outline"
@@ -156,21 +143,30 @@ export function LigacaoGmail({
               disabled={ocupado}
               onClick={() => void terminar()}
             >
-              Terminar ligação
+              {ocupado ? "A desligar…" : "Desligar Gmail"}
             </Button>
           </div>
+          <p className="mt-2 text-xs text-muted-foreground">
+            A pesquisa de emails de viagem chega brevemente.
+          </p>
         </>
       ) : (
         <>
           <p className="mt-1 text-sm text-muted-foreground">
-            Autorize o acesso de leitura ao seu Gmail para encontrarmos voos, hotéis e transfers nas
-            confirmações que recebeu. Pode retirar o acesso a qualquer momento.
+            Ligue a sua própria conta Gmail para, mais tarde, encontrarmos voos, hotéis e transfers
+            nas confirmações que recebeu. Pode retirar o acesso a qualquer momento.
           </p>
           <Button className="mt-3 h-11" disabled={ocupado} onClick={() => void ligar()}>
-            {ocupado ? "A abrir o Google…" : t("importar.ligarGoogle")}
+            {ocupado ? "A abrir o Google…" : "Ligar Gmail"}
           </Button>
         </>
       )}
+
+      {erro ? (
+        <p className="mt-3 text-sm text-destructive" role="alert">
+          {erro}
+        </p>
+      ) : null}
     </div>
   );
 }
