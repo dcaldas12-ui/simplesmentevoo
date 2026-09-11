@@ -62,175 +62,238 @@ export function AppShell({ children }: { children: ReactNode }) {
   useEffect(() => {
     const userId = session?.user.id;
 
-    if (!userId || deteccoesGmailEmCurso.has(userId)) {
+    if (!userId) {
       return;
     }
 
-    const tarefa = (async () => {
-      try {
-        const { data: preferencia, error: erroPreferencia } =
-          await supabase
-            .from("preferencias_importacao" as any)
-            .select(
-              "consentimento_analise_automatica, ultima_analise_gmail_em",
-            )
-            .eq("user_id", userId)
-            .maybeSingle();
+    const userIdSeguro: string = userId;
+    let cancelado = false;
 
-        if (erroPreferencia) {
-          return;
-        }
+    async function detetarNovosEmails() {
+      if (deteccoesGmailEmCurso.has(userIdSeguro)) {
+        return;
+      }
 
-        const preferenciaTipada = preferencia as
-          | {
-              consentimento_analise_automatica?: boolean;
-              ultima_analise_gmail_em?: string | null;
+      const tarefa = (async () => {
+        try {
+          const { data: preferencia, error: erroPreferencia } =
+            await supabase
+              .from("preferencias_importacao" as any)
+              .select(
+                "consentimento_analise_automatica, ultima_analise_gmail_em",
+              )
+              .eq("user_id", userIdSeguro)
+              .maybeSingle();
+
+          if (erroPreferencia || cancelado) {
+            if (erroPreferencia) {
+              console.error(
+                "Erro ao verificar preferência de análise automática:",
+                erroPreferencia,
+              );
             }
-          | null;
+            return;
+          }
 
-        if (preferenciaTipada?.consentimento_analise_automatica !== true) {
-          return;
-        }
+          const preferenciaTipada = preferencia as
+            | {
+                consentimento_analise_automatica?: boolean;
+                ultima_analise_gmail_em?: string | null;
+              }
+            | null;
 
-        const estado = await verificarGmail();
+          if (
+            preferenciaTipada?.consentimento_analise_automatica !== true
+          ) {
+            return;
+          }
 
-        if (estado?.ligado !== true) {
-          return;
-        }
+          const estado = await verificarGmail();
 
-        const ultimaAnalise =
-          preferenciaTipada.ultima_analise_gmail_em ?? null;
+          if (cancelado || estado?.ligado !== true) {
+            return;
+          }
 
-        /*
-         * Na primeira execução automática não voltamos a analisar um ano
-         * inteiro de histórico. A pesquisa manual continua disponível para
-         * esse efeito. A partir daqui, cada execução procura desde a última
-         * análise automática.
-         */
-        const desde = ultimaAnalise
-          ? ultimaAnalise
-          : new Date(
-              Date.now() - 7 * 24 * 60 * 60 * 1000,
-            ).toISOString();
+          const ultimaAnalise =
+            preferenciaTipada.ultima_analise_gmail_em ?? null;
 
-        const emails = await procurarEmails({
-          data: { desde },
-        });
+          /*
+           * Na primeira execução automática analisamos apenas os últimos
+           * 7 dias. Depois, cada execução procura desde a última análise.
+           */
+          const desde = ultimaAnalise
+            ? ultimaAnalise
+            : new Date(
+                Date.now() - 7 * 24 * 60 * 60 * 1000,
+              ).toISOString();
 
-        if (emails.length === 0) {
+          const emails = await procurarEmails({
+            data: { desde },
+          });
+
+          if (cancelado) {
+            return;
+          }
+
+          if (emails.length === 0) {
+            await supabase
+              .from("preferencias_importacao" as any)
+              .update({
+                ultima_analise_gmail_em: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+              })
+              .eq("user_id", userIdSeguro);
+
+            return;
+          }
+
+          const ids = emails.map((email) => email.id);
+
+          const { data: processados, error: erroProcessados } =
+            await supabase
+              .from("emails_gmail_processados" as any)
+              .select("gmail_message_id")
+              .eq("user_id", userIdSeguro)
+              .in("gmail_message_id", ids);
+
+          if (erroProcessados || cancelado) {
+            if (erroProcessados) {
+              console.error(
+                "Erro ao verificar emails Gmail já processados:",
+                erroProcessados,
+              );
+            }
+            return;
+          }
+
+          const idsJaProcessados = new Set(
+            ((processados ?? []) as unknown as Array<{
+              gmail_message_id: string;
+            }>).map((item) => item.gmail_message_id),
+          );
+
+          const novosEmails = emails.filter(
+            (email) => !idsJaProcessados.has(email.id),
+          );
+
+          let descobertas = 0;
+
+          for (const email of novosEmails) {
+            if (cancelado) {
+              return;
+            }
+
+            try {
+              const resultado = await analisar({
+                data: {
+                  nome: email.assunto || "Email Gmail",
+                  texto: `${email.assunto}\n\n${email.texto}`.trim(),
+                },
+              });
+
+              const ficha =
+                resultado && typeof resultado === "object"
+                  ? (resultado as { ficha?: unknown }).ficha
+                  : null;
+
+              const relevante =
+                resultado &&
+                typeof resultado === "object" &&
+                (resultado as { relevante?: boolean }).relevante === true;
+
+              if (relevante) {
+                descobertas += 1;
+              }
+
+              const { error: erroGuardar } = await supabase
+                .from("emails_gmail_processados" as any)
+                .upsert(
+                  {
+                    user_id: userIdSeguro,
+                    gmail_message_id: email.id,
+                    relevante,
+                    categoria: valorFicha(ficha, "categoria"),
+                    referencia: valorFicha(ficha, "referencia"),
+                    assunto: email.assunto || null,
+                    ficha: ficha ?? null,
+                    estado: relevante ? "pendente" : "processado",
+                    analisado_em: new Date().toISOString(),
+                  },
+                  {
+                    onConflict: "user_id,gmail_message_id",
+                  },
+                );
+
+              if (erroGuardar) {
+                console.error(
+                  "Erro ao guardar email Gmail processado:",
+                  erroGuardar,
+                );
+              }
+            } catch (erro) {
+              console.error(
+                "Erro na deteção automática de email Gmail:",
+                erro,
+              );
+            }
+          }
+
+          if (cancelado) {
+            return;
+          }
+
           await supabase
             .from("preferencias_importacao" as any)
             .update({
               ultima_analise_gmail_em: new Date().toISOString(),
               updated_at: new Date().toISOString(),
             })
-            .eq("user_id", userId);
+            .eq("user_id", userIdSeguro);
 
-          return;
-        }
-
-        const ids = emails.map((email) => email.id);
-
-        const { data: processados, error: erroProcessados } =
-          await supabase
-            .from("emails_gmail_processados" as any)
-            .select("gmail_message_id")
-            .eq("user_id", userId)
-            .in("gmail_message_id", ids);
-
-        if (erroProcessados) {
-          return;
-        }
-
-        const idsJaProcessados = new Set(
-  ((processados ?? []) as unknown as Array<{
-    gmail_message_id: string;
-  }>).map((item) => item.gmail_message_id),
-);
-
-        const novosEmails = emails.filter(
-          (email) => !idsJaProcessados.has(email.id),
-        );
-
-        let descobertas = 0;
-
-        for (const email of novosEmails) {
-          try {
-            const resultado = await analisar({
-              data: {
-                nome: email.assunto || "Email Gmail",
-                texto: `${email.assunto}\n\n${email.texto}`.trim(),
-              },
-            });
-
-            const ficha =
-              resultado && typeof resultado === "object"
-                ? (resultado as { ficha?: unknown }).ficha
-                : null;
-
-            const relevante =
-              resultado &&
-              typeof resultado === "object" &&
-              (resultado as { relevante?: boolean }).relevante === true;
-
-            if (relevante) {
-              descobertas += 1;
-            }
-
-            await supabase
-              .from("emails_gmail_processados" as any)
-              .upsert(
-                {
-                  user_id: userId,
-                  gmail_message_id: email.id,
-                  relevante,
-                  categoria: valorFicha(ficha, "categoria"),
-                  referencia: valorFicha(ficha, "referencia"),
-                  assunto: email.assunto || null,
-                  ficha: ficha ?? null,
-                  estado: relevante ? "pendente" : "processado",
-                  analisado_em: new Date().toISOString(),
-                },
-                {
-                  onConflict: "user_id,gmail_message_id",
-                },
-              );
-          } catch (erro) {
-            console.error(
-              "Erro na deteção automática de email Gmail:",
-              erro,
+          if (descobertas > 0) {
+            toast.info(
+              descobertas === 1
+                ? "Encontrámos uma nova informação de viagem no Gmail."
+                : `Encontrámos ${descobertas} novas informações de viagem no Gmail.`,
             );
           }
-        }
-
-        await supabase
-          .from("preferencias_importacao" as any)
-          .update({
-            ultima_analise_gmail_em: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-          })
-          .eq("user_id", userId);
-
-        if (descobertas > 0) {
-          toast.info(
-            descobertas === 1
-              ? "Encontrámos uma nova informação de viagem no Gmail."
-              : `Encontrámos ${descobertas} novas informações de viagem no Gmail.`,
+        } catch (erro) {
+          console.error(
+            "Erro na deteção automática do Gmail:",
+            erro,
           );
         }
-      } catch (erro) {
-        console.error("Erro na deteção automática do Gmail:", erro);
-      }
-    })();
+      })();
 
-    deteccoesGmailEmCurso.set(userId, tarefa);
+      deteccoesGmailEmCurso.set(userIdSeguro, tarefa);
 
-    void tarefa.finally(() => {
-      if (deteccoesGmailEmCurso.get(userId) === tarefa) {
-        deteccoesGmailEmCurso.delete(userId);
+      try {
+        await tarefa;
+      } finally {
+        if (deteccoesGmailEmCurso.get(userIdSeguro) === tarefa) {
+          deteccoesGmailEmCurso.delete(userIdSeguro);
+        }
       }
-    });
-  }, [session?.user.id]);
+    }
+
+    /*
+     * A primeira verificação acontece logo ao entrar na aplicação.
+     * Depois repetimos a verificação periodicamente. Isto é importante
+     * porque o AppShell permanece montado quando o utilizador navega entre
+     * páginas: depender apenas de session?.user.id faria a deteção correr
+     * uma única vez e nunca mais depois de o consentimento ser ativado.
+     */
+    void detetarNovosEmails();
+
+    const intervalo = window.setInterval(() => {
+      void detetarNovosEmails();
+    }, 60_000);
+
+    return () => {
+      cancelado = true;
+      window.clearInterval(intervalo);
+    };
+  }, [session?.user.id, analisar, procurarEmails, verificarGmail]);
 
   function abrirPesquisa(e: React.MouseEvent) {
     e.preventDefault();
