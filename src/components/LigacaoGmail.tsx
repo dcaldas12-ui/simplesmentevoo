@@ -12,7 +12,7 @@ import {
   Train,
   Trash2,
 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -25,6 +25,7 @@ import {
   iniciarLigacaoGmail,
 } from "@/lib/gmail.functions";
 import { analisarDocumento } from "@/lib/documentos-ia.functions";
+import { supabase } from "@/integrations/supabase/client";
 
 const CONNECTOR_ID = "google_mail";
 
@@ -92,6 +93,16 @@ type ResultadoAnalise = {
   estado: "a_analisar" | "analisado" | "erro";
   resultado?: unknown;
   erro?: string;
+};
+
+type DescobertaAutomatica = {
+  id: string;
+  gmail_message_id: string;
+  assunto: string;
+  ficha: unknown;
+  categoria: string | null;
+  referencia: string | null;
+  analisado_em: string | null;
 };
 
 type Ficha = Record<string, unknown>;
@@ -619,12 +630,10 @@ export function LigacaoGmail() {
   const [resultados, setResultados] = useState<EmailEncontrado[]>([]);
   const [analises, setAnalises] = useState<ResultadoAnalise[]>([]);
   const [ignorados, setIgnorados] = useState<string[]>([]);
-
-  const estado = useQuery({
-    queryKey: ["gmail", "estado"],
-    queryFn: () => estadoGmail(),
-    enabled: Boolean(session),
-  });
+  const [descobertasAutomaticas, setDescobertasAutomaticas] = useState<
+    DescobertaAutomatica[]
+  >([]);
+  const [aCarregarAutomaticas, setACarregarAutomaticas] = useState(false);
 
   async function ligar() {
     const popup = window.open(
@@ -802,10 +811,103 @@ export function LigacaoGmail() {
     }
   }
 
+  const estado = useQuery({
+    queryKey: ["gmail", "estado"],
+    queryFn: () => estadoGmail(),
+    enabled: Boolean(session),
+  });
+
   const ligado = estado.data?.ligado === true;
   const configurado = estado.data?.configurado !== false;
 
-  const analisesVisiveis = analises.filter(
+  useEffect(() => {
+    const userId = session?.user.id;
+
+    if (!userId || !ligado) {
+      setDescobertasAutomaticas([]);
+      return;
+    }
+
+    let cancelado = false;
+
+    async function carregarDescobertasAutomaticas() {
+      if (cancelado) {
+        return;
+      }
+
+      setACarregarAutomaticas(true);
+
+      try {
+        const { data, error } = await supabase
+          .from("emails_gmail_processados" as any)
+          .select(
+            "id, gmail_message_id, assunto, ficha, categoria, referencia, analisado_em",
+          )
+          .eq("user_id", userId)
+          .eq("estado", "pendente")
+          .eq("relevante", true)
+          .order("analisado_em", { ascending: false })
+          .limit(50);
+
+        if (error) {
+          console.error(
+            "Erro ao carregar descobertas automáticas do Gmail:",
+            error,
+          );
+          return;
+        }
+
+        if (cancelado) {
+          return;
+        }
+
+        const descobertas = (data ?? []) as unknown as DescobertaAutomatica[];
+
+        setDescobertasAutomaticas(descobertas);
+      } finally {
+        if (!cancelado) {
+          setACarregarAutomaticas(false);
+        }
+      }
+    }
+
+    void carregarDescobertasAutomaticas();
+
+    const intervalo = window.setInterval(() => {
+      void carregarDescobertasAutomaticas();
+    }, 10_000);
+
+    return () => {
+      cancelado = true;
+      window.clearInterval(intervalo);
+    };
+  }, [session?.user.id, ligado]);
+
+  const idsManuais = new Set(analises.map((item) => item.email.id));
+
+  const analisesAutomaticas: ResultadoAnalise[] = descobertasAutomaticas
+    .filter(
+      (item) =>
+        !idsManuais.has(item.gmail_message_id) &&
+        !ignorados.includes(item.gmail_message_id),
+    )
+    .map((item) => ({
+      email: {
+        id: item.gmail_message_id,
+        assunto: item.assunto || "Email Gmail",
+        texto: "",
+      },
+      estado: "analisado",
+      resultado: {
+        relevante: true,
+        ficha: item.ficha,
+      },
+    }));
+
+  const analisesVisiveis = [
+    ...analises,
+    ...analisesAutomaticas,
+  ].filter(
     (item) =>
       item.estado === "analisado" &&
       analiseEhRelevante(item.resultado) &&
@@ -846,6 +948,18 @@ export function LigacaoGmail() {
               Conta: {estado.data.email}
             </p>
           ) : null}
+
+          <div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
+            <span
+              className={`size-2 rounded-full ${
+                aCarregarAutomaticas ? "animate-pulse bg-primary" : "bg-primary"
+              }`}
+              aria-hidden
+            />
+            {aCarregarAutomaticas
+              ? "A verificar novas descobertas automaticamente…"
+              : "Deteção automática ativa — verificamos novas descobertas regularmente."}
+          </div>
 
           <div className="mt-3 flex flex-wrap gap-2">
             <Button
@@ -890,7 +1004,7 @@ export function LigacaoGmail() {
             </div>
           ) : null}
 
-          {analises.length > 0 ? (
+          {analisesVisiveis.length > 0 || analises.length > 0 || descobertasAutomaticas.length > 0 ? (
             <div className="mt-5 space-y-3">
               <div className="flex items-end justify-between gap-3">
                 <div>
@@ -905,7 +1019,7 @@ export function LigacaoGmail() {
                 </div>
 
                 <span className="shrink-0 rounded-full bg-secondary px-2.5 py-1 text-xs text-muted-foreground">
-                  {numeroRelevantes} de {analises.length}
+                  {numeroRelevantes}
                 </span>
               </div>
 
