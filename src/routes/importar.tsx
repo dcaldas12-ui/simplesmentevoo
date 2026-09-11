@@ -69,9 +69,10 @@ function Importar() {
     let cancelado = false;
 
     async function carregarConsentimento() {
-      if (!session?.user.id) {
+      const userId = session?.user.id;
+
+      if (!userId) {
         if (!cancelado) {
-          setAutorizou(false);
           setACarregarConsentimento(false);
         }
         return;
@@ -79,10 +80,17 @@ function Importar() {
 
       setACarregarConsentimento(true);
 
+      const chaveLocal = `simplesmentevoo:consentimento-importacao:${userId}`;
+      const valorLocal = window.localStorage.getItem(chaveLocal);
+
+      if (!cancelado && valorLocal !== null) {
+        setAutorizou(valorLocal === "true");
+      }
+
       const { data: dados, error } = await supabase
         .from("preferencias_importacao" as any)
         .select("consentimento_analise_automatica")
-        .eq("user_id", session.user.id)
+        .eq("user_id", userId)
         .maybeSingle();
 
       if (cancelado) {
@@ -91,13 +99,23 @@ function Importar() {
 
       if (error) {
         console.error("Erro ao carregar consentimento de importação:", error);
-        setAutorizou(false);
+        // Se já existir uma escolha local, mantemo-la mesmo que o Supabase
+        // esteja temporariamente indisponível.
+        if (valorLocal === null) {
+          setAutorizou(false);
+        }
       } else {
         const data = dados as
           | { consentimento_analise_automatica?: boolean }
           | null;
+        const valorSupabase = data?.consentimento_analise_automatica === true;
 
-        setAutorizou(data?.consentimento_analise_automatica === true);
+        // O estado guardado localmente é usado como cópia imediata da escolha
+        // do utilizador. Se não existir, usamos o valor da conta no Supabase.
+        if (valorLocal === null) {
+          setAutorizou(valorSupabase);
+          window.localStorage.setItem(chaveLocal, String(valorSupabase));
+        }
       }
 
       setACarregarConsentimento(false);
@@ -117,7 +135,10 @@ function Importar() {
     }
 
     const estadoAnterior = autorizou;
+    const chaveLocal = `simplesmentevoo:consentimento-importacao:${session.user.id}`;
+
     setAutorizou(valor);
+    window.localStorage.setItem(chaveLocal, String(valor));
 
     const { error } = await supabase
       .from("preferencias_importacao" as any)
@@ -137,8 +158,13 @@ function Importar() {
 
     if (error) {
       console.error("Erro ao guardar consentimento de importação:", error);
-      setAutorizou(estadoAnterior);
-      toast.error("Não foi possível guardar a sua autorização.");
+      // A escolha local continua disponível nesta sessão/navegador.
+      // Mantemos também o estado visual para não fazer desaparecer uma
+      // autorização que o utilizador acabou de dar.
+      setAutorizou(valor);
+      toast.error(
+        "A autorização ficou guardada neste dispositivo, mas não foi possível sincronizá-la com a conta."
+      );
       return;
     }
 
