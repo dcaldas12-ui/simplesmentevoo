@@ -50,21 +50,15 @@ function esperarConclusao(popup: Window) {
   });
 }
 
-export function LigacaoGmail({
-  autorizou,
-  aoEncontrar,
-}: {
-  autorizou: boolean;
-  aoEncontrar: (eventos: EventoEncontrado[]) => void;
-}) {
+export function LigacaoGmail() {
   const { t } = useIdioma();
   const { session } = useSession();
   const queryClient = useQueryClient();
   const iniciar = useServerFn(iniciarLigacaoGmail);
   const concluir = useServerFn(concluirLigacaoGmail);
   const desligar = useServerFn(desligarGmail);
-  const lerEmails = useServerFn(emailsDeViagem);
   const [ocupado, setOcupado] = useState(false);
+  const [erro, setErro] = useState<string | null>(null);
 
   const estado = useQuery({
     queryKey: ["gmail", "estado"],
