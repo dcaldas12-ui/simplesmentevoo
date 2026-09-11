@@ -10,6 +10,7 @@ import {
   Plane,
   Ticket,
   Train,
+  Trash2,
 } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -426,8 +427,10 @@ function CampoResumo({
 
 function CartaoResultado({
   item,
+  aoIgnorar,
 }: {
   item: ResultadoAnalise;
+  aoIgnorar: (id: string) => void;
 }) {
   if (item.estado !== "analisado" || !analiseEhRelevante(item.resultado)) {
     return null;
@@ -582,6 +585,17 @@ function CartaoResultado({
           >
             Rever
           </Button>
+
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            className="h-9"
+            onClick={() => aoIgnorar(item.email.id)}
+          >
+            <Trash2 className="mr-1.5 size-4" />
+            Remover da lista
+          </Button>
         </div>
       </div>
     </div>
@@ -604,6 +618,7 @@ export function LigacaoGmail() {
 
   const [resultados, setResultados] = useState<EmailEncontrado[]>([]);
   const [analises, setAnalises] = useState<ResultadoAnalise[]>([]);
+  const [ignorados, setIgnorados] = useState<string[]>([]);
 
   const estado = useQuery({
     queryKey: ["gmail", "estado"],
@@ -667,6 +682,7 @@ export function LigacaoGmail() {
     setErro(null);
     setResultados([]);
     setAnalises([]);
+    setIgnorados([]);
 
     try {
       const emails = await procurarEmails();
@@ -748,11 +764,22 @@ export function LigacaoGmail() {
     }
   }
 
+  function ignorar(id: string) {
+    setIgnorados((anteriores) => {
+      if (anteriores.includes(id)) {
+        return anteriores.filter((item) => item !== id);
+      }
+
+      return [...anteriores, id];
+    });
+  }
+
   async function terminar() {
     setOcupado(true);
     setErro(null);
     setResultados([]);
     setAnalises([]);
+    setIgnorados([]);
 
     try {
       await desligar();
@@ -781,10 +808,12 @@ export function LigacaoGmail() {
   const analisesVisiveis = analises.filter(
     (item) =>
       item.estado === "analisado" &&
-      analiseEhRelevante(item.resultado),
+      analiseEhRelevante(item.resultado) &&
+      !ignorados.includes(item.email.id),
   );
 
   const numeroRelevantes = analisesVisiveis.length;
+  const numeroIgnorados = ignorados.length;
 
   return (
     <div className="mt-4 rounded-2xl border border-dashed border-border bg-secondary/40 p-5">
@@ -884,8 +913,29 @@ export function LigacaoGmail() {
                 <CartaoResultado
                   key={item.email.id}
                   item={item}
+                  aoIgnorar={ignorar}
                 />
               ))}
+
+              {numeroIgnorados > 0 ? (
+                <div className="flex items-center justify-between rounded-xl border border-border bg-card px-3 py-2">
+                  <p className="text-xs text-muted-foreground">
+                    {numeroIgnorados === 1
+                      ? "1 email removido da lista."
+                      : `${numeroIgnorados} emails removidos da lista.`}
+                  </p>
+
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    className="h-8"
+                    onClick={() => setIgnorados([])}
+                  >
+                    Mostrar novamente
+                  </Button>
+                </div>
+              ) : null}
 
               {!aProcurar && numeroRelevantes === 0 ? (
                 <div className="rounded-xl border border-border bg-card p-4">
