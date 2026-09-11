@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { CalendarClock, CheckCircle2, Mail, ShieldCheck, Upload } from "lucide-react";
+import { CalendarClock, CheckCircle2, ShieldCheck, Upload } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
@@ -30,10 +30,14 @@ export const Route = createFileRoute("/importar")({
         content:
           "Com a sua autorização, encontramos voos, hotéis e transfers no calendário ou nos emails do seu telemóvel e sugerimos adicioná-los à app.",
       },
-      { property: "og:title", content: "Importar eventos de viagem — Simplesmente voo" },
+      {
+        property: "og:title",
+        content: "Importar eventos de viagem — Simplesmente voo",
+      },
       {
         property: "og:description",
-        content: "Detete voos, hotéis e transfers no seu calendário e crie avisos automaticamente.",
+        content:
+          "Detete voos, hotéis e transfers no seu calendário e crie avisos automaticamente.",
       },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
@@ -52,6 +56,7 @@ const rotuloCategoria: Record<string, string> = {
 function Importar() {
   const { t, idioma } = useIdioma();
   const { session } = useSession();
+
   const [autorizou, setAutorizou] = useState(false);
   const [texto, setTexto] = useState("");
   const [eventos, setEventos] = useState<EventoEncontrado[] | null>(null);
@@ -60,8 +65,13 @@ function Importar() {
 
   function receber(encontrados: EventoEncontrado[]) {
     setEventos(encontrados);
-    setSelecionados(Object.fromEntries(encontrados.map((e) => [e.id, true])));
-    if (encontrados.length === 0) toast.info(t("importar.nenhum"));
+    setSelecionados(
+      Object.fromEntries(encontrados.map((evento) => [evento.id, true])),
+    );
+
+    if (encontrados.length === 0) {
+      toast.info(t("importar.nenhum"));
+    }
   }
 
   async function aoEscolherFicheiro(ficheiro: File) {
@@ -73,17 +83,28 @@ function Importar() {
   }
 
   async function adicionar() {
-    const escolhidos = (eventos ?? []).filter((e) => selecionados[e.id]);
-    if (escolhidos.length === 0) return;
+    const escolhidos = (eventos ?? []).filter(
+      (evento) => selecionados[evento.id],
+    );
+
+    if (escolhidos.length === 0) {
+      return;
+    }
+
     if (!session) {
       toast.info("Entre na sua conta para guardar estes avisos.");
       return;
     }
+
     setAGuardar(true);
     let criados = 0;
+
     try {
       for (const evento of escolhidos) {
-        for (const derivado of eventosDaFicha(fichaDoEvento(evento), evento.titulo)) {
+        for (const derivado of eventosDaFicha(
+          fichaDoEvento(evento),
+          evento.titulo,
+        )) {
           await guardarAviso({
             data: {
               tipo: derivado.tipo,
@@ -92,15 +113,24 @@ function Importar() {
               quando: derivado.quando,
               antecipacaoMin: derivado.antecipacaoMin,
               ativo: true,
-              origem: evento.origem === "calendario" ? "calendário" : "texto",
+              origem:
+                evento.origem === "calendario" ? "calendário" : "texto",
             },
           });
+
           criados += 1;
         }
       }
-      toast.success(`${criados} aviso(s) criado(s) a partir dos eventos escolhidos.`);
+
+      toast.success(
+        `${criados} aviso(s) criado(s) a partir dos eventos escolhidos.`,
+      );
     } catch (erro) {
-      toast.error(erro instanceof Error ? erro.message : "Não foi possível guardar os avisos.");
+      toast.error(
+        erro instanceof Error
+          ? erro.message
+          : "Não foi possível guardar os avisos.",
+      );
     } finally {
       setAGuardar(false);
     }
@@ -112,47 +142,82 @@ function Importar() {
         <h1 className="font-display text-2xl font-semibold tracking-tight sm:text-3xl">
           {t("importar.titulo")}
         </h1>
-        <p className="mt-2 text-sm text-muted-foreground">{t("importar.intro")}</p>
+
+        <p className="mt-2 text-sm text-muted-foreground">
+          {t("importar.intro")}
+        </p>
 
         <div className="mt-6 rounded-2xl border border-border bg-card p-5">
           <div className="flex items-start gap-3">
-            <ShieldCheck className="mt-0.5 size-5 text-primary" aria-hidden />
+            <ShieldCheck
+              className="mt-0.5 size-5 text-primary"
+              aria-hidden
+            />
+
             <div className="flex-1">
               <div className="flex items-start gap-3">
                 <Checkbox
                   id="consentimento-importar"
                   checked={autorizou}
-                  onCheckedChange={(v) => setAutorizou(v === true)}
+                  onCheckedChange={(valor) =>
+                    setAutorizou(valor === true)
+                  }
                   className="mt-0.5"
                 />
-                <Label htmlFor="consentimento-importar" className="text-sm font-normal leading-snug">
+
+                <Label
+                  htmlFor="consentimento-importar"
+                  className="text-sm font-normal leading-snug"
+                >
                   {t("importar.consentimento")}
                 </Label>
               </div>
-              <p className="mt-3 text-xs text-muted-foreground">{t("importar.privacidade")}</p>
+
+              <p className="mt-3 text-xs text-muted-foreground">
+                {t("importar.privacidade")}
+              </p>
             </div>
           </div>
         </div>
 
         <div className="mt-4 grid gap-4 sm:grid-cols-2">
           <div className="rounded-2xl border border-border bg-card p-5">
-            <CalendarClock className="size-5 text-primary" aria-hidden />
-            <h2 className="mt-3 font-display text-base font-semibold">Calendário do telemóvel</h2>
+            <CalendarClock
+              className="size-5 text-primary"
+              aria-hidden
+            />
+
+            <h2 className="mt-3 font-display text-base font-semibold">
+              Calendário do telemóvel
+            </h2>
+
             <p className="mt-1 text-xs text-muted-foreground">
-              No iPhone ou Android, exporte/partilhe o evento ou o calendário em ficheiro .ics e
-              escolha-o aqui. Nada sai do seu dispositivo nesta fase.
+              No iPhone ou Android, exporte/partilhe o evento ou o calendário
+              em ficheiro .ics e escolha-o aqui. Nada sai do seu dispositivo
+              nesta fase.
             </p>
-            <Button asChild className="mt-4 h-11 w-full" disabled={!autorizou}>
+
+            <Button
+              asChild
+              className="mt-4 h-11 w-full"
+              disabled={!autorizou}
+            >
               <label>
-                <Upload className="size-4" /> {t("importar.escolher")}
+                <Upload className="size-4" />
+                {t("importar.escolher")}
+
                 <input
                   type="file"
                   accept=".ics,text/calendar"
                   className="sr-only"
                   disabled={!autorizou}
                   onChange={(e) => {
-                    const f = e.target.files?.[0];
-                    if (f) void aoEscolherFicheiro(f);
+                    const ficheiro = e.target.files?.[0];
+
+                    if (ficheiro) {
+                      void aoEscolherFicheiro(ficheiro);
+                    }
+
                     e.target.value = "";
                   }}
                 />
@@ -161,9 +226,14 @@ function Importar() {
           </div>
 
           <div className="rounded-2xl border border-border bg-card p-5">
-            <Mail className="size-5 text-primary" aria-hidden />
-            <h2 className="mt-3 font-display text-base font-semibold">Email ou outra app</h2>
-            <p className="mt-1 text-xs text-muted-foreground">{t("importar.colar")}</p>
+            <h2 className="font-display text-base font-semibold">
+              Email ou outra app
+            </h2>
+
+            <p className="mt-1 text-xs text-muted-foreground">
+              {t("importar.colar")}
+            </p>
+
             <Textarea
               value={texto}
               onChange={(e) => setTexto(e.target.value)}
@@ -172,6 +242,7 @@ function Importar() {
               className="mt-3"
               aria-label={t("importar.colar")}
             />
+
             <Button
               variant="outline"
               className="mt-3 h-11 w-full"
@@ -183,50 +254,74 @@ function Importar() {
           </div>
         </div>
 
-        <LigacaoGmail />
+        <LigacaoGmail
+          autorizou={autorizou}
+          aoEncontrar={receber}
+        />
 
         {eventos ? (
           <section className="mt-8">
             <h2 className="font-display text-lg font-semibold">
               {t("importar.encontrados")} ({eventos.length})
             </h2>
+
             {eventos.length === 0 ? (
-              <p className="mt-2 text-sm text-muted-foreground">{t("importar.nenhum")}</p>
+              <p className="mt-2 text-sm text-muted-foreground">
+                {t("importar.nenhum")}
+              </p>
             ) : (
               <>
                 <ul className="mt-3 space-y-2">
-                  {eventos.map((e) => (
+                  {eventos.map((evento) => (
                     <li
-                      key={e.id}
+                      key={evento.id}
                       className="flex items-start gap-3 rounded-xl border border-border bg-card p-4"
                     >
                       <Checkbox
-                        id={`ev-${e.id}`}
-                        checked={Boolean(selecionados[e.id])}
-                        onCheckedChange={(v) =>
-                          setSelecionados((s) => ({ ...s, [e.id]: v === true }))
+                        id={`ev-${evento.id}`}
+                        checked={Boolean(selecionados[evento.id])}
+                        onCheckedChange={(valor) =>
+                          setSelecionados((estado) => ({
+                            ...estado,
+                            [evento.id]: valor === true,
+                          }))
                         }
                         className="mt-1"
                       />
-                      <Label htmlFor={`ev-${e.id}`} className="flex-1 font-normal">
-                        <span className="block text-sm font-medium">{e.titulo}</span>
+
+                      <Label
+                        htmlFor={`ev-${evento.id}`}
+                        className="flex-1 font-normal"
+                      >
+                        <span className="block text-sm font-medium">
+                          {evento.titulo}
+                        </span>
+
                         <span className="mt-1 block text-xs text-muted-foreground">
-                          {rotuloCategoria[e.categoria]} · {formatarEvento(e.inicio, idioma)}
-                          {e.local ? ` · ${e.local}` : ""}
-                          {e.numeroVoo ? ` · ${e.numeroVoo}` : ""}
+                          {rotuloCategoria[evento.categoria]} ·{" "}
+                          {formatarEvento(evento.inicio, idioma)}
+                          {evento.local ? ` · ${evento.local}` : ""}
+                          {evento.numeroVoo
+                            ? ` · ${evento.numeroVoo}`
+                            : ""}
                         </span>
                       </Label>
                     </li>
                   ))}
                 </ul>
+
                 <Button
                   className="mt-4 h-11 w-full sm:w-auto"
                   onClick={() => void adicionar()}
                   disabled={aGuardar}
                 >
                   <CheckCircle2 className="size-4" />
-                  {aGuardar ? "A guardar…" : t("importar.adicionar")}
+
+                  {aGuardar
+                    ? "A guardar…"
+                    : t("importar.adicionar")}
                 </Button>
+
                 {!session ? (
                   <p className="mt-2 text-xs text-muted-foreground">
                     Entre na sua conta para guardar estes avisos na app.
