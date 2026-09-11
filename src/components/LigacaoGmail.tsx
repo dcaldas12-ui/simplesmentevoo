@@ -7,7 +7,9 @@ import {
   Hotel,
   Info,
   Mail,
+  PauseCircle,
   Plane,
+  PlayCircle,
   Ticket,
   Train,
   Trash2,
@@ -634,6 +636,11 @@ export function LigacaoGmail() {
     DescobertaAutomatica[]
   >([]);
   const [aCarregarAutomaticas, setACarregarAutomaticas] = useState(false);
+  const [deteccaoAutomaticaAtiva, setDeteccaoAutomaticaAtiva] = useState<
+    boolean | null
+  >(null);
+  const [aAlterarDeteccaoAutomatica, setAAlterarDeteccaoAutomatica] =
+    useState(false);
 
   async function ligar() {
     const popup = window.open(
@@ -685,6 +692,90 @@ export function LigacaoGmail() {
       setOcupado(false);
     }
   }
+
+  async function carregarPreferenciaDeteccao() {
+    const userId = session?.user.id;
+
+    if (!userId) {
+      setDeteccaoAutomaticaAtiva(null);
+      return;
+    }
+
+    const { data, error } = await supabase
+      .from("preferencias_importacao" as any)
+      .select("consentimento_analise_automatica")
+      .eq("user_id", userId)
+      .maybeSingle();
+
+    if (error) {
+      console.error(
+        "Erro ao carregar preferência de deteção automática:",
+        error,
+      );
+      setDeteccaoAutomaticaAtiva(false);
+      return;
+    }
+
+    const preferencia = data as
+      | { consentimento_analise_automatica?: boolean }
+      | null;
+
+    setDeteccaoAutomaticaAtiva(
+      preferencia?.consentimento_analise_automatica === true,
+    );
+  }
+
+  async function alterarDeteccaoAutomatica() {
+    const userId = session?.user.id;
+
+    if (!userId || deteccaoAutomaticaAtiva === null) {
+      return;
+    }
+
+    const novoEstado = !deteccaoAutomaticaAtiva;
+    const estadoAnterior = deteccaoAutomaticaAtiva;
+
+    setAAlterarDeteccaoAutomatica(true);
+    setDeteccaoAutomaticaAtiva(novoEstado);
+
+    try {
+      const agora = new Date().toISOString();
+
+      const { error } = await supabase
+        .from("preferencias_importacao" as any)
+        .upsert({
+          user_id: userId,
+          consentimento_analise_automatica: novoEstado,
+          consentimento_analise_automatica_em: novoEstado ? agora : null,
+          updated_at: agora,
+        });
+
+      if (error) {
+        throw error;
+      }
+
+      toast.success(
+        novoEstado
+          ? "Deteção automática ativada."
+          : "Deteção automática parada.",
+      );
+    } catch (e) {
+      console.error(
+        "Erro ao alterar deteção automática do Gmail:",
+        e,
+      );
+      setDeteccaoAutomaticaAtiva(estadoAnterior);
+      toast.error(
+        "Não foi possível alterar a deteção automática.",
+      );
+    } finally {
+      setAAlterarDeteccaoAutomatica(false);
+    }
+  }
+
+  useEffect(() => {
+    void carregarPreferenciaDeteccao();
+  }, [session?.user.id]);
 
   async function procurar() {
     setAProcurar(true);
@@ -828,6 +919,10 @@ export function LigacaoGmail() {
       return;
     }
 
+    if (deteccaoAutomaticaAtiva !== true) {
+      return;
+    }
+
     let cancelado = false;
 
     async function carregarDescobertasAutomaticas() {
@@ -881,7 +976,7 @@ export function LigacaoGmail() {
       cancelado = true;
       window.clearInterval(intervalo);
     };
-  }, [session?.user.id, ligado]);
+  }, [session?.user.id, ligado, deteccaoAutomaticaAtiva]);
 
   const idsManuais = new Set(analises.map((item) => item.email.id));
 
@@ -950,15 +1045,29 @@ export function LigacaoGmail() {
           ) : null}
 
           <div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
-            <span
-              className={`size-2 rounded-full ${
-                aCarregarAutomaticas ? "animate-pulse bg-primary" : "bg-primary"
-              }`}
-              aria-hidden
-            />
-            {aCarregarAutomaticas
-              ? "A verificar novas descobertas automaticamente…"
-              : "Deteção automática ativa — verificamos novas descobertas regularmente."}
+            {deteccaoAutomaticaAtiva === true ? (
+              <>
+                <span
+                  className={`size-2 rounded-full ${
+                    aCarregarAutomaticas
+                      ? "animate-pulse bg-primary"
+                      : "bg-primary"
+                  }`}
+                  aria-hidden
+                />
+                {aCarregarAutomaticas
+                  ? "A verificar novas descobertas automaticamente…"
+                  : "Deteção automática ativa — verificamos novas descobertas regularmente."}
+              </>
+            ) : (
+              <>
+                <span
+                  className="size-2 rounded-full bg-muted-foreground/50"
+                  aria-hidden
+                />
+                Deteção automática parada.
+              </>
+            )}
           </div>
 
           <div className="mt-3 flex flex-wrap gap-2">
@@ -976,7 +1085,33 @@ export function LigacaoGmail() {
             <Button
               variant="outline"
               className="h-11"
-              disabled={ocupado || aProcurar}
+              disabled={
+                ocupado ||
+                aProcurar ||
+                aAlterarDeteccaoAutomatica ||
+                deteccaoAutomaticaAtiva === null
+              }
+              onClick={() => void alterarDeteccaoAutomatica()}
+            >
+              {aAlterarDeteccaoAutomatica ? (
+                "A alterar…"
+              ) : deteccaoAutomaticaAtiva ? (
+                <>
+                  <PauseCircle className="mr-1.5 size-4" />
+                  Parar deteção automática
+                </>
+              ) : (
+                <>
+                  <PlayCircle className="mr-1.5 size-4" />
+                  Ativar deteção automática
+                </>
+              )}
+            </Button>
+
+            <Button
+              variant="outline"
+              className="h-11"
+              disabled={ocupado || aProcurar || aAlterarDeteccaoAutomatica}
               onClick={() => void terminar()}
             >
               {ocupado ? "A desligar…" : "Desligar Gmail"}
