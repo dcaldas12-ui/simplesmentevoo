@@ -1,7 +1,6 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import {
-  AlertCircle,
   CheckCircle2,
   ChevronRight,
   FileText,
@@ -11,8 +10,6 @@ import {
   Plane,
   Ticket,
   Train,
-  Trash2,
-  XCircle,
 } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -137,11 +134,12 @@ function fichaDaAnalise(resultado: unknown): unknown {
   return resultado;
 }
 
-function textoNormalizado(texto: string): string {
-  return texto
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase();
+function analiseEhRelevante(resultado: unknown): boolean {
+  if (!resultado || typeof resultado !== "object") {
+    return false;
+  }
+
+  return (resultado as Record<string, unknown>)["relevante"] === true;
 }
 
 function categoriaApresentacao(categoria: string | null): {
@@ -199,10 +197,7 @@ function categoriaApresentacao(categoria: string | null): {
   }
 }
 
-function determinarAcao(
-  ficha: Ficha | null,
-  assunto: string,
-): AcaoSugerida {
+function determinarAcao(ficha: Ficha | null): AcaoSugerida {
   if (!ficha) {
     return "rever";
   }
@@ -211,41 +206,6 @@ function determinarAcao(
     typeof ficha["categoria"] === "string"
       ? ficha["categoria"].toLowerCase()
       : "";
-
-  const tipoDocumento =
-    typeof ficha["tipoDocumento"] === "string"
-      ? ficha["tipoDocumento"]
-      : "";
-
-  const texto = textoNormalizado(
-    `${assunto} ${tipoDocumento} ${categoria}`,
-  );
-
-  const termosPromocionais = [
-    "promocao",
-    "promocional",
-    "newsletter",
-    "oferta",
-    "ofertas",
-    "desconto",
-    "descontos",
-    "sale",
-    "black friday",
-    "melhor preco",
-    "melhor preço",
-    "ultimas partidas",
-    "ultimas ofertas",
-    "campaign",
-    "marketing",
-  ];
-
-  const ePromocional = termosPromocionais.some((termo) =>
-    texto.includes(textoNormalizado(termo)),
-  );
-
-  if (ePromocional && categoria !== "voo" && categoria !== "hotel") {
-    return "ignorar";
-  }
 
   if (
     categoria === "voo" ||
@@ -262,7 +222,7 @@ function determinarAcao(
   }
 
   if (categoria === "informacao") {
-    return ePromocional ? "ignorar" : "guardar_informacao";
+    return "guardar_informacao";
   }
 
   return "rever";
@@ -294,18 +254,11 @@ function textoDaAcao(acao: AcaoSugerida): {
           "Encontrámos informação potencialmente útil para uma viagem.",
       };
 
-    case "ignorar":
-      return {
-        titulo: "Ignorar este email",
-        descricao:
-          "Parece tratar-se de uma comunicação promocional ou sem dados úteis de uma viagem.",
-      };
-
     default:
       return {
         titulo: "Rever manualmente",
         descricao:
-          "A análise não encontrou informação suficiente para decidir automaticamente.",
+          "A análise encontrou informação relacionada com viagem, mas é necessária uma revisão.",
       };
   }
 }
@@ -473,11 +426,13 @@ function CampoResumo({
 
 function CartaoResultado({
   item,
-  aoIgnorar,
 }: {
   item: ResultadoAnalise;
-  aoIgnorar: (id: string) => void;
 }) {
+  if (item.estado !== "analisado" || !analiseEhRelevante(item.resultado)) {
+    return null;
+  }
+
   const fichaBruta = fichaDaAnalise(item.resultado);
 
   const ficha: Ficha | null =
@@ -486,7 +441,6 @@ function CartaoResultado({
       : null;
 
   const categoria = valorDaFicha(ficha, "categoria");
-  const fornecedor = valorDaFicha(ficha, "fornecedor");
   const operador = valorDaFicha(ficha, "operador");
   const referencia = valorDaFicha(ficha, "referencia");
   const dataHora = valorDaFicha(ficha, "dataHora");
@@ -501,48 +455,10 @@ function CartaoResultado({
   const codigo = valorDaFicha(ficha, "codigo");
   const tipoDocumento = valorDaFicha(ficha, "tipoDocumento");
 
-  if (item.estado === "a_analisar") {
-    return (
-      <div className="rounded-2xl border border-border bg-card p-4">
-        <p className="text-sm font-medium">
-          {item.email.assunto || "Email sem assunto"}
-        </p>
-
-        <p className="mt-2 text-sm text-muted-foreground">
-          A analisar este email…
-        </p>
-      </div>
-    );
-  }
-
-  if (item.estado === "erro") {
-    return (
-      <div className="rounded-2xl border border-destructive/30 bg-destructive/5 p-4">
-        <div className="flex items-start gap-3">
-          <AlertCircle className="mt-0.5 size-5 text-destructive" />
-
-          <div>
-            <p className="text-sm font-medium">
-              Não foi possível analisar este email
-            </p>
-
-            <p className="mt-1 text-sm text-muted-foreground">
-              {item.email.assunto || "Email sem assunto"}
-            </p>
-
-            <p className="mt-2 text-xs text-destructive">
-              {item.erro}
-            </p>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
   const apresentacao = categoriaApresentacao(categoria);
   const Icon = apresentacao.icon;
 
-  const acao = determinarAcao(ficha, item.email.assunto);
+  const acao = determinarAcao(ficha);
   const acaoTexto = textoDaAcao(acao);
 
   const tituloPrincipal = obterTituloPrincipal(
@@ -557,24 +473,10 @@ function CartaoResultado({
 
   const dadosRelevantes = temDadosRelevantes(ficha);
 
-  const eIgnorar = acao === "ignorar";
-
   return (
-    <div
-      className={
-        eIgnorar
-          ? "rounded-2xl border border-border bg-muted/30 p-4"
-          : "rounded-2xl border border-border bg-card p-4 shadow-sm"
-      }
-    >
+    <div className="rounded-2xl border border-border bg-card p-4 shadow-sm">
       <div className="flex items-start gap-3">
-        <div
-          className={
-            eIgnorar
-              ? "flex size-10 shrink-0 items-center justify-center rounded-xl bg-muted"
-              : "flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary"
-          }
-        >
+        <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
           <Icon className="size-5" aria-hidden />
         </div>
 
@@ -604,7 +506,7 @@ function CartaoResultado({
         </div>
       </div>
 
-      {!eIgnorar && dadosRelevantes ? (
+      {dadosRelevantes ? (
         <div className="mt-4 rounded-xl bg-secondary/50 p-3">
           {categoria === "voo" && (origem || destino) ? (
             <div className="mb-3 flex items-center gap-2 text-sm font-medium">
@@ -617,72 +519,26 @@ function CartaoResultado({
           ) : null}
 
           <div className="grid gap-3 sm:grid-cols-2">
-            <CampoResumo
-              nome="Companhia"
-              valor={companhia}
-            />
-
-            <CampoResumo
-              nome="Operador"
-              valor={operador}
-            />
-
-            <CampoResumo
-              nome="Referência"
-              valor={referencia}
-            />
-
-            <CampoResumo
-              nome="Voo"
-              valor={numeroVoo}
-            />
-
-            <CampoResumo
-              nome="Local"
-              valor={local}
-            />
-
-            <CampoResumo
-              nome="Data"
-              valor={dataFormatada}
-            />
-
+            <CampoResumo nome="Companhia" valor={companhia} />
+            <CampoResumo nome="Operador" valor={operador} />
+            <CampoResumo nome="Referência" valor={referencia} />
+            <CampoResumo nome="Voo" valor={numeroVoo} />
+            <CampoResumo nome="Local" valor={local} />
+            <CampoResumo nome="Data" valor={dataFormatada} />
             <CampoResumo
               nome={dataFimFormatada ? "Até" : "Código"}
               valor={dataFimFormatada || codigo}
             />
-
-            <CampoResumo
-              nome="Quarto"
-              valor={quarto}
-            />
-
-            <CampoResumo
-              nome="Morada"
-              valor={morada}
-            />
-
-            <CampoResumo
-              nome="Tipo de documento"
-              valor={tipoDocumento}
-            />
+            <CampoResumo nome="Quarto" valor={quarto} />
+            <CampoResumo nome="Morada" valor={morada} />
+            <CampoResumo nome="Tipo de documento" valor={tipoDocumento} />
           </div>
         </div>
       ) : null}
 
-      <div
-        className={
-          eIgnorar
-            ? "mt-4 rounded-xl border border-border bg-background p-3"
-            : "mt-4 rounded-xl border border-primary/20 bg-primary/5 p-3"
-        }
-      >
+      <div className="mt-4 rounded-xl border border-primary/20 bg-primary/5 p-3">
         <div className="flex items-start gap-3">
-          {eIgnorar ? (
-            <XCircle className="mt-0.5 size-5 text-muted-foreground" />
-          ) : (
-            <CheckCircle2 className="mt-0.5 size-5 text-primary" />
-          )}
+          <CheckCircle2 className="mt-0.5 size-5 text-primary" />
 
           <div className="min-w-0 flex-1">
             <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
@@ -699,71 +555,35 @@ function CartaoResultado({
           </div>
         </div>
 
-        {!eIgnorar ? (
-          <div className="mt-3 flex flex-wrap gap-2">
-            <Button
-              type="button"
-              size="sm"
-              className="h-9"
-              onClick={() => {
-                toast.info(
-                  "A ligação desta ação à viagem será feita no próximo passo.",
-                );
-              }}
-            >
-              Adicionar à viagem
-            </Button>
+        <div className="mt-3 flex flex-wrap gap-2">
+          <Button
+            type="button"
+            size="sm"
+            className="h-9"
+            onClick={() => {
+              toast.info(
+                "A ligação desta ação à viagem será feita no próximo passo.",
+              );
+            }}
+          >
+            {acaoTexto.titulo}
+          </Button>
 
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              className="h-9"
-              onClick={() => {
-                toast.info(
-                  "Vamos preparar a opção de guardar este elemento no próximo passo.",
-                );
-              }}
-            >
-              Rever
-            </Button>
-
-            <Button
-              type="button"
-              size="sm"
-              variant="ghost"
-              className="h-9"
-              onClick={() => aoIgnorar(item.email.id)}
-            >
-              <Trash2 className="mr-1.5 size-4" />
-              Ignorar
-            </Button>
-          </div>
-        ) : (
-          <div className="mt-3">
-            <Button
-              type="button"
-              size="sm"
-              variant="ghost"
-              className="h-9"
-              onClick={() => aoIgnorar(item.email.id)}
-            >
-              <Trash2 className="mr-1.5 size-4" />
-              Remover da lista
-            </Button>
-          </div>
-        )}
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            className="h-9"
+            onClick={() => {
+              toast.info(
+                "Vamos preparar a opção de guardar este elemento no próximo passo.",
+              );
+            }}
+          >
+            Rever
+          </Button>
+        </div>
       </div>
-
-      <details className="mt-3">
-        <summary className="cursor-pointer text-xs text-muted-foreground">
-          Ver detalhes técnicos
-        </summary>
-
-        <pre className="mt-2 max-h-80 overflow-auto rounded-lg bg-muted p-3 text-xs">
-          {JSON.stringify(item.resultado, null, 2)}
-        </pre>
-      </details>
     </div>
   );
 }
@@ -784,7 +604,6 @@ export function LigacaoGmail() {
 
   const [resultados, setResultados] = useState<EmailEncontrado[]>([]);
   const [analises, setAnalises] = useState<ResultadoAnalise[]>([]);
-  const [ignorados, setIgnorados] = useState<string[]>([]);
 
   const estado = useQuery({
     queryKey: ["gmail", "estado"],
@@ -848,7 +667,6 @@ export function LigacaoGmail() {
     setErro(null);
     setResultados([]);
     setAnalises([]);
-    setIgnorados([]);
 
     try {
       const emails = await procurarEmails();
@@ -935,7 +753,6 @@ export function LigacaoGmail() {
     setErro(null);
     setResultados([]);
     setAnalises([]);
-    setIgnorados([]);
 
     try {
       await desligar();
@@ -958,24 +775,16 @@ export function LigacaoGmail() {
     }
   }
 
-  function ignorar(id: string) {
-    setIgnorados((anteriores) => {
-      if (anteriores.includes(id)) {
-        return anteriores.filter((item) => item !== id);
-      }
-
-      return [...anteriores, id];
-    });
-  }
-
   const ligado = estado.data?.ligado === true;
   const configurado = estado.data?.configurado !== false;
 
   const analisesVisiveis = analises.filter(
-    (item) => !ignorados.includes(item.email.id),
+    (item) =>
+      item.estado === "analisado" &&
+      analiseEhRelevante(item.resultado),
   );
 
-  const numeroIgnorados = ignorados.length;
+  const numeroRelevantes = analisesVisiveis.length;
 
   return (
     <div className="mt-4 rounded-2xl border border-dashed border-border bg-secondary/40 p-5">
@@ -1057,17 +866,17 @@ export function LigacaoGmail() {
               <div className="flex items-end justify-between gap-3">
                 <div>
                   <p className="text-sm font-semibold">
-                    Resultados da análise
+                    Elementos de viagem encontrados
                   </p>
 
                   <p className="mt-1 text-xs text-muted-foreground">
-                    A ViatOrbis analisa os emails e sugere o que fazer com
-                    cada resultado.
+                    Mostramos apenas os emails que a análise identificou como
+                    relevantes para uma viagem ou evento concreto.
                   </p>
                 </div>
 
                 <span className="shrink-0 rounded-full bg-secondary px-2.5 py-1 text-xs text-muted-foreground">
-                  {analisesVisiveis.length} de {analises.length}
+                  {numeroRelevantes} de {analises.length}
                 </span>
               </div>
 
@@ -1075,45 +884,40 @@ export function LigacaoGmail() {
                 <CartaoResultado
                   key={item.email.id}
                   item={item}
-                  aoIgnorar={ignorar}
                 />
               ))}
 
-              {numeroIgnorados > 0 ? (
-                <div className="flex items-center justify-between rounded-xl border border-border bg-card px-3 py-2">
-                  <p className="text-xs text-muted-foreground">
-                    {numeroIgnorados === 1
-                      ? "1 email removido da lista."
-                      : `${numeroIgnorados} emails removidos da lista.`}
+              {!aProcurar && numeroRelevantes === 0 ? (
+                <div className="rounded-xl border border-border bg-card p-4">
+                  <p className="text-sm font-medium">
+                    Não encontrámos elementos de viagem relevantes.
                   </p>
 
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="ghost"
-                    className="h-8"
-                    onClick={() => setIgnorados([])}
-                  >
-                    Mostrar novamente
-                  </Button>
+                  <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                    Emails promocionais, newsletters e publicidade sem uma
+                    reserva, bilhete, evento ou informação concreta foram
+                    automaticamente excluídos.
+                  </p>
                 </div>
               ) : null}
 
-              <div className="rounded-xl border border-primary/10 bg-primary/5 p-3">
-                <div className="flex items-start gap-3">
-                  <Info className="mt-0.5 size-4 shrink-0 text-primary" />
+              {numeroRelevantes > 0 ? (
+                <div className="rounded-xl border border-primary/10 bg-primary/5 p-3">
+                  <div className="flex items-start gap-3">
+                    <Info className="mt-0.5 size-4 shrink-0 text-primary" />
 
-                  <p className="text-xs leading-relaxed text-muted-foreground">
-                    <span className="font-medium text-foreground">
-                      Importante:
-                    </span>{" "}
-                    nada é adicionado automaticamente às suas viagens. A
-                    aplicação primeiro analisa os emails e apresenta uma
-                    sugestão. A confirmação e a organização das reservas
-                    serão feitas no passo seguinte.
-                  </p>
+                    <p className="text-xs leading-relaxed text-muted-foreground">
+                      <span className="font-medium text-foreground">
+                        Importante:
+                      </span>{" "}
+                      nada é adicionado automaticamente às suas viagens. A
+                      aplicação primeiro analisa os emails e apresenta uma
+                      sugestão. A confirmação e a organização das reservas
+                      serão feitas no passo seguinte.
+                    </p>
+                  </div>
                 </div>
-              </div>
+              ) : null}
             </div>
           ) : resultados.length > 0 ? (
             <div className="mt-4 space-y-3">

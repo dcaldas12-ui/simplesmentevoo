@@ -24,6 +24,12 @@ export type AnaliseDocumentoInput = {
 export type AnaliseDocumentoResultado = {
   ficha: FichaDocumento;
 
+  /** true quando a IA considera que o conteúdo tem utilidade concreta para uma viagem. */
+  relevante: boolean;
+
+  /** Explicação curta da decisão de relevância. */
+  motivoRelevancia: string;
+
   /** true quando a extração foi feita por IA; false quando foi heurística local. */
   porIa: boolean;
 
@@ -84,6 +90,16 @@ const ESQUEMA = {
   type: "object",
 
   properties: {
+    relevante: {
+      type: "boolean",
+      description:
+        "Indica se este email/documento tem relação concreta e útil com uma viagem, reserva, bilhete, transporte, alojamento, espetáculo, museu, tour, atividade, documento ou informação específica de viagem. Deve ser false para publicidade, newsletters, campanhas, promoções, ofertas genéricas ou conteúdo comercial sem uma reserva, bilhete, evento ou informação concreta útil.",
+    },
+
+    motivoRelevancia: campoTexto(
+      "Explicação muito curta da decisão de relevância. Se relevante=true, explica o que foi encontrado. Se relevante=false, explica que é publicidade/newsletter ou que não existe uma viagem, reserva, bilhete, evento ou informação concreta.",
+    ),
+
     categoria: {
       type: "string",
 
@@ -207,6 +223,8 @@ const ESQUEMA = {
   },
 
   required: [
+    "relevante",
+    "motivoRelevancia",
     "categoria",
     "tipoDocumento",
     "fornecedor",
@@ -254,6 +272,107 @@ function normalizarTexto(texto: string): string {
  * Não pretende substituir a IA. Serve apenas para conseguir
  * preencher alguns dados básicos e manter a aplicação funcional.
  */
+function relevanciaHeuristica(
+  input: AnaliseDocumentoInput,
+  ficha: FichaDocumento,
+): { relevante: boolean; motivoRelevancia: string } {
+  const base = normalizarTexto(`${input.nome}\n${input.texto ?? ""}`);
+
+  const termosPromocionais = [
+    "newsletter",
+    "promocao",
+    "promocional",
+    "oferta",
+    "desconto",
+    "black friday",
+    "sale",
+    "campaign",
+    "marketing",
+    "inspiracao de viagem",
+    "descubra",
+    "melhores destinos",
+  ];
+
+  const termosConcretos = [
+    "reserva",
+    "reservado",
+    "confirmacao",
+    "confirmation",
+    "booking",
+    "booking code",
+    "pnr",
+    "voucher",
+    "bilhete",
+    "bilheteira",
+    "boarding pass",
+    "check-in",
+    "check in",
+    "itinerario",
+    "voo",
+    "flight",
+    "comboio",
+    "train",
+    "autocarro",
+    "bus",
+    "transfer",
+    "hotel",
+    "check-out",
+    "check out",
+    "museu",
+    "museum",
+    "espetaculo",
+    "espectaculo",
+    "concerto",
+    "teatro",
+    "tour",
+    "excursao",
+    "atividade",
+    "atracao",
+    "entrada",
+    "ticket",
+    "ferry",
+    "aluguer de carro",
+    "rent a car",
+  ];
+
+  const promocional = termosPromocionais.some((termo) =>
+    base.includes(termo),
+  );
+
+  const concreto = termosConcretos.some((termo) =>
+    base.includes(termo),
+  );
+
+  const temDados =
+    Boolean(ficha.referencia) ||
+    Boolean(ficha.dataHora) ||
+    Boolean(ficha.local) ||
+    Boolean(ficha.origem) ||
+    Boolean(ficha.destino) ||
+    Boolean(ficha.numeroVoo) ||
+    Boolean(ficha.fornecedor) ||
+    Boolean(ficha.operador);
+
+  if (promocional && !concreto) {
+    return {
+      relevante: false,
+      motivoRelevancia: "Comunicação promocional sem uma reserva ou evento concreto.",
+    };
+  }
+
+  if (!concreto || !temDados) {
+    return {
+      relevante: false,
+      motivoRelevancia: "Não foram encontrados dados concretos de uma viagem ou evento.",
+    };
+  }
+
+  return {
+    relevante: true,
+    motivoRelevancia: "Foram encontrados dados concretos relacionados com uma viagem ou evento.",
+  };
+}
+
 function heuristica(input: AnaliseDocumentoInput): FichaDocumento {
   const base = `${input.nome}\n${input.texto ?? ""}`;
 
@@ -431,8 +550,13 @@ export const analisarDocumento =
           process.env["LOVABLE_API_KEY"];
 
         if (!apiKey) {
+          const ficha = heuristica(data);
+          const relevancia = relevanciaHeuristica(data, ficha);
+
           return {
-            ficha: heuristica(data),
+            ficha,
+            relevante: relevancia.relevante,
+            motivoRelevancia: relevancia.motivoRelevancia,
             porIa: false,
             nota:
               "Leitura automática simples. Reveja e complete os campos.",
@@ -461,7 +585,11 @@ export const analisarDocumento =
 
               "Não assumes que um email é uma reserva apenas porque contém palavras como booking, flight, hotel ou travel. Distingue emails promocionais, newsletters e publicidade de confirmações ou documentos efetivamente relacionados com uma viagem.",
 
-              "Se for um email promocional ou não houver uma viagem/reserva concreta, usa a categoria informacao ou outro e não inventes dados.",
+              "A primeira decisão é a relevância. Marca relevante=true apenas quando existir uma relação concreta e útil com uma viagem, reserva, bilhete, transporte, alojamento, espetáculo, museu, tour, atividade, documento ou informação específica. Publicidade, newsletters, campanhas, descontos, ofertas genéricas e inspiração de viagem sem uma reserva, bilhete, evento ou informação concreta devem ter relevante=false.",
+
+              "Quando relevante=false, não tentes transformar a mensagem numa reserva nem preencher campos por associação. Explica resumidamente em motivoRelevancia porque foi descartada.",
+
+              "Um email de um museu, espetáculo, concerto, tour, atividade ou transporte pode ser relevante mesmo sem a palavra reserva, desde que contenha uma entrada/bilhete, marcação, data, hora, local, referência, instruções ou outra informação concreta ligada a uma visita/viagem.",
 
               "Se houver uma reserva concreta, extrai todos os dados disponíveis e relevantes.",
 
@@ -542,7 +670,7 @@ export const analisarDocumento =
                     role: "system",
 
                     content:
-                      "És um assistente especializado em interpretar documentos e emails de viagem em português. Devolve apenas dados estruturados através da função indicada. Nunca inventes informação e distingue reservas reais de mensagens promocionais.",
+                      "És um assistente especializado em interpretar documentos e emails de viagem em português. Devolve apenas dados estruturados através da função indicada. Nunca inventes informação. Primeiro decide se o conteúdo é realmente relevante para uma viagem ou evento; publicidade e newsletters genéricas devem ser marcadas como irrelevantes.",
                   },
 
                   {
@@ -581,8 +709,13 @@ export const analisarDocumento =
           if (
             resposta.status === 429
           ) {
+            const ficha = heuristica(data);
+            const relevancia = relevanciaHeuristica(data, ficha);
+
             return {
-              ficha: heuristica(data),
+              ficha,
+              relevante: relevancia.relevante,
+              motivoRelevancia: relevancia.motivoRelevancia,
               porIa: false,
               nota:
                 "A análise automática está temporariamente indisponível. Reveja os dados apresentados.",
@@ -592,8 +725,13 @@ export const analisarDocumento =
           if (
             resposta.status === 402
           ) {
+            const ficha = heuristica(data);
+            const relevancia = relevanciaHeuristica(data, ficha);
+
             return {
-              ficha: heuristica(data),
+              ficha,
+              relevante: relevancia.relevante,
+              motivoRelevancia: relevancia.motivoRelevancia,
               porIa: false,
               nota:
                 "A análise automática não está disponível neste momento. Reveja e complete os campos.",
@@ -632,14 +770,25 @@ export const analisarDocumento =
             );
           }
 
+          const dadosIa = JSON.parse(args) as Record<string, unknown>;
           const ficha = limpar(
-            JSON.parse(args),
+            dadosIa,
             data.nome,
           );
+          const relevancia = relevanciaHeuristica(data, ficha);
+          const relevante =
+            dadosIa["relevante"] === true &&
+            relevancia.relevante;
+          const motivoRelevancia =
+            typeof dadosIa["motivoRelevancia"] === "string" &&
+            dadosIa["motivoRelevancia"].trim()
+              ? dadosIa["motivoRelevancia"].trim()
+              : relevancia.motivoRelevancia;
 
           return {
             ficha,
-
+            relevante,
+            motivoRelevancia,
             porIa: true,
 
             nota: ficha.porConfirmar
@@ -652,11 +801,14 @@ export const analisarDocumento =
             erro,
           );
 
+          const ficha = heuristica(data);
+          const relevancia = relevanciaHeuristica(data, ficha);
+
           return {
-            ficha: heuristica(data),
-
+            ficha,
+            relevante: relevancia.relevante,
+            motivoRelevancia: relevancia.motivoRelevancia,
             porIa: false,
-
             nota:
               "Não foi possível ler o conteúdo automaticamente. Complete ou confirme a ficha manualmente.",
           };
