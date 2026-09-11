@@ -48,7 +48,7 @@ function validar(data: unknown): AnaliseDocumentoInput {
   }
 
   const texto = d["texto"]
-    ? String(d["texto"]).slice(0, 12000)
+    ? String(d["texto"]).slice(0, 30000)
     : null;
 
   const imagemBruta = d["imagem"]
@@ -583,13 +583,19 @@ export const analisarDocumento =
 
               "O objetivo é identificar uma reserva, bilhete, serviço de transporte, alojamento, transfer, atividade, documento ou informação útil para uma viagem.",
 
-              "Não assumes que um email é uma reserva apenas porque contém palavras como booking, flight, hotel ou travel. Distingue emails promocionais, newsletters e publicidade de confirmações ou documentos efetivamente relacionados com uma viagem.",
+              "Não assumes que um email é uma reserva apenas porque contém palavras como booking, flight, hotel, travel, ticket, evento ou atividade. Distingue sempre entre uma comunicação genérica sobre algo que existe e uma comunicação que efetivamente diz respeito ao utilizador, à sua reserva, ao seu bilhete, à sua viagem ou a uma ação concreta que ele tenha realizado.",
 
-              "A primeira decisão é a relevância. Marca relevante=true apenas quando existir uma relação concreta e útil com uma viagem, reserva, bilhete, transporte, alojamento, espetáculo, museu, tour, atividade, documento ou informação específica. Publicidade, newsletters, campanhas, descontos, ofertas genéricas e inspiração de viagem sem uma reserva, bilhete, evento ou informação concreta devem ter relevante=false.",
+              "A primeira decisão é a relevância. Marca relevante=true apenas quando existir uma relação concreta, útil e suficientemente comprovada com uma viagem ou evento do utilizador. São relevantes: confirmações de reserva, compras, bilhetes, vouchers, cartões de embarque, itinerários, reservas de hotel, transportes, transfers, inscrições/entradas em eventos e comunicações operacionais dirigidas ao viajante. Também pode ser relevante uma informação específica de uma viagem já identificada, como alteração de horário, instruções de embarque, morada, check-in ou requisitos.",
+
+              "MUITO IMPORTANTE: não marques como relevante uma newsletter, publicidade, campanha, promoção, recomendação, artigo, convite genérico ou anúncio de um evento só porque contém uma data, um local, o nome de uma cidade, um museu, um espetáculo, um concerto, um transporte, um hotel, a palavra ticket ou outras palavras relacionadas com viagens. Um evento público com data e local, mas sem indicação de que o utilizador comprou, reservou, se inscreveu ou recebeu uma entrada, deve ser considerado informação genérica e relevante=false.",
+
+              "Não confundas 'há bilhetes disponíveis' com 'o utilizador tem um bilhete'. Não confundas 'este evento acontece em 11/09' com 'o utilizador vai ao evento em 11/09'. Não confundas uma oferta de hotel ou voo com uma reserva. Não inferir interesse ou participação apenas a partir do nome do destinatário, de uma data, de uma localização ou do nome de uma entidade.",
+
+              "Procura sinais fortes de relação com o utilizador: confirmação, reserva efetiva, compra, pagamento, voucher, código/PNR, número de reserva, bilhete emitido, boarding pass, passageiro/hóspede identificado, itinerário atribuído, lugar/assento, check-in, inscrição confirmada, alteração de uma reserva existente ou instruções operacionais para uma viagem concreta. Se estes sinais não existirem, sê conservador e marca relevante=false.",
 
               "Quando relevante=false, não tentes transformar a mensagem numa reserva nem preencher campos por associação. Explica resumidamente em motivoRelevancia porque foi descartada.",
 
-              "Um email de um museu, espetáculo, concerto, tour, atividade ou transporte pode ser relevante mesmo sem a palavra reserva, desde que contenha uma entrada/bilhete, marcação, data, hora, local, referência, instruções ou outra informação concreta ligada a uma visita/viagem.",
+              "Um email de um museu, espetáculo, concerto, tour, atividade ou transporte pode ser relevante mesmo sem a palavra reserva, mas deve existir evidência de que é uma entrada/compra/inscrição do utilizador ou uma comunicação operacional sobre uma atividade/serviço concreto que lhe diz respeito. Informação pública ou promocional sobre o evento, mesmo com data e local, não é suficiente.",
 
               "Se houver uma reserva concreta, extrai todos os dados disponíveis e relevantes.",
 
@@ -670,7 +676,7 @@ export const analisarDocumento =
                     role: "system",
 
                     content:
-                      "És um assistente especializado em interpretar documentos e emails de viagem em português. Devolve apenas dados estruturados através da função indicada. Nunca inventes informação. Primeiro decide se o conteúdo é realmente relevante para uma viagem ou evento; publicidade e newsletters genéricas devem ser marcadas como irrelevantes.",
+                      "És um assistente especializado em interpretar documentos e emails de viagem em português. Devolve apenas dados estruturados através da função indicada. Nunca inventes informação. Sê conservador na decisão de relevância: só deves mostrar emails que tenham uma relação concreta e comprovada com uma viagem, reserva, bilhete, evento ou serviço que diga respeito ao utilizador. Publicidade, newsletters, campanhas e anúncios genéricos devem ser marcados como irrelevantes. A existência de uma data, local ou entidade relacionada com viagens não prova que o utilizador tenha uma reserva ou participação.",
                   },
 
                   {
@@ -775,20 +781,21 @@ export const analisarDocumento =
             dadosIa,
             data.nome,
           );
-          const relevancia = relevanciaHeuristica(data, ficha);
-          const relevante =
-            dadosIa["relevante"] === true &&
-            relevancia.relevante;
+          const relevancia =
+            typeof dadosIa["relevante"] === "boolean"
+              ? dadosIa["relevante"]
+              : relevanciaHeuristica(data, ficha).relevante;
           const motivoRelevancia =
             typeof dadosIa["motivoRelevancia"] === "string" &&
             dadosIa["motivoRelevancia"].trim()
               ? dadosIa["motivoRelevancia"].trim()
-              : relevancia.motivoRelevancia;
+              : relevancia
+                ? "A IA identificou um elemento concreto relacionado com uma viagem ou evento."
+                : "A IA não identificou uma viagem, reserva, bilhete, evento ou informação concreta.";
 
           return {
             ficha,
-            relevante: dadosIa["relevante"] === true &&
-              relevancia.relevante,
+            relevante: relevancia,
             motivoRelevancia,
             porIa: true,
 
