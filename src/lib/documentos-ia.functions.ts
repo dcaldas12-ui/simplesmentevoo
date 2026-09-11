@@ -787,7 +787,8 @@ export const analisarDocumento =
 
           return {
             ficha,
-            relevante,
+            relevante: dadosIa["relevante"] === true &&
+              relevancia.relevante,
             motivoRelevancia,
             porIa: true,
 

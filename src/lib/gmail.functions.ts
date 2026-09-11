@@ -264,14 +264,14 @@ export const emailsDeViagem = createServerFn({ method: "GET" })
        * reserva, bilhete, evento ou informação concreta.
        */
       const consulta = encodeURIComponent(
-        'newer_than:180d (reserva OR reservado OR confirmacao OR confirmation OR booking OR "booking code" OR PNR OR voucher OR bilhete OR ticket OR itinerary OR itinerario OR flight OR voo OR boarding OR "check-in" OR hotel OR alojamento OR transfer OR train OR comboio OR bus OR autocarro OR ferry OR museu OR museum OR concerto OR concert OR espetaculo OR espectáculo OR teatro OR tour OR excursao OR atividade OR atividade OR attraction OR entrada)',
+        'newer_than:365d (reserva OR reservado OR confirmacao OR confirmation OR booking OR "booking code" OR PNR OR voucher OR bilhete OR ticket OR itinerary OR itinerario OR flight OR voo OR boarding OR "check-in" OR hotel OR alojamento OR transfer OR train OR comboio OR bus OR autocarro OR ferry OR museu OR museum OR concerto OR concert OR espetaculo OR espectáculo OR teatro OR tour OR excursao OR atividade OR attraction OR entrada)',
       );
 
       const lista = await callAsAppUser({
         gatewayBaseUrl: GATEWAY_BASE_URL,
         connectionAPIKey: chave,
         connectorId: CONNECTOR_ID,
-        path: `/gmail/v1/users/me/messages?maxResults=25&q=${consulta}`,
+        path: `/gmail/v1/users/me/messages?maxResults=100&q=${consulta}`,
       });
 
       if (!lista.ok) {
@@ -288,7 +288,7 @@ export const emailsDeViagem = createServerFn({ method: "GET" })
         texto: string;
       }> = [];
 
-      for (const m of messages.slice(0, 25)) {
+      for (const m of messages.slice(0, 100)) {
         if (!m.id) continue;
 
         const res = await callAsAppUser({
