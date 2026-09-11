@@ -235,16 +235,24 @@ function extrairPartes(payload: {
     .slice(0, 30000);
 }
 
-/** Devolve texto de emails recentes que podem conter elementos de viagem. */
+/** Devolve emails de viagem recentes, opcionalmente apenas depois de uma data. */
 export const emailsDeViagem = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
+  .inputValidator((input?: { desde?: string | null }) => ({
+    desde:
+      typeof input?.desde === "string" && input.desde.trim()
+        ? input.desde.trim()
+        : null,
+  }))
   .handler(
     async ({
+      data,
       context,
     }): Promise<Array<{ id: string; assunto: string; texto: string }>> => {
       const { getConnectionKeyForUser } = await import(
         "@/server/appUserConnections.server"
       );
+
       const chave = await getConnectionKeyForUser(
         context.userId,
         CONNECTOR_ID,
@@ -258,14 +266,14 @@ export const emailsDeViagem = createServerFn({ method: "GET" })
         "@/integrations/lovable/appUserConnector"
       );
 
-      /*
-       * Procuramos candidatos de forma relativamente ampla. A filtragem
-       * definitiva é feita pela IA, que decide se existe realmente uma
-       * reserva, bilhete, evento ou informação concreta.
-       */
-      const consulta = encodeURIComponent(
-        'newer_than:365d (reserva OR reservado OR confirmacao OR confirmation OR booking OR "booking code" OR PNR OR voucher OR bilhete OR ticket OR itinerary OR itinerario OR flight OR voo OR boarding OR "check-in" OR hotel OR alojamento OR transfer OR train OR comboio OR bus OR autocarro OR ferry OR museu OR museum OR concerto OR concert OR espetaculo OR espectáculo OR teatro OR tour OR excursao OR atividade OR attraction OR entrada)',
-      );
+      const termos =
+        '(reserva OR reservado OR confirmacao OR confirmation OR booking OR "booking code" OR PNR OR voucher OR bilhete OR ticket OR itinerary OR itinerario OR flight OR voo OR boarding OR "check-in" OR hotel OR alojamento OR transfer OR train OR comboio OR bus OR autocarro OR ferry OR museu OR museum OR concerto OR concert OR espetaculo OR espectáculo OR teatro OR tour OR excursao OR atividade OR attraction OR entrada)';
+
+      const filtroData = data.desde
+        ? `after:${Math.floor(new Date(data.desde).getTime() / 1000)}`
+        : "newer_than:365d";
+
+      const consulta = encodeURIComponent(`${filtroData} ${termos}`);
 
       const lista = await callAsAppUser({
         gatewayBaseUrl: GATEWAY_BASE_URL,
@@ -302,6 +310,7 @@ export const emailsDeViagem = createServerFn({ method: "GET" })
 
         const msg = (await res.json()) as {
           snippet?: string;
+          id?: string;
           payload?: {
             mimeType?: string;
             body?: { data?: string };
@@ -319,9 +328,7 @@ export const emailsDeViagem = createServerFn({ method: "GET" })
             (h) => h.name?.toLowerCase() === "subject",
           )?.value ?? "";
 
-        const corpo = msg.payload
-          ? extrairPartes(msg.payload)
-          : "";
+        const corpo = msg.payload ? extrairPartes(msg.payload) : "";
 
         const texto = [
           assunto,
