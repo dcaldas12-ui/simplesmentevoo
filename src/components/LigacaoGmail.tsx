@@ -9,11 +9,9 @@ import { useSession } from "@/lib/auth";
 import {
   concluirLigacaoGmail,
   desligarGmail,
-  emailsDeViagem,
   estadoGmail,
   iniciarLigacaoGmail,
 } from "@/lib/gmail.functions";
-import { eventosDeTexto, type EventoEncontrado } from "@/lib/eventos-telemovel";
 import { useIdioma } from "@/lib/i18n";
 
 const CONNECTOR_ID = "google_mail";
