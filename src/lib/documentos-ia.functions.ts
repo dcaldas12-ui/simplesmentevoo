@@ -278,292 +278,125 @@ function relevanciaHeuristica(
 ): { relevante: boolean; motivoRelevancia: string } {
   const base = normalizarTexto(`${input.nome}\n${input.texto ?? ""}`);
 
-  const termosPromocionais = [
-    "newsletter",
-    "promocao",
-    "promocional",
-    "oferta",
-    "desconto",
-    "black friday",
-    "sale",
-    "campaign",
-    "marketing",
-    "inspiracao de viagem",
-    "descubra",
-    "melhores destinos",
-    "inspire-se",
-    "inspire se",
-  ];
+  const promocional = [
+    "newsletter", "unsubscribe", "subscricao", "promocao", "promocional",
+    "oferta", "desconto", "black friday", "sale", "campaign", "marketing",
+    "inspiracao de viagem", "descubra", "melhores destinos", "travel deals",
+    "special offer", "book now", "reserve agora", "compre agora",
+  ].some((termo) => base.includes(termo));
 
-  const termosViagem = [
-    "voo",
-    "flight",
-    "companhia aerea",
-    "airline",
-    "hotel",
-    "alojamento",
-    "hospedagem",
-    "comboio",
-    "train",
-    "autocarro",
-    "bus",
-    "transfer",
-    "ferry",
-    "bilhete",
-    "ticket",
-    "boarding pass",
-    "cartao de embarque",
-    "itinerario",
-    "itinerary",
-    "reserva",
-    "reservation",
-    "booking",
-    "pnr",
-    "voucher",
-    "check-in",
-    "check in",
-    "check-out",
-    "check out",
-    "passageiro",
-    "passenger",
-    "hospede",
-    "guest",
-  ];
+  const temConfirmacao = [
+    "reserva confirmada", "reserva confirmado", "booking confirmed",
+    "reservation confirmed", "confirmation number", "booking reference",
+    "booking code", "reservation number", "confirmation code", "pnr",
+    "booking reference number", "confirmed booking", "reserva nº",
+    "reserva n.", "numero da reserva", "referencia da reserva",
+    "bilhete emitido", "ticket issued", "boarding pass", "cartao de embarque",
+    "check-in confirmado", "check in confirmado", "pagamento recebido",
+    "payment received", "your reservation", "your booking", "your ticket",
+    "your flight", "your hotel reservation", "your transfer",
+    "a sua reserva", "a sua viagem", "o seu voo", "o seu bilhete",
+  ].some((termo) => base.includes(termo));
 
-  const termosFortes = [
-    "confirmacao de reserva",
-    "confirmacao da reserva",
-    "reserva confirmada",
-    "booking confirmation",
-    "reservation confirmation",
-    "booking reference",
-    "reservation number",
-    "confirmation number",
-    "booking code",
-    "codigo da reserva",
-    "numero da reserva",
-    "referencia da reserva",
-    "booking reference",
-    "pnr",
-    "voucher",
-    "boarding pass",
-    "cartao de embarque",
-    "bilhete emitido",
-    "bilhete confirmado",
-    "ticket issued",
-    "ticket confirmation",
-    "your booking",
-    "your reservation",
-    "your flight",
-    "seu voo",
-    "o seu voo",
-    "sua reserva",
-    "a sua reserva",
-    "passageiro",
-    "passenger",
-    "hospede",
-    "guest",
-    "check-in",
-    "check in",
-    "check-out",
-    "check out",
-    "alteracao do voo",
-    "alteracao de voo",
-    "alteracao da reserva",
-    "alteracao de reserva",
-    "cancelamento do voo",
-    "cancelamento da reserva",
-    "voo cancelado",
-    "voo atrasado",
-    "flight cancelled",
-    "flight delayed",
-    "gate",
-    "porta de embarque",
-    "hora de embarque",
-    "embarque",
-  ];
-
-  const termosReservaFracos = [
-    "reserva",
-    "reservado",
-    "reservada",
-    "confirmacao",
-    "confirmation",
-    "booking",
-  ];
-
-  const promocional = termosPromocionais.some((termo) =>
-    base.includes(termo),
+  const temReferencia = Boolean(ficha.referencia?.trim());
+  const temCodigo = Boolean(ficha.codigo?.trim());
+  const temData = Boolean(ficha.dataHora?.trim());
+  const temFornecedor = Boolean(
+    ficha.fornecedor?.trim() || ficha.operador?.trim() || ficha.companhia?.trim(),
   );
-
-  const dominioViagem = termosViagem.some((termo) =>
-    base.includes(termo),
+  const temOrigemDestino = Boolean(
+    ficha.origem?.trim() && ficha.destino?.trim(),
   );
-
-  const sinalForte = termosFortes.some((termo) =>
-    base.includes(termo),
-  );
-
-  const sinalReservaFraco = termosReservaFracos.some((termo) =>
-    base.includes(termo),
-  );
-
-  const referencia = Boolean(ficha.referencia?.trim());
-  const dataHora = Boolean(ficha.dataHora?.trim());
-  const dataHoraFim = Boolean(ficha.dataHoraFim?.trim());
-  const numeroVoo = Boolean(ficha.numeroVoo?.trim());
-  const origem = Boolean(ficha.origem?.trim());
-  const destino = Boolean(ficha.destino?.trim());
-  const local = Boolean(ficha.local?.trim());
-  const morada = Boolean(ficha.morada?.trim());
-  const fornecedor = Boolean(ficha.fornecedor?.trim());
-  const operador = Boolean(ficha.operador?.trim());
-  const codigo = Boolean(ficha.codigo?.trim());
-  const passageiro = Boolean(ficha.passageiro?.trim());
-
-  const temData = dataHora || dataHoraFim;
-  const temRota = origem && destino;
-  const temIdentificador = referencia || codigo || numeroVoo;
-
-  /*
-   * A heurística é deliberadamente conservadora.
-   * Uma palavra como "hotel", "ticket", "flight" ou "reserva" não prova
-   * que o email diga respeito ao utilizador. É necessária uma combinação
-   * de sinais de uma reserva/serviço concreto e dados estruturados.
-   */
-  if (promocional && !sinalForte) {
-    return {
-      relevante: false,
-      motivoRelevancia:
-        "Comunicação promocional, newsletter ou publicidade sem uma operação concreta.",
-    };
-  }
-
-  if (!dominioViagem) {
-    return {
-      relevante: false,
-      motivoRelevancia:
-        "Não foram encontrados sinais suficientes de uma viagem ou serviço de viagem.",
-    };
-  }
-
-  const contextoReserva =
-    sinalForte ||
-    (sinalReservaFraco && (referencia || numeroVoo || passageiro));
-
-  if (!contextoReserva) {
-    return {
-      relevante: false,
-      motivoRelevancia:
-        "Há referências a viagens, mas não existe evidência suficiente de uma reserva, bilhete ou serviço concreto do utilizador.",
-    };
-  }
-
+  const temNumeroVoo = Boolean(ficha.numeroVoo?.trim());
   const categoria = ficha.categoria;
 
-  if (categoria === "voo") {
-    const evidenciaVoo =
-      numeroVoo ||
-      temRota ||
-      (temData && fornecedor) ||
-      (temIdentificador && (sinalForte || passageiro));
+  const sinaisTransacionais =
+    temConfirmacao ||
+    temReferencia ||
+    temCodigo;
 
-    if (!evidenciaVoo) {
+  if (promocional && !sinaisTransacionais) {
+    return {
+      relevante: false,
+      motivoRelevancia: "Comunicação promocional sem evidência de uma reserva ou compra do utilizador.",
+    };
+  }
+
+  if (categoria === "voo") {
+    const vooConcreto =
+      (temNumeroVoo && temData) ||
+      (temOrigemDestino && temData && temFornecedor) ||
+      (temReferencia && temFornecedor);
+
+    if (!vooConcreto) {
       return {
         relevante: false,
-        motivoRelevancia:
-          "Foram encontradas referências a voo, mas faltam dados concretos que confirmem uma viagem.",
+        motivoRelevancia: "Não há evidência suficiente de um voo reservado ou atribuído ao utilizador.",
       };
     }
   } else if (categoria === "hotel") {
-    const evidenciaHotel =
-      (temData && (fornecedor || local || morada)) ||
-      (referencia && (fornecedor || local)) ||
-      (sinalForte && (fornecedor || local));
+    const hotelConcreto =
+      (temReferencia && temFornecedor) ||
+      (temConfirmacao && temData && temFornecedor) ||
+      (temData && Boolean(ficha.local?.trim()) && temFornecedor && sinaisTransacionais);
 
-    if (!evidenciaHotel) {
+    if (!hotelConcreto) {
       return {
         relevante: false,
-        motivoRelevancia:
-          "Foram encontradas referências a alojamento, mas não há evidência suficiente de uma reserva concreta.",
+        motivoRelevancia: "Não há evidência suficiente de uma reserva de alojamento concreta.",
       };
     }
   } else if (
     categoria === "transporte" ||
-    categoria === "transfer"
+    categoria === "transfer" ||
+    categoria === "bilhete"
   ) {
-    const evidenciaTransporte =
-      (temRota && temData) ||
-      (temIdentificador && (fornecedor || operador)) ||
-      (sinalForte && (temData || temRota || fornecedor || operador));
+    const servicoConcreto =
+      (temReferencia && temFornecedor) ||
+      (temCodigo && temFornecedor) ||
+      (temConfirmacao && temData && temFornecedor);
 
-    if (!evidenciaTransporte) {
+    if (!servicoConcreto) {
       return {
         relevante: false,
-        motivoRelevancia:
-          "Foram encontradas referências a transporte, mas não há dados suficientes de um serviço concreto.",
-      };
-    }
-  } else if (categoria === "bilhete") {
-    const evidenciaBilhete =
-      (temIdentificador && (local || fornecedor)) ||
-      (temData && (local || fornecedor)) ||
-      (sinalForte && (temData || local || referencia || codigo));
-
-    if (!evidenciaBilhete) {
-      return {
-        relevante: false,
-        motivoRelevancia:
-          "Foram encontradas referências a bilhetes ou atividades, mas não há evidência suficiente de uma compra ou entrada do utilizador.",
+        motivoRelevancia: "Não há evidência suficiente de uma reserva, compra ou bilhete concreto.",
       };
     }
   } else if (categoria === "documento") {
-    const evidenciaDocumento =
-      temIdentificador ||
-      (sinalForte && (temData || fornecedor || passageiro));
+    const documentoConcreto =
+      temReferencia ||
+      temCodigo ||
+      temConfirmacao ||
+      (temFornecedor && temData && sinaisTransacionais);
 
-    if (!evidenciaDocumento) {
+    if (!documentoConcreto) {
       return {
         relevante: false,
-        motivoRelevancia:
-          "O conteúdo não apresenta dados suficientes para ser tratado como documento de viagem.",
+        motivoRelevancia: "Não há evidência suficiente de um documento de viagem concreto.",
       };
     }
   } else if (categoria === "informacao") {
-    const evidenciaInformacao =
-      sinalForte &&
-      (temData ||
-        temRota ||
-        local ||
-        fornecedor ||
-        operador ||
-        temIdentificador);
+    const informacaoConcreta =
+      temConfirmacao ||
+      temReferencia ||
+      (temData && temFornecedor && sinaisTransacionais);
 
-    if (!evidenciaInformacao) {
+    if (!informacaoConcreta) {
       return {
         relevante: false,
-        motivoRelevancia:
-          "A mensagem contém referências a viagem, mas não informação operacional suficientemente específica.",
+        motivoRelevancia: "A mensagem parece conter informação genérica, sem ligação comprovada a uma viagem do utilizador.",
       };
     }
   } else {
-    const evidenciaGenerica =
-      temIdentificador ||
-      (sinalForte && (temData || local || fornecedor || operador));
-
-    if (!evidenciaGenerica) {
-      return {
-        relevante: false,
-        motivoRelevancia:
-          "Não foram encontrados dados suficientes de um serviço ou evento concreto.",
-      };
-    }
+    return {
+      relevante: false,
+      motivoRelevancia: "Não foi possível comprovar uma relação concreta com uma reserva, bilhete ou serviço de viagem.",
+    };
   }
 
   return {
     relevante: true,
-    motivoRelevancia:
-      "Foram encontrados sinais de uma reserva, bilhete, serviço ou comunicação operacional concreta.",
+    motivoRelevancia: "Foram encontrados sinais concretos de uma reserva, compra, bilhete ou serviço de viagem.",
   };
 }
 
@@ -975,20 +808,16 @@ export const analisarDocumento =
             dadosIa,
             data.nome,
           );
-          const relevanciaHeuristicaResultado =
-            relevanciaHeuristica(data, ficha);
-
-          const relevancia =
-            dadosIa["relevante"] === true &&
-            relevanciaHeuristicaResultado.relevante;
-
-          const motivoRelevancia =
-            !relevancia && !relevanciaHeuristicaResultado.relevante
-              ? relevanciaHeuristicaResultado.motivoRelevancia
-              : typeof dadosIa["motivoRelevancia"] === "string" &&
-                  dadosIa["motivoRelevancia"].trim()
-                ? dadosIa["motivoRelevancia"].trim()
-                : "A IA identificou um elemento concreto relacionado com uma viagem ou evento.";
+          const relevanciaLocal = relevanciaHeuristica(data, ficha);
+          const decisaoIa = dadosIa["relevante"] === true;
+          const relevancia = decisaoIa && relevanciaLocal.relevante;
+          const motivoIa =
+            typeof dadosIa["motivoRelevancia"] === "string"
+              ? dadosIa["motivoRelevancia"].trim()
+              : "";
+          const motivoRelevancia = relevancia
+            ? motivoIa || relevanciaLocal.motivoRelevancia
+            : relevanciaLocal.motivoRelevancia;
 
           return {
             ficha,
