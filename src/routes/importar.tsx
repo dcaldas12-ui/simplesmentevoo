@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { CalendarClock, CheckCircle2, ShieldCheck, Upload } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
 import { AppShell } from "@/components/AppShell";
@@ -20,6 +20,7 @@ import {
   type EventoEncontrado,
 } from "@/lib/eventos-telemovel";
 import { useIdioma } from "@/lib/i18n";
+import { supabase } from "@/integrations/supabase/client";
 
 export const Route = createFileRoute("/importar")({
   head: () => ({
@@ -58,10 +59,95 @@ function Importar() {
   const { session } = useSession();
 
   const [autorizou, setAutorizou] = useState(false);
+  const [aCarregarConsentimento, setACarregarConsentimento] = useState(true);
   const [texto, setTexto] = useState("");
   const [eventos, setEventos] = useState<EventoEncontrado[] | null>(null);
   const [selecionados, setSelecionados] = useState<Record<string, boolean>>({});
   const [aGuardar, setAGuardar] = useState(false);
+
+  useEffect(() => {
+    let cancelado = false;
+
+    async function carregarConsentimento() {
+      if (!session?.user.id) {
+        if (!cancelado) {
+          setAutorizou(false);
+          setACarregarConsentimento(false);
+        }
+        return;
+      }
+
+      setACarregarConsentimento(true);
+
+      const { data: dados, error } = await supabase
+        .from("preferencias_importacao" as any)
+        .select("consentimento_analise_automatica")
+        .eq("user_id", session.user.id)
+        .maybeSingle();
+
+      if (cancelado) {
+        return;
+      }
+
+      if (error) {
+        console.error("Erro ao carregar consentimento de importação:", error);
+        setAutorizou(false);
+      } else {
+        const data = dados as
+          | { consentimento_analise_automatica?: boolean }
+          | null;
+
+        setAutorizou(data?.consentimento_analise_automatica === true);
+      }
+
+      setACarregarConsentimento(false);
+    }
+
+    void carregarConsentimento();
+
+    return () => {
+      cancelado = true;
+    };
+  }, [session?.user.id]);
+
+  async function alterarConsentimento(valor: boolean) {
+    if (!session?.user.id) {
+      setAutorizou(valor);
+      return;
+    }
+
+    const estadoAnterior = autorizou;
+    setAutorizou(valor);
+
+    const { error } = await supabase
+      .from("preferencias_importacao" as any)
+      .upsert(
+        {
+          user_id: session.user.id,
+          consentimento_analise_automatica: valor,
+          consentimento_analise_automatica_em: valor
+            ? new Date().toISOString()
+            : null,
+          updated_at: new Date().toISOString(),
+        },
+        {
+          onConflict: "user_id",
+        },
+      );
+
+    if (error) {
+      console.error("Erro ao guardar consentimento de importação:", error);
+      setAutorizou(estadoAnterior);
+      toast.error("Não foi possível guardar a sua autorização.");
+      return;
+    }
+
+    toast.success(
+      valor
+        ? "Autorização guardada."
+        : "Autorização para análise automática desativada.",
+    );
+  }
 
   function receber(encontrados: EventoEncontrado[]) {
     setEventos(encontrados);
@@ -159,9 +245,10 @@ function Importar() {
                 <Checkbox
                   id="consentimento-importar"
                   checked={autorizou}
-                  onCheckedChange={(valor) =>
-                    setAutorizou(valor === true)
-                  }
+                  disabled={aCarregarConsentimento}
+                  onCheckedChange={(valor) => {
+                    void alterarConsentimento(valor === true);
+                  }}
                   className="mt-0.5"
                 />
 
@@ -200,7 +287,7 @@ function Importar() {
             <Button
               asChild
               className="mt-4 h-11 w-full"
-              disabled={!autorizou}
+              disabled={!autorizou || aCarregarConsentimento}
             >
               <label>
                 <Upload className="size-4" />
@@ -210,7 +297,7 @@ function Importar() {
                   type="file"
                   accept=".ics,text/calendar"
                   className="sr-only"
-                  disabled={!autorizou}
+                  disabled={!autorizou || aCarregarConsentimento}
                   onChange={(e) => {
                     const ficheiro = e.target.files?.[0];
 
@@ -237,7 +324,7 @@ function Importar() {
             <Textarea
               value={texto}
               onChange={(e) => setTexto(e.target.value)}
-              disabled={!autorizou}
+              disabled={!autorizou || aCarregarConsentimento}
               rows={4}
               className="mt-3"
               aria-label={t("importar.colar")}
@@ -246,7 +333,11 @@ function Importar() {
             <Button
               variant="outline"
               className="mt-3 h-11 w-full"
-              disabled={!autorizou || !texto.trim()}
+              disabled={
+                !autorizou ||
+                aCarregarConsentimento ||
+                !texto.trim()
+              }
               onClick={() => receber(eventosDeTexto(texto))}
             >
               {t("importar.analisar")}
@@ -254,10 +345,7 @@ function Importar() {
           </div>
         </div>
 
-        <LigacaoGmail
-          autorizou={autorizou}
-          aoEncontrar={receber}
-        />
+        <LigacaoGmail />
 
         {eventos ? (
           <section className="mt-8">
