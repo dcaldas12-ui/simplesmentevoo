@@ -775,15 +775,14 @@ export const analisarDocumento =
             dadosIa,
             data.nome,
           );
-          const relevante =
-            typeof dadosIa["relevante"] === "boolean"
-              ? dadosIa["relevante"]
-              : relevanciaHeuristica(data, ficha).relevante;
-          const motivoRelevancia =
-            typeof dadosIa["motivoRelevancia"] === "string" &&
-            dadosIa["motivoRelevancia"].trim()
-              ? dadosIa["motivoRelevancia"].trim()
-              : relevanciaHeuristica(data, ficha).motivoRelevancia;
+          const relevanciaFiltro = relevanciaHeuristica(data, ficha);
+          const relevante = relevanciaFiltro.relevante;
+          const motivoRelevancia = relevante
+            ? (typeof dadosIa["motivoRelevancia"] === "string" &&
+              dadosIa["motivoRelevancia"].trim()
+                ? dadosIa["motivoRelevancia"].trim()
+                : relevanciaFiltro.motivoRelevancia)
+            : relevanciaFiltro.motivoRelevancia;
 
           return {
             ficha,
