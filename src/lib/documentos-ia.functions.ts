@@ -86,6 +86,22 @@ const campoTexto = (description: string) => ({
   description,
 });
 
+const ESQUEMA_RELEVANCIA = {
+  type: "object",
+  properties: {
+    relevante: {
+      type: "boolean",
+      description:
+        "True APENAS quando o próprio email/documento é uma comunicação concreta, personalizada ou transacional sobre uma viagem específica do utilizador. Deve ser false para newsletters, notícias, artigos, podcasts, publicidade, campanhas, promoções, descontos, ofertas genéricas e inspiração de viagem, mesmo que mencionem hotéis, voos, destinos ou viagens.",
+    },
+    motivoRelevancia: campoTexto(
+      "Explicação muito curta. Se true, identifica a evidência concreta encontrada, como confirmação de reserva, bilhete, voucher, datas de check-in/check-out, referência de reserva ou outro serviço efetivamente marcado. Se false, explica que é conteúdo genérico, promocional ou sem uma viagem/serviço específico.",
+    ),
+  },
+  required: ["relevante", "motivoRelevancia"],
+  additionalProperties: false,
+} as const;
+
 const ESQUEMA = {
   type: "object",
 
@@ -465,141 +481,46 @@ export const analisarDocumento =
           };
         }
 
-        const conteudo:
-          Array<Record<string, unknown>> = [
-          {
-            type: "text",
+        const textoBase = [
+          `Nome do documento/email: ${data.nome}`,
+          data.texto
+            ? `Conteúdo disponível:\n${data.texto}`
+            : "",
+          `Data de hoje: ${new Date()
+            .toISOString()
+            .slice(0, 10)}.`,
+        ]
+          .filter(Boolean)
+          .join("\n");
 
-            text: [
-              `Nome do documento/email: ${data.nome}`,
-
-              data.texto
-                ? `Conteúdo disponível:\n${data.texto}`
-                : "",
-
-              `Data de hoje: ${new Date()
-                .toISOString()
-                .slice(0, 10)}.`,
-
-              "Analisa este conteúdo como um documento ou email relacionado com uma viagem.",
-
-              "O objetivo é identificar uma reserva, bilhete, serviço de transporte, alojamento, transfer, atividade, documento ou informação útil para uma viagem.",
-
-              "Não assumes que um email é uma reserva apenas porque contém palavras como booking, flight, hotel ou travel. Distingue emails promocionais, newsletters e publicidade de confirmações ou documentos efetivamente relacionados com uma viagem.",
-
-              "A primeira decisão é a relevância. Marca relevante=true apenas quando existir uma relação concreta e útil com uma viagem, reserva, bilhete, transporte, alojamento, espetáculo, museu, tour, atividade, documento ou informação específica. Publicidade, newsletters, campanhas, descontos, ofertas genéricas e inspiração de viagem sem uma reserva, bilhete, evento ou informação concreta devem ter relevante=false.",
-
-              "Quando relevante=false, não tentes transformar a mensagem numa reserva nem preencher campos por associação. Explica resumidamente em motivoRelevancia porque foi descartada.",
-
-              "Um email de um museu, espetáculo, concerto, tour, atividade ou transporte pode ser relevante mesmo sem a palavra reserva, desde que contenha uma entrada/bilhete, marcação, data, hora, local, referência, instruções ou outra informação concreta ligada a uma visita/viagem.",
-
-              "Se houver uma reserva concreta, extrai todos os dados disponíveis e relevantes.",
-
-              "Para um voo: passageiro, companhia, número do voo, origem, destino, aeroportos IATA, data e hora de partida, chegada, hora de embarque, terminal, porta, assento, grupo de embarque, bagagem, referência/PNR e código QR ou código de barras quando estiver disponível.",
-
-              "Para um hotel: nome do alojamento, fornecedor, hóspede, morada, check-in, check-out, referência, quarto/tipologia, condições e contacto.",
-
-              "Para um transporte: operador, fornecedor, passageiro, origem, destino, data/hora de partida e chegada, referência, lugar e outras informações disponíveis.",
-
-              "Para um transfer: fornecedor/operador, passageiro, local de recolha, destino, data/hora, referência, morada e contacto.",
-
-              "Para um bilhete ou atividade: entidade, passageiro/titular, local, data/hora, data/hora de fim, referência, código de entrada e condições.",
-
-              "Para documentos de viagem: identifica o tipo de documento, entidade emissora, titular, referência, datas e condições relevantes.",
-
-              "Para informações: extrai apenas informações úteis para a viagem, como horários, moradas, instruções, regras, contactos, requisitos ou procedimentos.",
-
-              "Se existirem várias datas, distingue a data de emissão/envio da data efetiva da viagem.",
-
-              "Se existirem várias referências ou códigos, identifica como referência o código principal da reserva e coloca códigos adicionais nas condições quando forem relevantes.",
-
-              "Nunca inventes nomes, datas, horas, códigos, aeroportos, números de voo ou outros dados.",
-
-              "Usa strings vazias quando um campo não estiver indicado.",
-
-              "Quando um valor for apenas inferido, ambíguo ou pouco legível, coloca o nome desse campo em porConfirmar.",
-
-              "Se o ano não estiver indicado numa data, considera o contexto do documento/email e assinala a data em porConfirmar em vez de inventar um ano com confiança.",
-
-              "Responde exclusivamente através da função registar_ficha.",
-            ]
-              .filter(Boolean)
-              .join("\n"),
-          },
-        ];
-
-        if (data.imagem) {
-          conteudo.push({
-            type: "image_url",
-            image_url: {
-              url: data.imagem,
-            },
-          });
-        }
-
-        if (data.pdf) {
-          conteudo.push({
-            type: "file",
-
-            file: {
-              filename: data.nome.endsWith(".pdf")
-                ? data.nome
-                : `${data.nome}.pdf`,
-
-              file_data: data.pdf,
-            },
-          });
-        }
-
-        try {
+        async function chamarIA(
+          messages: Array<Record<string, unknown>>,
+          schema: Record<string, unknown>,
+        ): Promise<Record<string, unknown>> {
           const resposta = await fetch(
             "https://ai.gateway.lovable.dev/v1/chat/completions",
             {
               method: "POST",
-
               headers: {
                 Authorization: `Bearer ${apiKey}`,
-                "Content-Type":
-                  "application/json",
+                "Content-Type": "application/json",
               },
-
               body: JSON.stringify({
-                model:
-                  "google/gemini-2.5-flash",
-
-                messages: [
-                  {
-                    role: "system",
-
-                    content:
-                      "És um assistente especializado em interpretar documentos e emails de viagem em português. Devolve apenas dados estruturados através da função indicada. Nunca inventes informação. Primeiro decide se o conteúdo é realmente relevante para uma viagem ou evento; publicidade e newsletters genéricas devem ser marcadas como irrelevantes.",
-                  },
-
-                  {
-                    role: "user",
-                    content: conteudo,
-                  },
-                ],
-
+                model: "google/gemini-2.5-flash",
+                messages,
                 tools: [
                   {
                     type: "function",
-
                     function: {
                       name: "registar_ficha",
-
                       description:
-                        "Regista os dados estruturados extraídos de um documento ou email de viagem.",
-
-                      parameters:
-                        ESQUEMA,
+                        "Regista o resultado estruturado da análise.",
+                      parameters: schema,
                     },
                   },
                 ],
-
                 tool_choice: {
                   type: "function",
-
                   function: {
                     name: "registar_ficha",
                   },
@@ -609,27 +530,11 @@ export const analisarDocumento =
           );
 
           if (resposta.status === 429) {
-            return {
-              ficha: heuristica(data),
-              relevante: false,
-              motivoRelevancia:
-                "A análise automática está temporariamente indisponível.",
-              porIa: false,
-              nota:
-                "Não foi possível concluir a análise automática. O email não será apresentado como descoberta.",
-            };
+            throw new Error("429");
           }
 
           if (resposta.status === 402) {
-            return {
-              ficha: heuristica(data),
-              relevante: false,
-              motivoRelevancia:
-                "A análise automática não está disponível neste momento.",
-              porIa: false,
-              nota:
-                "Não foi possível concluir a análise automática. O email não será apresentado como descoberta.",
-            };
+            throw new Error("402");
           }
 
           if (!resposta.ok) {
@@ -664,40 +569,168 @@ export const analisarDocumento =
             );
           }
 
-          const dadosIa = JSON.parse(args) as Record<string, unknown>;
-          const ficha = limpar(
-            dadosIa,
-            data.nome,
+          return JSON.parse(args) as Record<string, unknown>;
+        }
+
+        /*
+         * ETAPA 1 — FILTRO SEMÂNTICO
+         *
+         * Esta chamada não tenta extrair uma ficha de viagem.
+         * A única pergunta é: este email é realmente uma comunicação
+         * concreta sobre uma viagem/serviço específico do utilizador?
+         */
+        try {
+          const filtroIa = await chamarIA(
+            [
+              {
+                role: "system",
+                content:
+                  [
+                    "És um classificador rigoroso de emails de viagens.",
+                    "Nesta etapa NÃO estás a extrair dados de uma viagem. Só decides se o email deve entrar na aplicação.",
+                    "Marca relevante=true SOMENTE quando o próprio email contém evidência concreta de uma viagem, reserva, bilhete, voucher, marcação ou serviço específico do utilizador.",
+                    "Exemplos que DEVEM ser true: confirmação de reserva de hotel; confirmação de Booking; reserva de voo; bilhete de avião; voucher; reserva de comboio/autocarro/barco; aluguer de carro já reservado; transfer reservado; bilhete de museu; entrada de espetáculo; reserva de tour ou atividade; alteração/cancelamento de uma reserva existente; instruções concretas associadas a uma reserva.",
+                    "Um email de confirmação de hotel, com nome do hóspede, datas de check-in/check-out, número de reserva, preço, quarto ou instruções de chegada, é claramente true.",
+                    "Exemplos que DEVEM ser false: newsletters; notícias; artigos; podcasts; blogs; publicidade; campanhas comerciais; promoções; descontos; ofertas genéricas; emails de marketing de hotéis/companhias aéreas/agências; sugestões de destinos; inspiração para viajar; conteúdos editoriais sobre viagens.",
+                    "A simples presença das palavras hotel, flight, voo, booking, travel, reservation, trip ou aeroporto NÃO torna o email relevante.",
+                    "Também NÃO é suficiente o email ser enviado por uma empresa de viagens. Tem de existir uma viagem ou serviço concreto associado ao utilizador.",
+                    "Se houver dúvida entre uma comunicação concreta e conteúdo genérico/promocional, marca false.",
+                    "Não inferir uma reserva a partir de publicidade ou de frases genéricas.",
+                    "Responde exclusivamente através da função indicada.",
+                  ].join("\n"),
+              },
+              {
+                role: "user",
+                content: textoBase,
+              },
+            ],
+            ESQUEMA_RELEVANCIA,
           );
 
-          /*
-           * A IA é a autoridade final sobre relevância quando responde.
-           * Não voltamos a aplicar uma heurística lexical por cima da decisão,
-           * porque isso criava falsos positivos e podia contrariar a análise
-           * semântica do email.
-           */
-          const relevante = dadosIa["relevante"] === true;
-          const motivoRelevancia =
-            typeof dadosIa["motivoRelevancia"] === "string" &&
-            dadosIa["motivoRelevancia"].trim()
-              ? dadosIa["motivoRelevancia"].trim()
+          const relevante =
+            filtroIa["relevante"] === true;
+
+          const motivo =
+            typeof filtroIa["motivoRelevancia"] === "string" &&
+            filtroIa["motivoRelevancia"].trim()
+              ? filtroIa["motivoRelevancia"].trim()
               : relevante
-                ? "A análise identificou uma informação concreta de viagem."
-                : "A análise não identificou uma informação concreta de viagem.";
+                ? "Foi identificada uma comunicação concreta sobre uma viagem ou serviço."
+                : "Não foi identificada uma viagem ou serviço específico.";
 
-          return {
-            ficha,
-            relevante,
-            motivoRelevancia,
-            porIa: true,
+          if (!relevante) {
+            return {
+              ficha: heuristica(data),
+              relevante: false,
+              motivoRelevancia: motivo,
+              porIa: true,
+              nota:
+                "O email foi analisado por IA e considerado irrelevante para uma viagem.",
+            };
+          }
 
-            nota: ficha.porConfirmar
-              ? "Dados lidos automaticamente. Alguns campos precisam de confirmação."
-              : "Dados lidos automaticamente. Confirme antes de guardar.",
-          };
+          /*
+           * ETAPA 2 — EXTRAÇÃO
+           *
+           * Só chegamos aqui depois de o filtro ter considerado o email
+           * concretamente relacionado com uma viagem.
+           */
+          const conteudo: Array<Record<string, unknown>> = [
+            {
+              type: "text",
+              text: [
+                textoBase,
+                "",
+                "O filtro semântico anterior classificou este conteúdo como uma comunicação concreta de viagem.",
+                "Agora extrai a ficha completa.",
+                "Extrai apenas dados efetivamente presentes no conteúdo. Nunca inventes nomes, datas, horas, códigos, aeroportos, números de voo ou outros dados.",
+                "Para um voo: passageiro, companhia, número do voo, origem, destino, aeroportos IATA, data e hora de partida, chegada, hora de embarque, terminal, porta, assento, grupo de embarque, bagagem, referência/PNR e código QR ou código de barras quando estiver disponível.",
+                "Para um hotel: nome do alojamento, fornecedor, hóspede, morada, check-in, check-out, referência, quarto/tipologia, condições e contacto.",
+                "Para um transporte: operador, fornecedor, passageiro, origem, destino, data/hora de partida e chegada, referência, lugar e outras informações disponíveis.",
+                "Para um transfer: fornecedor/operador, passageiro, local de recolha, destino, data/hora, referência, morada e contacto.",
+                "Para um bilhete ou atividade: entidade, passageiro/titular, local, data/hora, data/hora de fim, referência, código de entrada e condições.",
+                "Para documentos de viagem: identifica o tipo de documento, entidade emissora, titular, referência, datas e condições relevantes.",
+                "Para informações: extrai apenas informações úteis para a viagem, como horários, moradas, instruções, regras, contactos, requisitos ou procedimentos.",
+                "Se existirem várias datas, distingue a data de emissão/envio da data efetiva da viagem.",
+                "Se existirem várias referências ou códigos, identifica como referência o código principal da reserva e coloca códigos adicionais nas condições quando forem relevantes.",
+                "Usa strings vazias quando um campo não estiver indicado.",
+                "Quando um valor for apenas inferido, ambíguo ou pouco legível, coloca o nome desse campo em porConfirmar.",
+                "Se o ano não estiver indicado numa data, considera o contexto do documento/email e assinala a data em porConfirmar em vez de inventar um ano com confiança.",
+                "Mantém relevante=true porque o filtro semântico já confirmou que esta é uma comunicação concreta de viagem.",
+                "Responde exclusivamente através da função registar_ficha.",
+              ].join("\n"),
+            },
+          ];
+
+          if (data.imagem) {
+            conteudo.push({
+              type: "image_url",
+              image_url: {
+                url: data.imagem,
+              },
+            });
+          }
+
+          if (data.pdf) {
+            conteudo.push({
+              type: "file",
+              file: {
+                filename: data.nome.endsWith(".pdf")
+                  ? data.nome
+                  : `${data.nome}.pdf`,
+                file_data: data.pdf,
+              },
+            });
+          }
+
+          try {
+            const dadosIa = await chamarIA(
+              [
+                {
+                  role: "system",
+                  content:
+                    "És um assistente especializado em extrair dados de documentos e emails de viagem. O conteúdo já foi classificado como uma comunicação concreta de viagem. Extrai apenas informação efetivamente presente e nunca inventes dados.",
+                },
+                {
+                  role: "user",
+                  content: conteudo,
+                },
+              ],
+              ESQUEMA,
+            );
+
+            const ficha = limpar(
+              dadosIa,
+              data.nome,
+            );
+
+            return {
+              ficha,
+              relevante: true,
+              motivoRelevancia: motivo,
+              porIa: true,
+              nota: ficha.porConfirmar
+                ? "Email considerado relevante e dados lidos automaticamente. Alguns campos precisam de confirmação."
+                : "Email considerado relevante e dados lidos automaticamente. Confirme antes de guardar.",
+            };
+          } catch (erro) {
+            console.error(
+              "analisarDocumento extracao",
+              erro,
+            );
+
+            return {
+              ficha: heuristica(data),
+              relevante: true,
+              motivoRelevancia: motivo,
+              porIa: true,
+              nota:
+                "A mensagem foi considerada relevante, mas a extração completa falhou. Alguns dados precisam de ser revistos manualmente.",
+            };
+          }
         } catch (erro) {
           console.error(
-            "analisarDocumento",
+            "analisarDocumento filtro",
             erro,
           );
 
@@ -705,11 +738,12 @@ export const analisarDocumento =
             ficha: heuristica(data),
             relevante: false,
             motivoRelevancia:
-              "Não foi possível concluir a análise automática deste conteúdo.",
+              "Não foi possível concluir o filtro automático deste conteúdo.",
             porIa: false,
             nota:
-              "Não foi possível ler o conteúdo automaticamente. O email não será apresentado como descoberta.",
+              "A análise automática não foi concluída. O email não será apresentado como descoberta até poder ser analisado.",
           };
         }
       },
     );
+
