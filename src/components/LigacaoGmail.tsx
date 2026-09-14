@@ -30,56 +30,212 @@ import { analisarDocumento } from "@/lib/documentos-ia.functions";
 import { supabase } from "@/integrations/supabase/client";
 
 const CONNECTOR_ID = "google_mail";
+const GMAIL_OAUTH_STORAGE_KEY = "viatorbis:gmail-oauth-result";
+
+type OAuthStorageResult =
+  | {
+      type: "appUserConnectorOAuthComplete";
+      connectorId: typeof CONNECTOR_ID;
+      code: string;
+      createdAt: number;
+    }
+  | {
+      type: "appUserConnectorOAuthFailed";
+      connectorId: typeof CONNECTOR_ID;
+      error: string;
+      errorDescription: string;
+      createdAt: number;
+    };
 
 function esperarConclusao(popup: Window) {
-  return new Promise<string | null>((resolve, reject) => {
-    let poll: number | undefined;
+  return new Promise<string>((resolve, reject) => {
+    let pollJanela: number | undefined;
+    let pollStorage: number | undefined;
+    let terminado = false;
 
     const limpar = () => {
-      window.removeEventListener("message", aoReceber);
+      window.removeEventListener("message", aoReceberMensagem);
+      window.removeEventListener("storage", aoReceberStorage);
 
-      if (poll !== undefined) {
-        window.clearInterval(poll);
+      if (pollJanela !== undefined) {
+        window.clearInterval(pollJanela);
+      }
+
+      if (pollStorage !== undefined) {
+        window.clearInterval(pollStorage);
       }
     };
 
-    const aoReceber = (event: MessageEvent) => {
-      const data = event.data as {
-        type?: string;
-        connectorId?: string;
-        code?: string | null;
-      };
-
-      if (
-        event.origin !== window.location.origin ||
-        event.source !== popup ||
-        data.connectorId !== CONNECTOR_ID ||
-        (data.type !== "appUserConnectorOAuthComplete" &&
-          data.type !== "appUserConnectorOAuthFailed")
-      ) {
+    const concluir = (resultado: OAuthStorageResult) => {
+      if (terminado) {
         return;
       }
 
+      terminado = true;
       limpar();
 
-      if (data.type === "appUserConnectorOAuthComplete") {
-        resolve(typeof data.code === "string" ? data.code : null);
+      try {
+        window.localStorage.removeItem(GMAIL_OAUTH_STORAGE_KEY);
+      } catch {
+        // Não impedimos a conclusão caso o localStorage não esteja disponível.
+      }
+
+      if (resultado.type === "appUserConnectorOAuthComplete") {
+        resolve(resultado.code);
         return;
       }
 
       popup.close();
-      reject(new Error("A ligação não foi concluída."));
+
+      reject(
+        new Error(
+          resultado.errorDescription ||
+            resultado.error ||
+            "A ligação ao Gmail não foi concluída.",
+        ),
+      );
     };
 
-    window.addEventListener("message", aoReceber);
+    const processarValor = (valor: string | null) => {
+      if (!valor) {
+        return;
+      }
 
-    poll = window.setInterval(() => {
+      try {
+        const resultado = JSON.parse(valor) as OAuthStorageResult;
+
+        if (
+          resultado?.connectorId !== CONNECTOR_ID ||
+          (resultado.type !== "appUserConnectorOAuthComplete" &&
+            resultado.type !== "appUserConnectorOAuthFailed")
+        ) {
+          return;
+        }
+
+        if (
+          typeof resultado.createdAt !== "number" ||
+          Date.now() - resultado.createdAt > 5 * 60 * 1000
+        ) {
+          return;
+        }
+
+        concluir(resultado);
+      } catch (error) {
+        console.error("Resultado OAuth Gmail inválido:", error);
+      }
+    };
+
+    const aoReceberStorage = (event: StorageEvent) => {
+      if (event.key !== GMAIL_OAUTH_STORAGE_KEY) {
+        return;
+      }
+
+      processarValor(event.newValue);
+    };
+
+    const aoReceberMensagem = (event: MessageEvent) => {
+      if (
+        event.origin !== window.location.origin ||
+        event.source !== popup
+      ) {
+        return;
+      }
+
+      const data = event.data;
+
+      if (!data || typeof data !== "object") {
+        return;
+      }
+
+      const resultado = data as Record<string, unknown>;
+
+      if (
+        resultado["connectorId"] !== CONNECTOR_ID ||
+        (resultado["type"] !== "appUserConnectorOAuthComplete" &&
+          resultado["type"] !== "appUserConnectorOAuthFailed")
+      ) {
+        return;
+      }
+
+      if (
+        resultado["type"] === "appUserConnectorOAuthComplete" &&
+        typeof resultado["code"] === "string"
+      ) {
+        concluir({
+          type: "appUserConnectorOAuthComplete",
+          connectorId: CONNECTOR_ID,
+          code: resultado["code"],
+          createdAt:
+            typeof resultado["createdAt"] === "number"
+              ? resultado["createdAt"]
+              : Date.now(),
+        });
+
+        return;
+      }
+
+      concluir({
+        type: "appUserConnectorOAuthFailed",
+        connectorId: CONNECTOR_ID,
+        error:
+          typeof resultado["error"] === "string"
+            ? resultado["error"]
+            : "oauth_error",
+        errorDescription:
+          typeof resultado["errorDescription"] === "string"
+            ? resultado["errorDescription"]
+            : "A autorização do Gmail não foi concluída.",
+        createdAt:
+          typeof resultado["createdAt"] === "number"
+            ? resultado["createdAt"]
+            : Date.now(),
+      });
+    };
+
+    window.addEventListener("storage", aoReceberStorage);
+    window.addEventListener("message", aoReceberMensagem);
+
+    try {
+      processarValor(
+        window.localStorage.getItem(GMAIL_OAUTH_STORAGE_KEY),
+      );
+    } catch {
+      // Continuamos com postMessage e polling da janela.
+    }
+
+    pollStorage = window.setInterval(() => {
+      try {
+        processarValor(
+          window.localStorage.getItem(GMAIL_OAUTH_STORAGE_KEY),
+        );
+      } catch {
+        // Ignorar e continuar.
+      }
+    }, 300);
+
+    pollJanela = window.setInterval(() => {
       if (!popup.closed) {
         return;
       }
 
+      if (terminado) {
+        return;
+      }
+
+      terminado = true;
       limpar();
-      reject(new Error("A janela foi fechada antes de concluir."));
+
+      try {
+        window.localStorage.removeItem(GMAIL_OAUTH_STORAGE_KEY);
+      } catch {
+        // Ignorar.
+      }
+
+      reject(
+        new Error(
+          "A janela foi fechada antes de concluir a ligação ao Gmail.",
+        ),
+      );
     }, 500);
   });
 }
@@ -642,55 +798,89 @@ export function LigacaoGmail() {
     useState(false);
 
   async function ligar() {
-    const popup = window.open(
-      "",
-      "lovable-oauth",
-      "width=600,height=720",
-    );
-
-    if (!popup) {
-      const msg =
-        "Permita as janelas pop-up no seu navegador para autorizar o Gmail.";
-
-      setErro(msg);
-      toast.error(msg);
-      return;
-    }
-
-    setOcupado(true);
-    setErro(null);
-
-    try {
-      const { authorizationUrl } = await iniciar();
-      const conclusao = esperarConclusao(popup);
-
-      popup.location.href = authorizationUrl;
-
-      const code = await conclusao;
-
-      if (code) {
-        await concluir({ data: { code } });
-      }
-
-      await queryClient.invalidateQueries({
-        queryKey: ["gmail", "estado"],
-      });
-
-      toast.success("Gmail ligado à sua conta.");
-    } catch (e) {
-      popup.close();
-
-      const msg =
-        e instanceof Error
-          ? e.message
-          : "Não foi possível ligar o Gmail.";
-
-      setErro(msg);
-      toast.error(msg);
-    } finally {
-      setOcupado(false);
-    }
+  /*
+   * Limpamos qualquer resultado OAuth antigo antes de começar.
+   * Isto evita que uma autorização anterior seja interpretada
+   * como sendo a autorização atual.
+   */
+  try {
+    window.localStorage.removeItem(GMAIL_OAUTH_STORAGE_KEY);
+  } catch {
+    // Continuamos mesmo que o localStorage não esteja disponível.
   }
+
+  const popup = window.open(
+    "",
+    "lovable-oauth",
+    "width=600,height=720",
+  );
+
+  if (!popup) {
+    const msg =
+      "Permita as janelas pop-up no seu navegador para autorizar o Gmail.";
+
+    setErro(msg);
+    toast.error(msg);
+    return;
+  }
+
+  setOcupado(true);
+  setErro(null);
+
+  try {
+    /*
+     * Criamos o listener antes de enviar a janela para o Google.
+     * Assim não existe uma janela de oportunidade em que o resultado
+     * possa chegar antes de começarmos a ouvi-lo.
+     */
+    const conclusao = esperarConclusao(popup);
+
+    const { authorizationUrl } = await iniciar();
+
+    popup.location.href = authorizationUrl;
+
+    const code = await conclusao;
+
+    /*
+     * O código devolvido pelo gateway é agora trocado pela
+     * connection API key e guardado no servidor para o utilizador.
+     */
+    await concluir({
+      data: {
+        code,
+      },
+    });
+
+    /*
+     * Só depois da conclusão bem-sucedida pedimos novamente o estado.
+     */
+    await queryClient.invalidateQueries({
+      queryKey: ["gmail", "estado"],
+    });
+
+    /*
+     * Garantimos que a query é efetivamente atualizada antes
+     * de dizermos ao utilizador que o Gmail está ligado.
+     */
+    await queryClient.refetchQueries({
+      queryKey: ["gmail", "estado"],
+    });
+
+    toast.success("Gmail ligado à sua conta.");
+  } catch (e) {
+    popup.close();
+
+    const msg =
+      e instanceof Error
+        ? e.message
+        : "Não foi possível ligar o Gmail.";
+
+    setErro(msg);
+    toast.error(msg);
+  } finally {
+    setOcupado(false);
+  }
+}
 
   async function carregarPreferenciaDeteccao() {
     const userId = session?.user.id;
