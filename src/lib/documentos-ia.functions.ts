@@ -497,79 +497,117 @@ export const analisarDocumento =
           messages: Array<Record<string, unknown>>,
           schema: Record<string, unknown>,
         ): Promise<Record<string, unknown>> {
-          const resposta = await fetch(
-            "https://ai.gateway.lovable.dev/v1/chat/completions",
-            {
-              method: "POST",
-              headers: {
-                Authorization: `Bearer ${apiKey}`,
-                "Content-Type": "application/json",
-              },
-              body: JSON.stringify({
-                model: "google/gemini-2.5-flash",
-                messages,
-                tools: [
-                  {
-                    type: "function",
-                    function: {
-                      name: "registar_ficha",
-                      description:
-                        "Regista o resultado estruturado da análise.",
-                      parameters: schema,
+          /*
+           * O gateway pode devolver 429 quando vários emails são analisados
+           * em paralelo. Fazemos algumas tentativas com espera progressiva.
+           * Também repetimos uma resposta sem tool_call, porque isso pode
+           * acontecer de forma transitória com o modelo.
+           */
+          const maxTentativas = 3;
+
+          let ultimoErro: unknown = null;
+
+          for (let tentativa = 1; tentativa <= maxTentativas; tentativa++) {
+            try {
+              const resposta = await fetch(
+                "https://ai.gateway.lovable.dev/v1/chat/completions",
+                {
+                  method: "POST",
+                  headers: {
+                    Authorization: `Bearer ${apiKey}`,
+                    "Content-Type": "application/json",
+                  },
+                  body: JSON.stringify({
+                    model: "google/gemini-2.5-flash",
+                    messages,
+                    tools: [
+                      {
+                        type: "function",
+                        function: {
+                          name: "registar_ficha",
+                          description:
+                            "Regista o resultado estruturado da análise.",
+                          parameters: schema,
+                        },
+                      },
+                    ],
+                    tool_choice: {
+                      type: "function",
+                      function: {
+                        name: "registar_ficha",
+                      },
                     },
-                  },
-                ],
-                tool_choice: {
-                  type: "function",
-                  function: {
-                    name: "registar_ficha",
-                  },
+                  }),
                 },
-              }),
-            },
-          );
+              );
 
-          if (resposta.status === 429) {
-            throw new Error("429");
-          }
+              if (resposta.status === 429) {
+                throw new Error("429");
+              }
 
-          if (resposta.status === 402) {
-            throw new Error("402");
-          }
+              if (resposta.status === 402) {
+                throw new Error("402");
+              }
 
-          if (!resposta.ok) {
-            throw new Error(
-              `gateway ${resposta.status}`,
-            );
-          }
+              if (!resposta.ok) {
+                throw new Error(
+                  `gateway ${resposta.status}`,
+                );
+              }
 
-          const json =
-            (await resposta.json()) as {
-              choices?: Array<{
-                message?: {
-                  tool_calls?: Array<{
-                    function?: {
-                      arguments?: string;
+              const json =
+                (await resposta.json()) as {
+                  choices?: Array<{
+                    message?: {
+                      tool_calls?: Array<{
+                        function?: {
+                          arguments?: string;
+                        };
+                      }>;
                     };
                   }>;
                 };
-              }>;
-            };
 
-          const args =
-            json.choices?.[0]
-              ?.message
-              ?.tool_calls?.[0]
-              ?.function
-              ?.arguments;
+              const args =
+                json.choices?.[0]
+                  ?.message
+                  ?.tool_calls?.[0]
+                  ?.function
+                  ?.arguments;
 
-          if (!args) {
-            throw new Error(
-              "resposta sem dados",
-            );
+              if (!args) {
+                throw new Error("resposta sem dados");
+              }
+
+              return JSON.parse(args) as Record<string, unknown>;
+            } catch (erro) {
+              ultimoErro = erro;
+
+              const mensagem =
+                erro instanceof Error ? erro.message : String(erro);
+
+              /*
+               * 402 significa falta de saldo no gateway e não vale a pena
+               * repetir. Os restantes erros são tentados novamente.
+               */
+              if (mensagem === "402" || tentativa === maxTentativas) {
+                throw erro;
+              }
+
+              const espera =
+                mensagem === "429"
+                  ? 1500 * tentativa
+                  : 800 * tentativa;
+
+              await new Promise((resolve) =>
+                setTimeout(resolve, espera),
+              );
+            }
           }
 
-          return JSON.parse(args) as Record<string, unknown>;
+          throw ultimoErro instanceof Error
+            ? ultimoErro
+            : new Error("Falha na análise por IA.");
         }
 
         /*
