@@ -276,100 +276,200 @@ function relevanciaHeuristica(
   input: AnaliseDocumentoInput,
   ficha: FichaDocumento,
 ): { relevante: boolean; motivoRelevancia: string } {
-  const base = normalizarTexto(`${input.nome}\n${input.texto ?? ""}`);
+  const baseOriginal = `${input.nome}\n${input.texto ?? ""}`;
+  const base = normalizarTexto(baseOriginal);
 
-  const termosPromocionais = [
+  const promocionais = [
     "newsletter",
     "promocao",
     "promocional",
     "oferta",
     "desconto",
     "black friday",
-    "sale",
     "campaign",
     "marketing",
     "inspiracao de viagem",
     "descubra",
     "melhores destinos",
+    "inspire-se",
+    "inspire se",
   ];
 
-  const termosConcretos = [
-    "reserva",
-    "reservado",
-    "confirmacao",
-    "confirmation",
-    "booking",
-    "booking code",
-    "pnr",
-    "voucher",
-    "bilhete",
-    "bilheteira",
-    "boarding pass",
-    "check-in",
-    "check in",
-    "itinerario",
-    "voo",
-    "flight",
-    "comboio",
-    "train",
-    "autocarro",
-    "bus",
-    "transfer",
-    "hotel",
-    "check-out",
-    "check out",
-    "museu",
-    "museum",
-    "espetaculo",
-    "espectaculo",
-    "concerto",
-    "teatro",
-    "tour",
-    "excursao",
-    "atividade",
-    "atracao",
-    "entrada",
-    "ticket",
-    "ferry",
-    "aluguer de carro",
-    "rent a car",
+  const dominioViagem = [
+    "voo", "flight", "companhia aerea", "airline", "hotel", "alojamento",
+    "hospedagem", "comboio", "train", "autocarro", "bus", "transfer",
+    "ferry", "bilhete", "ticket", "boarding pass", "cartao de embarque",
+    "itinerario", "itinerary", "reserva", "reservation", "booking", "pnr",
+    "voucher", "check-in", "check in", "check-out", "check out", "passageiro",
+    "passenger", "hospede", "guest", "museu", "museum", "concerto", "teatro",
+    "tour", "excursao", "atividade", "atracao", "entrada",
   ];
 
-  const promocional = termosPromocionais.some((termo) =>
-    base.includes(termo),
-  );
+  // Estes termos são deliberadamente transacionais. Palavras isoladas como
+  // "voo", "hotel", "museu" ou "ticket" não chegam para aprovar um email.
+  const marcadoresOperacionais = [
+    "confirmacao de reserva", "confirmacao da reserva", "reserva confirmada",
+    "booking confirmation", "reservation confirmation", "booking reference",
+    "reservation number", "confirmation number", "booking code",
+    "codigo da reserva", "numero da reserva", "referencia da reserva", "pnr",
+    "voucher", "boarding pass", "cartao de embarque", "bilhete emitido",
+    "bilhete confirmado", "ticket issued", "ticket confirmation", "e-ticket",
+    "your booking", "your reservation", "your flight", "seu voo", "o seu voo",
+    "sua reserva", "a sua reserva", "reserva efetuada", "reserva efectuada",
+    "reserva concluida", "reserva concluída", "compra confirmada",
+    "pagamento confirmado", "check-in", "check in", "check-out", "check out",
+    "passageiro", "passenger", "hospede", "guest", "alteracao do voo",
+    "alteracao de voo", "alteracao da reserva", "alteracao de reserva",
+    "cancelamento do voo", "cancelamento da reserva", "voo cancelado",
+    "voo atrasado", "flight cancelled", "flight delayed", "gate",
+    "porta de embarque", "hora de embarque", "embarque",
+    "data de partida", "departure", "arrival", "chegada", "partida",
+  ];
 
-  const concreto = termosConcretos.some((termo) =>
-    base.includes(termo),
-  );
+  const promocional = promocionais.some((termo) => base.includes(termo));
+  const temDominio = dominioViagem.some((termo) => base.includes(termo));
+  const temOperacao = marcadoresOperacionais.some((termo) => base.includes(termo));
 
-  const temDados =
-    Boolean(ficha.referencia) ||
-    Boolean(ficha.dataHora) ||
-    Boolean(ficha.local) ||
-    Boolean(ficha.origem) ||
-    Boolean(ficha.destino) ||
-    Boolean(ficha.numeroVoo) ||
-    Boolean(ficha.fornecedor) ||
-    Boolean(ficha.operador);
-
-  if (promocional && !concreto) {
+  if (!temDominio) {
     return {
       relevante: false,
-      motivoRelevancia: "Comunicação promocional sem uma reserva ou evento concreto.",
+      motivoRelevancia: "O email não apresenta sinais de uma viagem ou serviço de viagem.",
     };
   }
 
-  if (!concreto || !temDados) {
+  // Uma newsletter/artigo pode conter todos os campos que a IA consegue
+  // imaginar. Sem linguagem transacional, nunca o tratamos como reserva.
+  if (promocional && !temOperacao) {
     return {
       relevante: false,
-      motivoRelevancia: "Não foram encontrados dados concretos de uma viagem ou evento.",
+      motivoRelevancia: "Comunicação promocional, newsletter ou artigo sem uma operação concreta.",
     };
+  }
+
+  if (!temOperacao) {
+    return {
+      relevante: false,
+      motivoRelevancia: "Há referências a viagens, mas não existe linguagem suficiente de reserva, bilhete ou serviço concreto.",
+    };
+  }
+
+  const textoTem = (valor: string | null | undefined): boolean => {
+    const v = normalizarTexto(String(valor ?? "").trim());
+    if (!v || v.length < 2) return false;
+    return base.includes(v);
+  };
+
+  const referenciaNoTexto = textoTem(ficha.referencia);
+  const codigoNoTexto = textoTem(ficha.codigo);
+  const fornecedorNoTexto = textoTem(ficha.fornecedor);
+  const numeroVooNoTexto = textoTem(ficha.numeroVoo);
+  const origemNoTexto = textoTem(ficha.origem);
+  const destinoNoTexto = textoTem(ficha.destino);
+  const localNoTexto = textoTem(ficha.local);
+  const operadorNoTexto = textoTem(ficha.operador);
+  const passageiroNoTexto = textoTem(ficha.passageiro);
+
+  // A data é validada contra o texto original de forma independente, porque
+  // a IA converte datas para ISO (AAAA-MM-DD) e essa representação pode não
+  // existir literalmente no email.
+  const temDataNoTexto =
+    /\b(?:20\d{2}[-\/]\d{1,2}[-\/]\d{1,2}|\d{1,2}[-\/]\d{1,2}[-\/]20\d{2}|\d{1,2}\s+(?:de\s+)?(?:janeiro|fevereiro|marco|abril|maio|junho|julho|agosto|setembro|outubro|novembro|dezembro)\s+(?:de\s+)?20\d{2})\b/i.test(base) ||
+    /\b(?:20\d{2}-\d{2}-\d{2})\b/.test(base);
+
+  const temIdentificadorReal =
+    referenciaNoTexto || codigoNoTexto || numeroVooNoTexto;
+  const temLocalReal =
+    fornecedorNoTexto || operadorNoTexto || localNoTexto ||
+    origemNoTexto || destinoNoTexto;
+  const temPessoaReal = passageiroNoTexto;
+  const temRotaReal = origemNoTexto && destinoNoTexto;
+
+  if (ficha.categoria === "voo") {
+    const valido =
+      (numeroVooNoTexto && (temDataNoTexto || temRotaReal)) ||
+      (temRotaReal && temDataNoTexto && (fornecedorNoTexto || temIdentificadorReal)) ||
+      (temIdentificadorReal && temDataNoTexto && (fornecedorNoTexto || temPessoaReal));
+
+    if (!valido) {
+      return {
+        relevante: false,
+        motivoRelevancia: "O email fala de voos, mas não contém dados verificáveis suficientes de uma reserva ou voo concreto.",
+      };
+    }
+  } else if (ficha.categoria === "hotel") {
+    const valido =
+      (temDataNoTexto && temLocalReal) ||
+      (temIdentificadorReal && temLocalReal) ||
+      (temOperacao && temLocalReal && (temDataNoTexto || temPessoaReal));
+
+    if (!valido) {
+      return {
+        relevante: false,
+        motivoRelevancia: "O email fala de alojamento, mas não contém dados verificáveis suficientes de uma reserva concreta.",
+      };
+    }
+  } else if (ficha.categoria === "transporte" || ficha.categoria === "transfer") {
+    const valido =
+      (temRotaReal && temDataNoTexto) ||
+      (temIdentificadorReal && temLocalReal) ||
+      (temOperacao && temDataNoTexto && temLocalReal);
+
+    if (!valido) {
+      return {
+        relevante: false,
+        motivoRelevancia: "O email fala de transporte, mas não contém dados verificáveis suficientes de um serviço concreto.",
+      };
+    }
+  } else if (ficha.categoria === "bilhete") {
+    const valido =
+      (temIdentificadorReal && temLocalReal) ||
+      (temDataNoTexto && temLocalReal) ||
+      (temOperacao && temDataNoTexto && (temLocalReal || temPessoaReal));
+
+    if (!valido) {
+      return {
+        relevante: false,
+        motivoRelevancia: "O email fala de bilhetes ou atividades, mas não contém dados verificáveis suficientes de uma entrada ou reserva concreta.",
+      };
+    }
+  } else if (ficha.categoria === "documento") {
+    const valido =
+      temIdentificadorReal ||
+      (temOperacao && (temDataNoTexto || temPessoaReal || temLocalReal));
+
+    if (!valido) {
+      return {
+        relevante: false,
+        motivoRelevancia: "O conteúdo não apresenta dados verificáveis suficientes para ser tratado como documento de viagem.",
+      };
+    }
+  } else if (ficha.categoria === "informacao") {
+    const valido =
+      temOperacao &&
+      (temDataNoTexto || temRotaReal || temLocalReal || temIdentificadorReal);
+
+    if (!valido) {
+      return {
+        relevante: false,
+        motivoRelevancia: "A mensagem contém referências a viagem, mas não informação operacional suficientemente específica.",
+      };
+    }
+  } else {
+    const valido =
+      temOperacao &&
+      (temIdentificadorReal || temDataNoTexto || temLocalReal || temRotaReal);
+
+    if (!valido) {
+      return {
+        relevante: false,
+        motivoRelevancia: "Não foram encontrados dados verificáveis suficientes de uma operação de viagem.",
+      };
+    }
   }
 
   return {
     relevante: true,
-    motivoRelevancia: "Foram encontrados dados concretos relacionados com uma viagem ou evento.",
+    motivoRelevancia: "Foram encontrados sinais transacionais e dados verificáveis de uma viagem ou serviço concreto.",
   };
 }
 

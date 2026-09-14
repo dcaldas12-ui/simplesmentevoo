@@ -788,7 +788,9 @@ export function LigacaoGmail() {
     try {
       const emails = await procurarEmails();
 
-      setResultados(emails);
+      // Os resultados brutos do Gmail são apenas candidatos internos.
+      // Nunca os apresentamos diretamente na interface.
+      setResultados([]);
 
       if (emails.length === 0) {
         toast.info("Não encontrámos emails de viagem.");
@@ -799,14 +801,9 @@ export function LigacaoGmail() {
         `${emails.length} email(s) encontrado(s). A analisar…`,
       );
 
-      const estadosIniciais: ResultadoAnalise[] = emails.map(
-        (email) => ({
-          email,
-          estado: "a_analisar",
-        }),
-      );
-
-      setAnalises(estadosIniciais);
+      // A lista visível contém exclusivamente emails aprovados pela análise.
+      // Os candidatos brutos do Gmail nunca entram na lista apresentada ao utilizador.
+      setAnalises([]);
 
       for (const email of emails) {
         try {
@@ -820,34 +817,23 @@ export function LigacaoGmail() {
             },
           });
 
-          setAnalises((anteriores) =>
-            anteriores.map((item) =>
-              item.email.id === email.id
-                ? {
-                    ...item,
-                    estado: "analisado",
-                    resultado,
-                  }
-                : item,
-            ),
-          );
+          if (resultado?.relevante === true) {
+            setAnalises((anteriores) => [
+              ...anteriores,
+              {
+                email,
+                estado: "analisado",
+                resultado,
+              },
+            ]);
+          }
         } catch (e) {
           const msg =
             e instanceof Error
               ? e.message
               : "Não foi possível analisar este email.";
 
-          setAnalises((anteriores) =>
-            anteriores.map((item) =>
-              item.email.id === email.id
-                ? {
-                    ...item,
-                    estado: "erro",
-                    erro: msg,
-                  }
-                : item,
-            ),
-          );
+          console.error("Erro ao analisar email Gmail:", msg);
         }
       }
 
