@@ -104,7 +104,6 @@ type DescobertaAutomatica = {
   ficha: unknown;
   categoria: string | null;
   referencia: string | null;
-  relevante: boolean;
   analisado_em: string | null;
 };
 
@@ -630,7 +629,6 @@ export function LigacaoGmail() {
   const [aProcurar, setAProcurar] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
 
-  const [resultados, setResultados] = useState<EmailEncontrado[]>([]);
   const [analises, setAnalises] = useState<ResultadoAnalise[]>([]);
   const [ignorados, setIgnorados] = useState<string[]>([]);
   const [descobertasAutomaticas, setDescobertasAutomaticas] = useState<
@@ -781,63 +779,79 @@ export function LigacaoGmail() {
   async function procurar() {
     setAProcurar(true);
     setErro(null);
-    setResultados([]);
     setAnalises([]);
     setIgnorados([]);
 
     try {
       const emails = await procurarEmails();
 
-      // Os resultados brutos do Gmail são apenas candidatos internos.
-      // Nunca os apresentamos diretamente na interface.
-      setResultados([]);
-
       if (emails.length === 0) {
-        toast.info("Não encontrámos emails de viagem.");
+        toast.info("Não encontrámos candidatos para analisar.");
         return;
       }
 
-      toast.success(
-        `${emails.length} email(s) encontrado(s). A analisar…`,
+      toast.info(
+        `${emails.length} candidatos encontrados. A analisar…`,
       );
 
-      // A lista visível contém exclusivamente emails aprovados pela análise.
-      // Os candidatos brutos do Gmail nunca entram na lista apresentada ao utilizador.
-      setAnalises([]);
+      const resultadosRelevantes: ResultadoAnalise[] = [];
 
-      for (const email of emails) {
-        try {
-          const textoCompleto =
-            `${email.assunto}\n\n${email.texto}`.trim();
+      /*
+       * Pequenos lotes: evitamos centenas de pedidos simultâneos, mas também
+       * não obrigamos o utilizador a esperar por uma análise estritamente
+       * sequencial.
+       */
+      const TAMANHO_LOTE = 3;
 
-          const resultado = await analisar({
-            data: {
-              nome: email.assunto || "Email Gmail",
-              texto: textoCompleto,
-            },
-          });
+      for (let inicio = 0; inicio < emails.length; inicio += TAMANHO_LOTE) {
+        const lote = emails.slice(inicio, inicio + TAMANHO_LOTE);
 
-          if (resultado?.relevante === true) {
-            setAnalises((anteriores) => [
-              ...anteriores,
-              {
-                email,
-                estado: "analisado",
-                resultado,
-              },
-            ]);
+        const analisados = await Promise.all(
+          lote.map(async (email) => {
+            const textoCompleto = `${email.assunto}\n\n${email.texto}`.trim();
+
+            try {
+              const resultado = await analisar({
+                data: {
+                  nome: email.assunto || "Email Gmail",
+                  texto: textoCompleto,
+                },
+              });
+
+              if (resultado?.relevante === true) {
+                return {
+                  email,
+                  estado: "analisado" as const,
+                  resultado,
+                };
+              }
+            } catch (e) {
+              console.error(
+                "Erro ao analisar email Gmail:",
+                e instanceof Error ? e.message : e,
+              );
+            }
+
+            return null;
+          }),
+        );
+
+        for (const resultado of analisados) {
+          if (resultado) {
+            resultadosRelevantes.push(resultado);
           }
-        } catch (e) {
-          const msg =
-            e instanceof Error
-              ? e.message
-              : "Não foi possível analisar este email.";
-
-          console.error("Erro ao analisar email Gmail:", msg);
         }
+
+        setAnalises([...resultadosRelevantes]);
       }
 
-      toast.success("Análise dos emails concluída.");
+      toast.success(
+        resultadosRelevantes.length === 0
+          ? "Análise concluída. Não encontrámos elementos de viagem relevantes."
+          : resultadosRelevantes.length === 1
+            ? "Análise concluída. Encontrámos 1 elemento de viagem relevante."
+            : `Análise concluída. Encontrámos ${resultadosRelevantes.length} elementos de viagem relevantes.`,
+      );
     } catch (e) {
       const msg =
         e instanceof Error
@@ -864,7 +878,6 @@ export function LigacaoGmail() {
   async function terminar() {
     setOcupado(true);
     setErro(null);
-    setResultados([]);
     setAnalises([]);
     setIgnorados([]);
 
@@ -923,7 +936,7 @@ export function LigacaoGmail() {
         const { data, error } = await supabase
           .from("emails_gmail_processados" as any)
           .select(
-            "id, gmail_message_id, assunto, ficha, categoria, referencia, relevante, analisado_em",
+            "id, gmail_message_id, assunto, ficha, categoria, referencia, analisado_em",
           )
           .eq("user_id", userId)
           .eq("estado", "pendente")
@@ -981,15 +994,12 @@ export function LigacaoGmail() {
       },
       estado: "analisado",
       resultado: {
-        relevante: item.relevante === true,
+        relevante: true,
         ficha: item.ficha,
       },
     }));
 
-  // A pesquisa manual e as descobertas automáticas são apresentadas separadamente.
-  // Isto impede que registos antigos guardados pela deteção automática contaminem
-  // a lista da pesquisa manual.
-  const analisesVisiveis = analises.filter(
+  const analisesManuaisVisiveis = analises.filter(
     (item) =>
       item.estado === "analisado" &&
       analiseEhRelevante(item.resultado) &&
@@ -997,12 +1007,10 @@ export function LigacaoGmail() {
   );
 
   const analisesAutomaticasVisiveis = analisesAutomaticas.filter(
-    (item) =>
-      item.estado === "analisado" &&
-      analiseEhRelevante(item.resultado),
+    (item) => analiseEhRelevante(item.resultado),
   );
 
-  const numeroRelevantes = analisesVisiveis.length;
+  const numeroRelevantes = analisesManuaisVisiveis.length;
   const numeroAutomaticas = analisesAutomaticasVisiveis.length;
   const numeroIgnorados = ignorados.length;
 
@@ -1133,7 +1141,7 @@ export function LigacaoGmail() {
             </div>
           ) : null}
 
-          {analisesVisiveis.length > 0 || analises.length > 0 || analisesAutomaticasVisiveis.length > 0 ? (
+          {analises.length > 0 || analisesAutomaticasVisiveis.length > 0 ? (
             <div className="mt-5 space-y-3">
               {analises.length > 0 ? (
                 <>
@@ -1142,25 +1150,36 @@ export function LigacaoGmail() {
                       <p className="text-sm font-semibold">
                         Elementos de viagem encontrados
                       </p>
-
                       <p className="mt-1 text-xs text-muted-foreground">
                         Mostramos apenas os emails da pesquisa manual que a análise
                         identificou como relevantes para uma viagem ou evento concreto.
                       </p>
                     </div>
-
                     <span className="shrink-0 rounded-full bg-secondary px-2.5 py-1 text-xs text-muted-foreground">
                       {numeroRelevantes}
                     </span>
                   </div>
 
-                  {analisesVisiveis.map((item) => (
+                  {analisesManuaisVisiveis.map((item) => (
                     <CartaoResultado
                       key={item.email.id}
                       item={item}
                       aoIgnorar={ignorar}
                     />
                   ))}
+
+                  {!aProcurar && numeroRelevantes === 0 ? (
+                    <div className="rounded-xl border border-border bg-card p-4">
+                      <p className="text-sm font-medium">
+                        Não encontrámos elementos de viagem relevantes.
+                      </p>
+                      <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                        Emails promocionais, newsletters e publicidade sem uma
+                        reserva, bilhete, evento ou informação concreta foram
+                        automaticamente excluídos.
+                      </p>
+                    </div>
+                  ) : null}
                 </>
               ) : null}
 
@@ -1171,13 +1190,11 @@ export function LigacaoGmail() {
                       <p className="text-sm font-semibold">
                         Novas descobertas automáticas
                       </p>
-
                       <p className="mt-1 text-xs text-muted-foreground">
                         Estes elementos foram encontrados automaticamente pelo Gmail.
                         Reveja-os antes de os adicionar a uma viagem.
                       </p>
                     </div>
-
                     <span className="shrink-0 rounded-full bg-secondary px-2.5 py-1 text-xs text-muted-foreground">
                       {numeroAutomaticas}
                     </span>
@@ -1200,7 +1217,6 @@ export function LigacaoGmail() {
                       ? "1 email removido da lista."
                       : `${numeroIgnorados} emails removidos da lista.`}
                   </p>
-
                   <Button
                     type="button"
                     size="sm"
@@ -1213,25 +1229,10 @@ export function LigacaoGmail() {
                 </div>
               ) : null}
 
-              {!aProcurar && analises.length > 0 && numeroRelevantes === 0 ? (
-                <div className="rounded-xl border border-border bg-card p-4">
-                  <p className="text-sm font-medium">
-                    Não encontrámos elementos de viagem relevantes.
-                  </p>
-
-                  <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                    Emails promocionais, newsletters e publicidade sem uma
-                    reserva, bilhete, evento ou informação concreta foram
-                    automaticamente excluídos.
-                  </p>
-                </div>
-              ) : null}
-
-              {numeroRelevantes > 0 ? (
+              {numeroRelevantes > 0 || numeroAutomaticas > 0 ? (
                 <div className="rounded-xl border border-primary/10 bg-primary/5 p-3">
                   <div className="flex items-start gap-3">
                     <Info className="mt-0.5 size-4 shrink-0 text-primary" />
-
                     <p className="text-xs leading-relaxed text-muted-foreground">
                       <span className="font-medium text-foreground">
                         Importante:

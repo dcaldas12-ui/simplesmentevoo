@@ -48,7 +48,7 @@ function validar(data: unknown): AnaliseDocumentoInput {
   }
 
   const texto = d["texto"]
-    ? String(d["texto"]).slice(0, 12000)
+    ? String(d["texto"]).slice(0, 30000)
     : null;
 
   const imagemBruta = d["imagem"]
@@ -272,206 +272,10 @@ function normalizarTexto(texto: string): string {
  * Não pretende substituir a IA. Serve apenas para conseguir
  * preencher alguns dados básicos e manter a aplicação funcional.
  */
-function relevanciaHeuristica(
-  input: AnaliseDocumentoInput,
-  ficha: FichaDocumento,
-): { relevante: boolean; motivoRelevancia: string } {
-  const baseOriginal = `${input.nome}\n${input.texto ?? ""}`;
-  const base = normalizarTexto(baseOriginal);
-
-  const promocionais = [
-    "newsletter",
-    "promocao",
-    "promocional",
-    "oferta",
-    "desconto",
-    "black friday",
-    "campaign",
-    "marketing",
-    "inspiracao de viagem",
-    "descubra",
-    "melhores destinos",
-    "inspire-se",
-    "inspire se",
-  ];
-
-  const dominioViagem = [
-    "voo", "flight", "companhia aerea", "airline", "hotel", "alojamento",
-    "hospedagem", "comboio", "train", "autocarro", "bus", "transfer",
-    "ferry", "bilhete", "ticket", "boarding pass", "cartao de embarque",
-    "itinerario", "itinerary", "reserva", "reservation", "booking", "pnr",
-    "voucher", "check-in", "check in", "check-out", "check out", "passageiro",
-    "passenger", "hospede", "guest", "museu", "museum", "concerto", "teatro",
-    "tour", "excursao", "atividade", "atracao", "entrada",
-  ];
-
-  // Estes termos são deliberadamente transacionais. Palavras isoladas como
-  // "voo", "hotel", "museu" ou "ticket" não chegam para aprovar um email.
-  const marcadoresOperacionais = [
-    "confirmacao de reserva", "confirmacao da reserva", "reserva confirmada",
-    "booking confirmation", "reservation confirmation", "booking reference",
-    "reservation number", "confirmation number", "booking code",
-    "codigo da reserva", "numero da reserva", "referencia da reserva", "pnr",
-    "voucher", "boarding pass", "cartao de embarque", "bilhete emitido",
-    "bilhete confirmado", "ticket issued", "ticket confirmation", "e-ticket",
-    "your booking", "your reservation", "your flight", "seu voo", "o seu voo",
-    "sua reserva", "a sua reserva", "reserva efetuada", "reserva efectuada",
-    "reserva concluida", "reserva concluída", "compra confirmada",
-    "pagamento confirmado", "check-in", "check in", "check-out", "check out",
-    "passageiro", "passenger", "hospede", "guest", "alteracao do voo",
-    "alteracao de voo", "alteracao da reserva", "alteracao de reserva",
-    "cancelamento do voo", "cancelamento da reserva", "voo cancelado",
-    "voo atrasado", "flight cancelled", "flight delayed", "gate",
-    "porta de embarque", "hora de embarque", "embarque",
-    "data de partida", "departure", "arrival", "chegada", "partida",
-  ];
-
-  const promocional = promocionais.some((termo) => base.includes(termo));
-  const temDominio = dominioViagem.some((termo) => base.includes(termo));
-  const temOperacao = marcadoresOperacionais.some((termo) => base.includes(termo));
-
-  if (!temDominio) {
-    return {
-      relevante: false,
-      motivoRelevancia: "O email não apresenta sinais de uma viagem ou serviço de viagem.",
-    };
-  }
-
-  // Uma newsletter/artigo pode conter todos os campos que a IA consegue
-  // imaginar. Sem linguagem transacional, nunca o tratamos como reserva.
-  if (promocional && !temOperacao) {
-    return {
-      relevante: false,
-      motivoRelevancia: "Comunicação promocional, newsletter ou artigo sem uma operação concreta.",
-    };
-  }
-
-  if (!temOperacao) {
-    return {
-      relevante: false,
-      motivoRelevancia: "Há referências a viagens, mas não existe linguagem suficiente de reserva, bilhete ou serviço concreto.",
-    };
-  }
-
-  const textoTem = (valor: string | null | undefined): boolean => {
-    const v = normalizarTexto(String(valor ?? "").trim());
-    if (!v || v.length < 2) return false;
-    return base.includes(v);
-  };
-
-  const referenciaNoTexto = textoTem(ficha.referencia);
-  const codigoNoTexto = textoTem(ficha.codigo);
-  const fornecedorNoTexto = textoTem(ficha.fornecedor);
-  const numeroVooNoTexto = textoTem(ficha.numeroVoo);
-  const origemNoTexto = textoTem(ficha.origem);
-  const destinoNoTexto = textoTem(ficha.destino);
-  const localNoTexto = textoTem(ficha.local);
-  const operadorNoTexto = textoTem(ficha.operador);
-  const passageiroNoTexto = textoTem(ficha.passageiro);
-
-  // A data é validada contra o texto original de forma independente, porque
-  // a IA converte datas para ISO (AAAA-MM-DD) e essa representação pode não
-  // existir literalmente no email.
-  const temDataNoTexto =
-    /\b(?:20\d{2}[-\/]\d{1,2}[-\/]\d{1,2}|\d{1,2}[-\/]\d{1,2}[-\/]20\d{2}|\d{1,2}\s+(?:de\s+)?(?:janeiro|fevereiro|marco|abril|maio|junho|julho|agosto|setembro|outubro|novembro|dezembro)\s+(?:de\s+)?20\d{2})\b/i.test(base) ||
-    /\b(?:20\d{2}-\d{2}-\d{2})\b/.test(base);
-
-  const temIdentificadorReal =
-    referenciaNoTexto || codigoNoTexto || numeroVooNoTexto;
-  const temLocalReal =
-    fornecedorNoTexto || operadorNoTexto || localNoTexto ||
-    origemNoTexto || destinoNoTexto;
-  const temPessoaReal = passageiroNoTexto;
-  const temRotaReal = origemNoTexto && destinoNoTexto;
-
-  if (ficha.categoria === "voo") {
-    const valido =
-      (numeroVooNoTexto && (temDataNoTexto || temRotaReal)) ||
-      (temRotaReal && temDataNoTexto && (fornecedorNoTexto || temIdentificadorReal)) ||
-      (temIdentificadorReal && temDataNoTexto && (fornecedorNoTexto || temPessoaReal));
-
-    if (!valido) {
-      return {
-        relevante: false,
-        motivoRelevancia: "O email fala de voos, mas não contém dados verificáveis suficientes de uma reserva ou voo concreto.",
-      };
-    }
-  } else if (ficha.categoria === "hotel") {
-    const valido =
-      (temDataNoTexto && temLocalReal) ||
-      (temIdentificadorReal && temLocalReal) ||
-      (temOperacao && temLocalReal && (temDataNoTexto || temPessoaReal));
-
-    if (!valido) {
-      return {
-        relevante: false,
-        motivoRelevancia: "O email fala de alojamento, mas não contém dados verificáveis suficientes de uma reserva concreta.",
-      };
-    }
-  } else if (ficha.categoria === "transporte" || ficha.categoria === "transfer") {
-    const valido =
-      (temRotaReal && temDataNoTexto) ||
-      (temIdentificadorReal && temLocalReal) ||
-      (temOperacao && temDataNoTexto && temLocalReal);
-
-    if (!valido) {
-      return {
-        relevante: false,
-        motivoRelevancia: "O email fala de transporte, mas não contém dados verificáveis suficientes de um serviço concreto.",
-      };
-    }
-  } else if (ficha.categoria === "bilhete") {
-    const valido =
-      (temIdentificadorReal && temLocalReal) ||
-      (temDataNoTexto && temLocalReal) ||
-      (temOperacao && temDataNoTexto && (temLocalReal || temPessoaReal));
-
-    if (!valido) {
-      return {
-        relevante: false,
-        motivoRelevancia: "O email fala de bilhetes ou atividades, mas não contém dados verificáveis suficientes de uma entrada ou reserva concreta.",
-      };
-    }
-  } else if (ficha.categoria === "documento") {
-    const valido =
-      temIdentificadorReal ||
-      (temOperacao && (temDataNoTexto || temPessoaReal || temLocalReal));
-
-    if (!valido) {
-      return {
-        relevante: false,
-        motivoRelevancia: "O conteúdo não apresenta dados verificáveis suficientes para ser tratado como documento de viagem.",
-      };
-    }
-  } else if (ficha.categoria === "informacao") {
-    const valido =
-      temOperacao &&
-      (temDataNoTexto || temRotaReal || temLocalReal || temIdentificadorReal);
-
-    if (!valido) {
-      return {
-        relevante: false,
-        motivoRelevancia: "A mensagem contém referências a viagem, mas não informação operacional suficientemente específica.",
-      };
-    }
-  } else {
-    const valido =
-      temOperacao &&
-      (temIdentificadorReal || temDataNoTexto || temLocalReal || temRotaReal);
-
-    if (!valido) {
-      return {
-        relevante: false,
-        motivoRelevancia: "Não foram encontrados dados verificáveis suficientes de uma operação de viagem.",
-      };
-    }
-  }
-
-  return {
-    relevante: true,
-    motivoRelevancia: "Foram encontrados sinais transacionais e dados verificáveis de uma viagem ou serviço concreto.",
-  };
-}
+/*
+ * A relevância de conteúdo analisado por IA é decidida pela própria IA.
+ * Não usamos uma segunda heurística lexical para substituir essa decisão.
+ */
 
 function heuristica(input: AnaliseDocumentoInput): FichaDocumento {
   const base = `${input.nome}\n${input.texto ?? ""}`;
@@ -650,16 +454,14 @@ export const analisarDocumento =
           process.env["LOVABLE_API_KEY"];
 
         if (!apiKey) {
-          const ficha = heuristica(data);
-          const relevancia = relevanciaHeuristica(data, ficha);
-
           return {
-            ficha,
-            relevante: relevancia.relevante,
-            motivoRelevancia: relevancia.motivoRelevancia,
+            ficha: heuristica(data),
+            relevante: false,
+            motivoRelevancia:
+              "A análise automática não está disponível neste momento.",
             porIa: false,
             nota:
-              "Leitura automática simples. Reveja e complete os campos.",
+              "A análise automática não está disponível. O conteúdo não será apresentado como descoberta até poder ser analisado.",
           };
         }
 
@@ -806,35 +608,27 @@ export const analisarDocumento =
             },
           );
 
-          if (
-            resposta.status === 429
-          ) {
-            const ficha = heuristica(data);
-            const relevancia = relevanciaHeuristica(data, ficha);
-
+          if (resposta.status === 429) {
             return {
-              ficha,
-              relevante: relevancia.relevante,
-              motivoRelevancia: relevancia.motivoRelevancia,
+              ficha: heuristica(data),
+              relevante: false,
+              motivoRelevancia:
+                "A análise automática está temporariamente indisponível.",
               porIa: false,
               nota:
-                "A análise automática está temporariamente indisponível. Reveja os dados apresentados.",
+                "Não foi possível concluir a análise automática. O email não será apresentado como descoberta.",
             };
           }
 
-          if (
-            resposta.status === 402
-          ) {
-            const ficha = heuristica(data);
-            const relevancia = relevanciaHeuristica(data, ficha);
-
+          if (resposta.status === 402) {
             return {
-              ficha,
-              relevante: relevancia.relevante,
-              motivoRelevancia: relevancia.motivoRelevancia,
+              ficha: heuristica(data),
+              relevante: false,
+              motivoRelevancia:
+                "A análise automática não está disponível neste momento.",
               porIa: false,
               nota:
-                "A análise automática não está disponível neste momento. Reveja e complete os campos.",
+                "Não foi possível concluir a análise automática. O email não será apresentado como descoberta.",
             };
           }
 
@@ -875,15 +669,21 @@ export const analisarDocumento =
             dadosIa,
             data.nome,
           );
-          const relevanciaFiltro = relevanciaHeuristica(data, ficha);
-          const relevante =
-            dadosIa["relevante"] === true &&
-            relevanciaFiltro.relevante;
+
+          /*
+           * A IA é a autoridade final sobre relevância quando responde.
+           * Não voltamos a aplicar uma heurística lexical por cima da decisão,
+           * porque isso criava falsos positivos e podia contrariar a análise
+           * semântica do email.
+           */
+          const relevante = dadosIa["relevante"] === true;
           const motivoRelevancia =
             typeof dadosIa["motivoRelevancia"] === "string" &&
             dadosIa["motivoRelevancia"].trim()
               ? dadosIa["motivoRelevancia"].trim()
-              : relevanciaFiltro.motivoRelevancia;
+              : relevante
+                ? "A análise identificou uma informação concreta de viagem."
+                : "A análise não identificou uma informação concreta de viagem.";
 
           return {
             ficha,
@@ -901,16 +701,14 @@ export const analisarDocumento =
             erro,
           );
 
-          const ficha = heuristica(data);
-          const relevancia = relevanciaHeuristica(data, ficha);
-
           return {
-            ficha,
-            relevante: relevancia.relevante,
-            motivoRelevancia: relevancia.motivoRelevancia,
+            ficha: heuristica(data),
+            relevante: false,
+            motivoRelevancia:
+              "Não foi possível concluir a análise automática deste conteúdo.",
             porIa: false,
             nota:
-              "Não foi possível ler o conteúdo automaticamente. Complete ou confirme a ficha manualmente.",
+              "Não foi possível ler o conteúdo automaticamente. O email não será apresentado como descoberta.",
           };
         }
       },

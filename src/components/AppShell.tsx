@@ -177,65 +177,90 @@ export function AppShell({ children }: { children: ReactNode }) {
           );
 
           let descobertas = 0;
+          const TAMANHO_LOTE = 3;
 
-          for (const email of novosEmails) {
+          for (
+            let inicio = 0;
+            inicio < novosEmails.length;
+            inicio += TAMANHO_LOTE
+          ) {
             if (cancelado) {
               return;
             }
 
-            try {
-              const resultado = await analisar({
-                data: {
-                  nome: email.assunto || "Email Gmail",
-                  texto: `${email.assunto}\n\n${email.texto}`.trim(),
-                },
-              });
+            const lote = novosEmails.slice(inicio, inicio + TAMANHO_LOTE);
 
-              const ficha =
-                resultado && typeof resultado === "object"
-                  ? (resultado as { ficha?: unknown }).ficha
-                  : null;
+            await Promise.all(
+              lote.map(async (email) => {
+                try {
+                  const resultado = await analisar({
+                    data: {
+                      nome: email.assunto || "Email Gmail",
+                      texto: `${email.assunto}\n\n${email.texto}`.trim(),
+                    },
+                  });
 
-              const relevante =
-                resultado &&
-                typeof resultado === "object" &&
-                (resultado as { relevante?: boolean }).relevante === true;
+                  const ficha =
+                    resultado && typeof resultado === "object"
+                      ? (resultado as { ficha?: unknown }).ficha
+                      : null;
 
-              if (relevante) {
-                descobertas += 1;
-              }
+                  const resultadoTipado =
+                    resultado && typeof resultado === "object"
+                      ? (resultado as {
+                          relevante?: boolean;
+                          porIa?: boolean;
+                        })
+                      : null;
 
-              const { error: erroGuardar } = await supabase
-                .from("emails_gmail_processados" as any)
-                .upsert(
-                  {
-                    user_id: userIdSeguro,
-                    gmail_message_id: email.id,
-                    relevante,
-                    categoria: valorFicha(ficha, "categoria"),
-                    referencia: valorFicha(ficha, "referencia"),
-                    assunto: email.assunto || null,
-                    ficha: ficha ?? null,
-                    estado: relevante ? "pendente" : "processado",
-                    analisado_em: new Date().toISOString(),
-                  },
-                  {
-                    onConflict: "user_id,gmail_message_id",
-                  },
-                );
+                  /*
+                   * Se a IA não conseguiu responder, não marcamos o email como
+                   * processado. Assim uma falha transitória (429, indisponibilidade
+                   * do serviço, etc.) pode ser tentada novamente na próxima ronda.
+                   */
+                  if (resultadoTipado?.porIa !== true) {
+                    return;
+                  }
 
-              if (erroGuardar) {
-                console.error(
-                  "Erro ao guardar email Gmail processado:",
-                  erroGuardar,
-                );
-              }
-            } catch (erro) {
-              console.error(
-                "Erro na deteção automática de email Gmail:",
-                erro,
-              );
-            }
+                  const relevante = resultadoTipado.relevante === true;
+
+                  if (relevante) {
+                    descobertas += 1;
+                  }
+
+                  const { error: erroGuardar } = await supabase
+                    .from("emails_gmail_processados" as any)
+                    .upsert(
+                      {
+                        user_id: userIdSeguro,
+                        gmail_message_id: email.id,
+                        relevante,
+                        categoria: valorFicha(ficha, "categoria"),
+                        referencia: valorFicha(ficha, "referencia"),
+                        assunto: email.assunto || null,
+                        ficha: ficha ?? null,
+                        estado: relevante ? "pendente" : "processado",
+                        analisado_em: new Date().toISOString(),
+                      },
+                      {
+                        onConflict: "user_id,gmail_message_id",
+                      },
+                    );
+
+                  if (erroGuardar) {
+                    console.error(
+                      "Erro ao guardar email Gmail processado:",
+                      erroGuardar,
+                    );
+                  }
+                } catch (erro) {
+                  console.error(
+                    "Erro na deteção automática de email Gmail:",
+                    erro,
+                  );
+                }
+              }),
+            );
           }
 
           if (cancelado) {

@@ -235,7 +235,7 @@ function extrairPartes(payload: {
     .slice(0, 30000);
 }
 
-/** Devolve emails de viagem recentes, opcionalmente apenas depois de uma data. */
+/** Devolve candidatos Gmail para posterior classificação semântica pela IA. */
 export const emailsDeViagem = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input?: { desde?: string | null }) => ({
@@ -266,29 +266,72 @@ export const emailsDeViagem = createServerFn({ method: "GET" })
         "@/integrations/lovable/appUserConnector"
       );
 
+      /*
+       * Esta pesquisa é apenas um pré-filtro de descoberta.
+       * A decisão final de relevância é feita pelo analisador de IA.
+       */
       const termos =
-        '(reserva OR reservado OR confirmacao OR confirmation OR booking OR "booking code" OR PNR OR voucher OR bilhete OR ticket OR itinerary OR itinerario OR flight OR voo OR boarding OR "check-in" OR hotel OR alojamento OR transfer OR train OR comboio OR bus OR autocarro OR ferry OR museu OR museum OR concerto OR concert OR espetaculo OR espectáculo OR teatro OR tour OR excursao OR atividade OR attraction OR entrada)';
+        '(reserva OR reservado OR confirmacao OR confirmation OR booking OR "booking code" OR "booking reference" OR PNR OR voucher OR bilhete OR ticket OR "e-ticket" OR itinerary OR itinerario OR flight OR voo OR boarding OR "boarding pass" OR "check-in" OR "check-out" OR hotel OR alojamento OR transfer OR shuttle OR train OR comboio OR bus OR autocarro OR ferry OR car rental OR aluguer OR museu OR museum OR concerto OR concert OR espetaculo OR espectáculo OR teatro OR tour OR excursao OR atividade OR attraction OR entrada)';
 
       const filtroData = data.desde
-        ? `after:${Math.floor(new Date(data.desde).getTime() / 1000)}`
+        ? (() => {
+            const d = new Date(data.desde);
+            if (Number.isNaN(d.getTime())) {
+              return "newer_than:365d";
+            }
+            const ano = d.getUTCFullYear();
+            const mes = String(d.getUTCMonth() + 1).padStart(2, "0");
+            const dia = String(d.getUTCDate()).padStart(2, "0");
+            return `after:${ano}/${mes}/${dia}`;
+          })()
         : "newer_than:365d";
 
       const consulta = encodeURIComponent(`${filtroData} ${termos}`);
 
-      const lista = await callAsAppUser({
-        gatewayBaseUrl: GATEWAY_BASE_URL,
-        connectionAPIKey: chave,
-        connectorId: CONNECTOR_ID,
-        path: `/gmail/v1/users/me/messages?maxResults=100&q=${consulta}`,
-      });
+      /*
+       * Gmail devolve no máximo 500 mensagens por página. Percorremos as
+       * páginas para não perder reservas antigas quando existem muitos
+       * candidatos. Mantemos um limite global para evitar uma pesquisa manual
+       * transformar-se em milhares de leituras/análises de uma só vez.
+       */
+      const LIMITE_TOTAL = 1000;
+      const TAMANHO_PAGINA = 500;
+      const ids: string[] = [];
+      let pageToken: string | null = null;
 
-      if (!lista.ok) {
-        throw new Error("Não foi possível ler os emails.");
-      }
+      do {
+        const tokenQuery = pageToken
+          ? `&pageToken=${encodeURIComponent(pageToken)}`
+          : "";
 
-      const { messages = [] } = (await lista.json()) as {
-        messages?: Mensagem[];
-      };
+        const lista = await callAsAppUser({
+          gatewayBaseUrl: GATEWAY_BASE_URL,
+          connectionAPIKey: chave,
+          connectorId: CONNECTOR_ID,
+          path: `/gmail/v1/users/me/messages?maxResults=${TAMANHO_PAGINA}&q=${consulta}${tokenQuery}`,
+        });
+
+        if (!lista.ok) {
+          throw new Error("Não foi possível ler os emails.");
+        }
+
+        const pagina = (await lista.json()) as {
+          messages?: Mensagem[];
+          nextPageToken?: string;
+        };
+
+        for (const mensagem of pagina.messages ?? []) {
+          if (mensagem.id && !ids.includes(mensagem.id)) {
+            ids.push(mensagem.id);
+          }
+          if (ids.length >= LIMITE_TOTAL) break;
+        }
+
+        pageToken =
+          ids.length < LIMITE_TOTAL && pagina.nextPageToken
+            ? pagina.nextPageToken
+            : null;
+      } while (pageToken);
 
       const resultados: Array<{
         id: string;
@@ -296,14 +339,17 @@ export const emailsDeViagem = createServerFn({ method: "GET" })
         texto: string;
       }> = [];
 
-      for (const m of messages.slice(0, 100)) {
-        if (!m.id) continue;
-
+      /*
+       * Lemos o conteúdo completo de cada candidato. O texto já é limpo e
+       * limitado a 30 000 caracteres para manter emails longos controláveis,
+       * mas sem cortar os primeiros 12 000 antes de chegar à IA.
+       */
+      for (const id of ids) {
         const res = await callAsAppUser({
           gatewayBaseUrl: GATEWAY_BASE_URL,
           connectionAPIKey: chave,
           connectorId: CONNECTOR_ID,
-          path: `/gmail/v1/users/me/messages/${m.id}?format=full`,
+          path: `/gmail/v1/users/me/messages/${id}?format=full`,
         });
 
         if (!res.ok) continue;
@@ -340,7 +386,7 @@ export const emailsDeViagem = createServerFn({ method: "GET" })
           .slice(0, 30000);
 
         resultados.push({
-          id: m.id,
+          id,
           assunto,
           texto,
         });
