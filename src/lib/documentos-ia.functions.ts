@@ -776,13 +776,14 @@ export const analisarDocumento =
             data.nome,
           );
           const relevanciaFiltro = relevanciaHeuristica(data, ficha);
-          const relevante = relevanciaFiltro.relevante;
-          const motivoRelevancia = relevante
-            ? (typeof dadosIa["motivoRelevancia"] === "string" &&
-              dadosIa["motivoRelevancia"].trim()
-                ? dadosIa["motivoRelevancia"].trim()
-                : relevanciaFiltro.motivoRelevancia)
-            : relevanciaFiltro.motivoRelevancia;
+          const relevante =
+            dadosIa["relevante"] === true &&
+            relevanciaFiltro.relevante;
+          const motivoRelevancia =
+            typeof dadosIa["motivoRelevancia"] === "string" &&
+            dadosIa["motivoRelevancia"].trim()
+              ? dadosIa["motivoRelevancia"].trim()
+              : relevanciaFiltro.motivoRelevancia;
 
           return {
             ficha,

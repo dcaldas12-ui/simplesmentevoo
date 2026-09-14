@@ -104,6 +104,7 @@ type DescobertaAutomatica = {
   ficha: unknown;
   categoria: string | null;
   referencia: string | null;
+  relevante: boolean;
   analisado_em: string | null;
 };
 
@@ -936,7 +937,7 @@ export function LigacaoGmail() {
         const { data, error } = await supabase
           .from("emails_gmail_processados" as any)
           .select(
-            "id, gmail_message_id, assunto, ficha, categoria, referencia, analisado_em",
+            "id, gmail_message_id, assunto, ficha, categoria, referencia, relevante, analisado_em",
           )
           .eq("user_id", userId)
           .eq("estado", "pendente")
@@ -994,22 +995,29 @@ export function LigacaoGmail() {
       },
       estado: "analisado",
       resultado: {
-        relevante: true,
+        relevante: item.relevante === true,
         ficha: item.ficha,
       },
     }));
 
-  const analisesVisiveis = [
-    ...analises,
-    ...analisesAutomaticas,
-  ].filter(
+  // A pesquisa manual e as descobertas automáticas são apresentadas separadamente.
+  // Isto impede que registos antigos guardados pela deteção automática contaminem
+  // a lista da pesquisa manual.
+  const analisesVisiveis = analises.filter(
     (item) =>
       item.estado === "analisado" &&
       analiseEhRelevante(item.resultado) &&
       !ignorados.includes(item.email.id),
   );
 
+  const analisesAutomaticasVisiveis = analisesAutomaticas.filter(
+    (item) =>
+      item.estado === "analisado" &&
+      analiseEhRelevante(item.resultado),
+  );
+
   const numeroRelevantes = analisesVisiveis.length;
+  const numeroAutomaticas = analisesAutomaticasVisiveis.length;
   const numeroIgnorados = ignorados.length;
 
   return (
@@ -1139,32 +1147,65 @@ export function LigacaoGmail() {
             </div>
           ) : null}
 
-          {analisesVisiveis.length > 0 || analises.length > 0 || descobertasAutomaticas.length > 0 ? (
+          {analisesVisiveis.length > 0 || analises.length > 0 || analisesAutomaticasVisiveis.length > 0 ? (
             <div className="mt-5 space-y-3">
-              <div className="flex items-end justify-between gap-3">
-                <div>
-                  <p className="text-sm font-semibold">
-                    Elementos de viagem encontrados
-                  </p>
+              {analises.length > 0 ? (
+                <>
+                  <div className="flex items-end justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-semibold">
+                        Elementos de viagem encontrados
+                      </p>
 
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    Mostramos apenas os emails que a análise identificou como
-                    relevantes para uma viagem ou evento concreto.
-                  </p>
-                </div>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        Mostramos apenas os emails da pesquisa manual que a análise
+                        identificou como relevantes para uma viagem ou evento concreto.
+                      </p>
+                    </div>
 
-                <span className="shrink-0 rounded-full bg-secondary px-2.5 py-1 text-xs text-muted-foreground">
-                  {numeroRelevantes}
-                </span>
-              </div>
+                    <span className="shrink-0 rounded-full bg-secondary px-2.5 py-1 text-xs text-muted-foreground">
+                      {numeroRelevantes}
+                    </span>
+                  </div>
 
-              {analisesVisiveis.map((item) => (
-                <CartaoResultado
-                  key={item.email.id}
-                  item={item}
-                  aoIgnorar={ignorar}
-                />
-              ))}
+                  {analisesVisiveis.map((item) => (
+                    <CartaoResultado
+                      key={item.email.id}
+                      item={item}
+                      aoIgnorar={ignorar}
+                    />
+                  ))}
+                </>
+              ) : null}
+
+              {numeroAutomaticas > 0 ? (
+                <>
+                  <div className="mt-6 flex items-end justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-semibold">
+                        Novas descobertas automáticas
+                      </p>
+
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        Estes elementos foram encontrados automaticamente pelo Gmail.
+                        Reveja-os antes de os adicionar a uma viagem.
+                      </p>
+                    </div>
+
+                    <span className="shrink-0 rounded-full bg-secondary px-2.5 py-1 text-xs text-muted-foreground">
+                      {numeroAutomaticas}
+                    </span>
+                  </div>
+
+                  {analisesAutomaticasVisiveis.map((item) => (
+                    <CartaoResultado
+                      key={item.email.id}
+                      item={item}
+                      aoIgnorar={ignorar}
+                    />
+                  ))}
+                </>
+              ) : null}
 
               {numeroIgnorados > 0 ? (
                 <div className="flex items-center justify-between rounded-xl border border-border bg-card px-3 py-2">
@@ -1186,7 +1227,7 @@ export function LigacaoGmail() {
                 </div>
               ) : null}
 
-              {!aProcurar && numeroRelevantes === 0 ? (
+              {!aProcurar && analises.length > 0 && numeroRelevantes === 0 ? (
                 <div className="rounded-xl border border-border bg-card p-4">
                   <p className="text-sm font-medium">
                     Não encontrámos elementos de viagem relevantes.
@@ -1217,23 +1258,6 @@ export function LigacaoGmail() {
                   </div>
                 </div>
               ) : null}
-            </div>
-          ) : resultados.length > 0 ? (
-            <div className="mt-4 space-y-3">
-              <p className="text-sm font-medium">
-                Emails encontrados ({resultados.length})
-              </p>
-
-              {resultados.map((email) => (
-                <div
-                  key={email.id}
-                  className="rounded-xl border border-border bg-card p-4"
-                >
-                  <p className="text-sm font-medium">
-                    {email.assunto || "Email sem assunto"}
-                  </p>
-                </div>
-              ))}
             </div>
           ) : (
             <p className="mt-2 text-xs text-muted-foreground">
