@@ -357,12 +357,13 @@ export const emailsDeViagem = createServerFn({ method: "GET" })
       );
 
       /*
-       * Esta pesquisa é apenas um pré-filtro de descoberta.
-       * A decisão final de relevância é feita pelo analisador de IA.
+       * Aqui não fazemos classificação por palavras-chave.
+       * O Gmail serve apenas para limitar por data; a decisão sobre o que é
+       * ou não uma viagem é feita posteriormente pelo analisador de IA.
+       *
+       * Isto evita perder emails de reservas cujo conteúdo não use nenhuma
+       * das palavras previstas num pré-filtro fixo.
        */
-      const termos =
-        '(reserva OR reservado OR confirmacao OR confirmation OR booking OR "booking code" OR "booking reference" OR PNR OR voucher OR bilhete OR ticket OR "e-ticket" OR itinerary OR itinerario OR flight OR voo OR boarding OR "boarding pass" OR "check-in" OR "check-out" OR hotel OR alojamento OR transfer OR shuttle OR train OR comboio OR bus OR autocarro OR ferry OR car rental OR aluguer OR museu OR museum OR concerto OR concert OR espetaculo OR espectáculo OR teatro OR tour OR excursao OR atividade OR attraction OR entrada)';
-
       const filtroData = data.desde
         ? (() => {
             const d = new Date(data.desde);
@@ -383,9 +384,7 @@ export const emailsDeViagem = createServerFn({ method: "GET" })
           })()
         : "newer_than:365d";
 
-      const consulta = encodeURIComponent(
-        `${filtroData} ${termos}`,
-      );
+      const consulta = encodeURIComponent(filtroData);
 
       /*
        * Gmail devolve no máximo 500 mensagens por página. Percorremos as
@@ -408,12 +407,28 @@ export const emailsDeViagem = createServerFn({ method: "GET" })
           gatewayBaseUrl: GATEWAY_BASE_URL,
           connectionAPIKey: chave,
           connectorId: CONNECTOR_ID,
-          path: `/gmail/v1/users/me/messages?maxResults=${TAMANHO_PAGINA}&q=${consulta}${tokenQuery}`,
+          path: `/gmail/v1/users/me/messages?maxResults=${TAMANHO_PAGINA}&includeSpamTrash=true&q=${consulta}${tokenQuery}`,
         });
 
         if (!lista.ok) {
+          let detalhe = "";
+
+          try {
+            detalhe = await lista.text();
+          } catch {
+            detalhe = "";
+          }
+
+          console.error("Gmail: falha ao listar mensagens", {
+            status: lista.status,
+            statusText: lista.statusText,
+            detalhe,
+          });
+
           throw new Error(
-            "Não foi possível ler os emails.",
+            `Não foi possível ler os emails. HTTP ${lista.status}${
+              lista.statusText ? ` ${lista.statusText}` : ""
+            }${detalhe ? ` — ${detalhe}` : ""}`,
           );
         }
 
@@ -462,6 +477,11 @@ export const emailsDeViagem = createServerFn({ method: "GET" })
         });
 
         if (!res.ok) {
+          console.warn("Gmail: não foi possível ler a mensagem", {
+            id,
+            status: res.status,
+            statusText: res.statusText,
+          });
           continue;
         }
 
