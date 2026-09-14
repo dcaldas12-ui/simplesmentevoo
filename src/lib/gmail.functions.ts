@@ -19,28 +19,74 @@ export const estadoGmail = createServerFn({ method: "GET" })
     const configurado = Boolean(
       process.env["GOOGLE_MAIL_APP_USER_CONNECTOR_CLIENT_API_KEY"],
     );
-    if (!configurado) return { configurado: false, ligado: false, email: "" };
+
+    if (!configurado) {
+      return {
+        configurado: false,
+        ligado: false,
+        email: "",
+      };
+    }
 
     const { getConnectionKeyForUser } = await import(
       "@/server/appUserConnections.server"
     );
+
     const chave = await getConnectionKeyForUser(
       context.userId,
       CONNECTOR_ID,
     );
-    if (!chave) return { configurado: true, ligado: false, email: "" };
+
+    if (!chave) {
+      return {
+        configurado: true,
+        ligado: false,
+        email: "",
+      };
+    }
 
     const { callAsAppUser } = await import(
       "@/integrations/lovable/appUserConnector"
     );
+
     const res = await callAsAppUser({
       gatewayBaseUrl: GATEWAY_BASE_URL,
       connectionAPIKey: chave,
       connectorId: CONNECTOR_ID,
       path: "/gmail/v1/users/me/profile",
     });
-    if (!res.ok) return { configurado: true, ligado: false, email: "" };
-    const perfil = (await res.json()) as { emailAddress?: string };
+
+    /*
+     * Não escondemos mais o erro devolvido pelo Connector.
+     * Se a connection key guardada for inválida, expirada ou rejeitada,
+     * precisamos de saber o HTTP status e a resposta real.
+     */
+    if (!res.ok) {
+      let detalhe = "";
+
+      try {
+        detalhe = await res.text();
+      } catch {
+        detalhe = "";
+      }
+
+      console.error("Gmail Connector rejeitou a connection key:", {
+        status: res.status,
+        statusText: res.statusText,
+        detalhe,
+      });
+
+      throw new Error(
+        `Gmail Connector: HTTP ${res.status}${
+          res.statusText ? ` ${res.statusText}` : ""
+        }${detalhe ? ` — ${detalhe}` : ""}`,
+      );
+    }
+
+    const perfil = (await res.json()) as {
+      emailAddress?: string;
+    };
+
     return {
       configurado: true,
       ligado: true,
@@ -54,16 +100,19 @@ export const iniciarLigacaoGmail = createServerFn({ method: "POST" })
   .handler(async ({ context }) => {
     const clientAPIKey =
       process.env["GOOGLE_MAIL_APP_USER_CONNECTOR_CLIENT_API_KEY"];
+
     if (!clientAPIKey) {
       throw new Error("A ligação ao Gmail ainda não está configurada.");
     }
 
     const request = getRequest();
+
     if (!request) {
       throw new Error("A ligação tem de começar a partir da app.");
     }
 
     const url = new URL(request.url);
+
     const sandboxHost =
       url.hostname === "localhost"
         ? request.headers.get("x-forwarded-host")
@@ -77,6 +126,7 @@ export const iniciarLigacaoGmail = createServerFn({ method: "POST" })
     const { getConnectionKeyForUser } = await import(
       "@/server/appUserConnections.server"
     );
+
     const chave = await getConnectionKeyForUser(
       context.userId,
       CONNECTOR_ID,
@@ -85,6 +135,7 @@ export const iniciarLigacaoGmail = createServerFn({ method: "POST" })
     const { authorizeAppUserOAuth } = await import(
       "@/integrations/lovable/appUserConnector"
     );
+
     const { authorizationUrl } = await authorizeAppUserOAuth({
       gatewayBaseUrl: GATEWAY_BASE_URL,
       connectorId: CONNECTOR_ID,
@@ -92,10 +143,14 @@ export const iniciarLigacaoGmail = createServerFn({ method: "POST" })
       clientAPIKey,
       returnUrl,
       connectionAPIKey: chave ?? undefined,
-      credentialsConfiguration: { scopes: SCOPES },
+      credentialsConfiguration: {
+        scopes: SCOPES,
+      },
     });
 
-    return { authorizationUrl };
+    return {
+      authorizationUrl,
+    };
   });
 
 /** Troca o código único do retorno OAuth e guarda a ligação do utilizador. */
@@ -108,8 +163,12 @@ export const concluirLigacaoGmail = createServerFn({ method: "POST" })
     const { exchangeAppUserOAuthCode } = await import(
       "@/integrations/lovable/appUserConnector"
     );
+
     const { connectionAPIKey, connectorId } =
-      await exchangeAppUserOAuthCode(GATEWAY_BASE_URL, data.code);
+      await exchangeAppUserOAuthCode(
+        GATEWAY_BASE_URL,
+        data.code,
+      );
 
     if (connectorId !== CONNECTOR_ID) {
       throw new Error("Ligação devolvida para o serviço errado.");
@@ -118,21 +177,26 @@ export const concluirLigacaoGmail = createServerFn({ method: "POST" })
     const { saveConnectionKeyForUser } = await import(
       "@/server/appUserConnections.server"
     );
+
     await saveConnectionKeyForUser(
       context.userId,
       connectorId,
       connectionAPIKey,
     );
 
-    return { ok: true };
+    return {
+      ok: true,
+    };
   });
 
 /** Termina a ligação e apaga a credencial guardada. */
 export const desligarGmail = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
-    const { getConnectionKeyForUser, deleteConnectionForUser } =
-      await import("@/server/appUserConnections.server");
+    const {
+      getConnectionKeyForUser,
+      deleteConnectionForUser,
+    } = await import("@/server/appUserConnections.server");
 
     const chave = await getConnectionKeyForUser(
       context.userId,
@@ -143,6 +207,7 @@ export const desligarGmail = createServerFn({ method: "POST" })
       const { disconnectAppUser } = await import(
         "@/integrations/lovable/appUserConnector"
       );
+
       await disconnectAppUser({
         gatewayBaseUrl: GATEWAY_BASE_URL,
         connectionAPIKey: chave,
@@ -150,11 +215,19 @@ export const desligarGmail = createServerFn({ method: "POST" })
       });
     }
 
-    await deleteConnectionForUser(context.userId, CONNECTOR_ID);
-    return { ok: true };
+    await deleteConnectionForUser(
+      context.userId,
+      CONNECTOR_ID,
+    );
+
+    return {
+      ok: true,
+    };
   });
 
-type Mensagem = { id?: string };
+type Mensagem = {
+  id?: string;
+};
 
 /**
  * Extrai recursivamente o texto das partes de uma mensagem Gmail.
@@ -163,10 +236,14 @@ type Mensagem = { id?: string };
  */
 function extrairPartes(payload: {
   mimeType?: string;
-  body?: { data?: string };
+  body?: {
+    data?: string;
+  };
   parts?: Array<{
     mimeType?: string;
-    body?: { data?: string };
+    body?: {
+      data?: string;
+    };
     parts?: Array<unknown>;
   }>;
 }): string {
@@ -174,14 +251,17 @@ function extrairPartes(payload: {
 
   function visitar(parte: {
     mimeType?: string;
-    body?: { data?: string };
+    body?: {
+      data?: string;
+    };
     parts?: Array<unknown>;
   }) {
     if (parte.body?.data) {
       try {
-        const decoded = Buffer.from(parte.body.data, "base64url").toString(
-          "utf-8",
-        );
+        const decoded = Buffer.from(
+          parte.body.data,
+          "base64url",
+        ).toString("utf-8");
 
         if (parte.mimeType === "text/plain") {
           textos.push(decoded);
@@ -216,11 +296,15 @@ function extrairPartes(payload: {
 
     for (const subparte of parte.parts ?? []) {
       if (subparte && typeof subparte === "object") {
-        visitar(subparte as {
-          mimeType?: string;
-          body?: { data?: string };
-          parts?: Array<unknown>;
-        });
+        visitar(
+          subparte as {
+            mimeType?: string;
+            body?: {
+              data?: string;
+            };
+            parts?: Array<unknown>;
+          },
+        );
       }
     }
   }
@@ -248,7 +332,13 @@ export const emailsDeViagem = createServerFn({ method: "GET" })
     async ({
       data,
       context,
-    }): Promise<Array<{ id: string; assunto: string; texto: string }>> => {
+    }): Promise<
+      Array<{
+        id: string;
+        assunto: string;
+        texto: string;
+      }>
+    > => {
       const { getConnectionKeyForUser } = await import(
         "@/server/appUserConnections.server"
       );
@@ -276,17 +366,26 @@ export const emailsDeViagem = createServerFn({ method: "GET" })
       const filtroData = data.desde
         ? (() => {
             const d = new Date(data.desde);
+
             if (Number.isNaN(d.getTime())) {
               return "newer_than:365d";
             }
+
             const ano = d.getUTCFullYear();
-            const mes = String(d.getUTCMonth() + 1).padStart(2, "0");
-            const dia = String(d.getUTCDate()).padStart(2, "0");
+            const mes = String(
+              d.getUTCMonth() + 1,
+            ).padStart(2, "0");
+            const dia = String(
+              d.getUTCDate(),
+            ).padStart(2, "0");
+
             return `after:${ano}/${mes}/${dia}`;
           })()
         : "newer_than:365d";
 
-      const consulta = encodeURIComponent(`${filtroData} ${termos}`);
+      const consulta = encodeURIComponent(
+        `${filtroData} ${termos}`,
+      );
 
       /*
        * Gmail devolve no máximo 500 mensagens por página. Percorremos as
@@ -296,6 +395,7 @@ export const emailsDeViagem = createServerFn({ method: "GET" })
        */
       const LIMITE_TOTAL = 1000;
       const TAMANHO_PAGINA = 500;
+
       const ids: string[] = [];
       let pageToken: string | null = null;
 
@@ -312,7 +412,9 @@ export const emailsDeViagem = createServerFn({ method: "GET" })
         });
 
         if (!lista.ok) {
-          throw new Error("Não foi possível ler os emails.");
+          throw new Error(
+            "Não foi possível ler os emails.",
+          );
         }
 
         const pagina = (await lista.json()) as {
@@ -321,14 +423,21 @@ export const emailsDeViagem = createServerFn({ method: "GET" })
         };
 
         for (const mensagem of pagina.messages ?? []) {
-          if (mensagem.id && !ids.includes(mensagem.id)) {
+          if (
+            mensagem.id &&
+            !ids.includes(mensagem.id)
+          ) {
             ids.push(mensagem.id);
           }
-          if (ids.length >= LIMITE_TOTAL) break;
+
+          if (ids.length >= LIMITE_TOTAL) {
+            break;
+          }
         }
 
         pageToken =
-          ids.length < LIMITE_TOTAL && pagina.nextPageToken
+          ids.length < LIMITE_TOTAL &&
+          pagina.nextPageToken
             ? pagina.nextPageToken
             : null;
       } while (pageToken);
@@ -352,29 +461,41 @@ export const emailsDeViagem = createServerFn({ method: "GET" })
           path: `/gmail/v1/users/me/messages/${id}?format=full`,
         });
 
-        if (!res.ok) continue;
+        if (!res.ok) {
+          continue;
+        }
 
         const msg = (await res.json()) as {
           snippet?: string;
           id?: string;
           payload?: {
             mimeType?: string;
-            body?: { data?: string };
+            body?: {
+              data?: string;
+            };
             parts?: Array<{
               mimeType?: string;
-              body?: { data?: string };
+              body?: {
+                data?: string;
+              };
               parts?: Array<unknown>;
             }>;
-            headers?: Array<{ name?: string; value?: string }>;
+            headers?: Array<{
+              name?: string;
+              value?: string;
+            }>;
           };
         };
 
         const assunto =
           msg.payload?.headers?.find(
-            (h) => h.name?.toLowerCase() === "subject",
+            (h) =>
+              h.name?.toLowerCase() === "subject",
           )?.value ?? "";
 
-        const corpo = msg.payload ? extrairPartes(msg.payload) : "";
+        const corpo = msg.payload
+          ? extrairPartes(msg.payload)
+          : "";
 
         const texto = [
           assunto,
