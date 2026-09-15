@@ -408,70 +408,57 @@ export const emailsDeViagem = createServerFn({ method: "GET" })
 
       const consulta = encodeURIComponent(filtroData);
 
-      const LIMITE_TOTAL = Math.max(1, Math.min(data.limite ?? 1000, 1000));
-      const TAMANHO_PAGINA = Math.min(LIMITE_TOTAL, 100);
+      /*
+       * IMPORTANTE: a deteção automática chama esta função periodicamente.
+       * Não podemos fazer paginação nem descarregar dezenas de mensagens em
+       * cada ronda, porque cada leitura completa de mensagem é uma chamada
+       * adicional ao Gmail e pode esgotar rapidamente a quota por utilizador.
+       *
+       * Quando `limite` é enviado (caso da deteção automática), aceitamos no
+       * máximo 3 mensagens. Na pesquisa manual, quando nenhum limite é
+       * enviado, aceitamos no máximo 10.
+       */
+      const LIMITE_TOTAL =
+        data.limite !== null && data.limite !== undefined
+          ? Math.max(1, Math.min(Math.floor(data.limite), 3))
+          : 10;
 
-      const ids: string[] = [];
-      let pageToken: string | null = null;
+      const lista = await callAsAppUser({
+        gatewayBaseUrl: GATEWAY_BASE_URL,
+        connectionAPIKey: chave,
+        connectorId: CONNECTOR_ID,
+        path: `/gmail/v1/users/me/messages?maxResults=${LIMITE_TOTAL}&includeSpamTrash=false&q=${consulta}`,
+      });
 
-      do {
-        const tokenQuery = pageToken
-          ? `&pageToken=${encodeURIComponent(pageToken)}`
-          : "";
+      if (!lista.ok) {
+        let detalhe = "";
 
-        const lista = await callAsAppUser({
-          gatewayBaseUrl: GATEWAY_BASE_URL,
-          connectionAPIKey: chave,
-          connectorId: CONNECTOR_ID,
-          path: `/gmail/v1/users/me/messages?maxResults=${TAMANHO_PAGINA}&includeSpamTrash=true&q=${consulta}${tokenQuery}`,
+        try {
+          detalhe = await lista.text();
+        } catch {
+          detalhe = "";
+        }
+
+        console.error("Gmail: falha ao listar mensagens", {
+          status: lista.status,
+          statusText: lista.statusText,
+          detalhe,
         });
 
-        if (!lista.ok) {
-          let detalhe = "";
+        throw new Error(
+          `Não foi possível ler os emails. HTTP ${lista.status}${
+            lista.statusText ? ` ${lista.statusText}` : ""
+          }${detalhe ? ` — ${detalhe}` : ""}`,
+        );
+      }
 
-          try {
-            detalhe = await lista.text();
-          } catch {
-            detalhe = "";
-          }
+      const pagina = (await lista.json()) as {
+        messages?: Mensagem[];
+      };
 
-          console.error("Gmail: falha ao listar mensagens", {
-            status: lista.status,
-            statusText: lista.statusText,
-            detalhe,
-          });
-
-          throw new Error(
-            `Não foi possível ler os emails. HTTP ${lista.status}${
-              lista.statusText ? ` ${lista.statusText}` : ""
-            }${detalhe ? ` — ${detalhe}` : ""}`,
-          );
-        }
-
-        const pagina = (await lista.json()) as {
-          messages?: Mensagem[];
-          nextPageToken?: string;
-        };
-
-        for (const mensagem of pagina.messages ?? []) {
-          if (
-            mensagem.id &&
-            !ids.includes(mensagem.id)
-          ) {
-            ids.push(mensagem.id);
-          }
-
-          if (ids.length >= LIMITE_TOTAL) {
-            break;
-          }
-        }
-
-        pageToken =
-          ids.length < LIMITE_TOTAL &&
-          pagina.nextPageToken
-            ? pagina.nextPageToken
-            : null;
-      } while (pageToken);
+      const ids = (pagina.messages ?? [])
+        .map((mensagem) => mensagem.id)
+        .filter((id): id is string => Boolean(id));
 
       const resultados: Array<{
         id: string;
@@ -483,7 +470,18 @@ export const emailsDeViagem = createServerFn({ method: "GET" })
        * Lemos o conteúdo completo apenas dos candidatos que passaram
        * pela pesquisa temporal.
        */
-      for (const id of ids) {
+      for (let indice = 0; indice < ids.length; indice += 1) {
+        const id = ids[indice];
+
+        if (!id) {
+          continue;
+        }
+
+        /* Pequena pausa entre leituras completas para evitar rajadas. */
+        if (indice > 0) {
+          await new Promise((resolve) => setTimeout(resolve, 1200));
+        }
+
         const res = await callAsAppUser({
           gatewayBaseUrl: GATEWAY_BASE_URL,
           connectionAPIKey: chave,
@@ -492,11 +490,29 @@ export const emailsDeViagem = createServerFn({ method: "GET" })
         });
 
         if (!res.ok) {
+          let detalhe = "";
+
+          try {
+            detalhe = await res.text();
+          } catch {
+            detalhe = "";
+          }
+
           console.warn("Gmail: não foi possível ler a mensagem", {
             id,
             status: res.status,
             statusText: res.statusText,
+            detalhe,
           });
+
+          if (res.status === 403 || res.status === 429) {
+            throw new Error(
+              `Gmail atingiu um limite de utilização (HTTP ${res.status})${
+                detalhe ? ` — ${detalhe}` : ""
+              }. Aguarde alguns instantes antes de tentar novamente.`,
+            );
+          }
+
           continue;
         }
 
