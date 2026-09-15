@@ -158,6 +158,12 @@ export function AppShell({ children }: { children: ReactNode }) {
 
           const ids = emails.map((email) => email.id);
 
+          console.info("Gmail: deteção automática encontrou candidatos", {
+            quantidade: emails.length,
+            desde,
+            primeiroAssunto: emails[0]?.assunto ?? "",
+          });
+
           const { data: processados, error: erroProcessados } =
             await supabase
               .from("emails_gmail_processados" as any)
@@ -183,6 +189,14 @@ export function AppShell({ children }: { children: ReactNode }) {
 
           const novosEmails = emails.filter(
             (email) => !idsJaProcessados.has(email.id),
+          );
+
+          toast.info(
+            `Deteção Gmail: ${emails.length} email${
+              emails.length === 1 ? "" : "s"
+            } encontrado${emails.length === 1 ? "" : "s"} — ${
+              novosEmails.length
+            } novo${novosEmails.length === 1 ? "" : "s"} para analisar.`,
           );
 
           let descobertas = 0;
@@ -300,6 +314,20 @@ export function AppShell({ children }: { children: ReactNode }) {
             })
             .eq("user_id", userIdSeguro);
 
+          console.info("Gmail: deteção automática concluída", {
+            candidatos: emails.length,
+            novos: novosEmails.length,
+            relevantes: descobertas,
+          });
+
+          if (novosEmails.length > 0 && descobertas === 0 && !cancelado) {
+            toast.info(
+              `A deteção automática analisou ${novosEmails.length} email${
+                novosEmails.length === 1 ? "" : "s"
+              } novo${novosEmails.length === 1 ? "" : "s"}, mas não encontrou uma reserva ou evento de viagem relevante.`,
+            );
+          }
+
           if (descobertas > 0 && !cancelado) {
             const assunto =
               novasDescobertasAssuntos[0] ?? null;
@@ -329,6 +357,14 @@ export function AppShell({ children }: { children: ReactNode }) {
             "Erro na deteção automática do Gmail:",
             erro,
           );
+
+          if (!cancelado) {
+            toast.error(
+              erro instanceof Error
+                ? `Deteção Gmail: ${erro.message}`
+                : "A deteção automática do Gmail falhou.",
+            );
+          }
         }
       })();
 
