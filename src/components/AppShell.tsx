@@ -18,9 +18,7 @@ import { SeletorIdioma } from "@/components/SeletorIdioma";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { useSession } from "@/lib/auth";
-import {
-  analisarDocumento,
-} from "@/lib/documentos-ia.functions";
+import { analisarDocumento } from "@/lib/documentos-ia.functions";
 import {
   emailsDeViagem,
   estadoGmail,
@@ -119,7 +117,10 @@ export function AppShell({ children }: { children: ReactNode }) {
 
           /*
            * Na primeira execução automática analisamos apenas os últimos
-           * 7 dias. Depois, cada execução procura desde a última análise.
+           * 7 dias.
+           *
+           * Nas seguintes usamos o instante da última verificação e a função
+           * Gmail faz uma pequena margem de segurança de 60 segundos.
            */
           const desde = ultimaAnalise
             ? ultimaAnalise
@@ -127,8 +128,16 @@ export function AppShell({ children }: { children: ReactNode }) {
                 Date.now() - 7 * 24 * 60 * 60 * 1000,
               ).toISOString();
 
+          /*
+           * A deteção automática usa um limite pequeno.
+           * Não precisamos de voltar a descarregar centenas de mensagens
+           * a cada minuto.
+           */
           const emails = await procurarEmails({
-            data: { desde },
+            data: {
+              desde,
+              limite: 50,
+            },
           });
 
           if (cancelado) {
@@ -189,7 +198,10 @@ export function AppShell({ children }: { children: ReactNode }) {
               return;
             }
 
-            const lote = novosEmails.slice(inicio, inicio + TAMANHO_LOTE);
+            const lote = novosEmails.slice(
+              inicio,
+              inicio + TAMANHO_LOTE,
+            );
 
             await Promise.all(
               lote.map(async (email) => {
@@ -215,20 +227,24 @@ export function AppShell({ children }: { children: ReactNode }) {
                       : null;
 
                   /*
-                   * Se a IA não conseguiu responder, não marcamos o email como
-                   * processado. Assim uma falha transitória (429, indisponibilidade
-                   * do serviço, etc.) pode ser tentada novamente na próxima ronda.
+                   * Se a IA não conseguiu responder, não marcamos o email
+                   * como processado. Assim uma falha transitória pode ser
+                   * tentada novamente na próxima ronda.
                    */
                   if (resultadoTipado?.porIa !== true) {
                     return;
                   }
 
-                  const relevante = resultadoTipado.relevante === true;
+                  const relevante =
+                    resultadoTipado.relevante === true;
 
                   if (relevante) {
                     descobertas += 1;
+
                     if (email.assunto?.trim()) {
-                      novasDescobertasAssuntos.push(email.assunto.trim());
+                      novasDescobertasAssuntos.push(
+                        email.assunto.trim(),
+                      );
                     }
                   }
 
@@ -243,11 +259,14 @@ export function AppShell({ children }: { children: ReactNode }) {
                         referencia: valorFicha(ficha, "referencia"),
                         assunto: email.assunto || null,
                         ficha: ficha ?? null,
-                        estado: relevante ? "pendente" : "processado",
+                        estado: relevante
+                          ? "pendente"
+                          : "processado",
                         analisado_em: new Date().toISOString(),
                       },
                       {
-                        onConflict: "user_id,gmail_message_id",
+                        onConflict:
+                          "user_id,gmail_message_id",
                       },
                     );
 
@@ -271,30 +290,35 @@ export function AppShell({ children }: { children: ReactNode }) {
             return;
           }
 
+          const agora = new Date().toISOString();
+
           await supabase
             .from("preferencias_importacao" as any)
             .update({
-              ultima_analise_gmail_em: new Date().toISOString(),
-              updated_at: new Date().toISOString(),
+              ultima_analise_gmail_em: agora,
+              updated_at: agora,
             })
             .eq("user_id", userIdSeguro);
 
           if (descobertas > 0 && !cancelado) {
-            const assunto = novasDescobertasAssuntos[0];
+            const assunto =
+              novasDescobertasAssuntos[0] ?? null;
 
             toast.info(
               assunto
-                ? `Nova sugestão de viagem: ${assunto}`
+                ? `Encontrámos um novo email de viagem: ${assunto}`
                 : "Encontrámos uma nova informação de viagem no Gmail.",
               {
                 description:
                   descobertas === 1
-                    ? "Encontrámos uma nova informação de viagem. Quer rever e adicionar à sua viagem?"
-                    : `Encontrámos ${descobertas} novas informações de viagem. Quer rever e adicionar à sua viagem?`,
+                    ? "Quer rever e adicionar esta informação à sua viagem?"
+                    : `Encontrámos ${descobertas} novas informações de viagem. Quer revê-las e adicioná-las às suas viagens?`,
                 action: {
                   label: "Ver",
                   onClick: () => {
-                    void navigate({ to: "/importar" });
+                    void navigate({
+                      to: "/importar",
+                    });
                   },
                 },
               },
@@ -313,7 +337,9 @@ export function AppShell({ children }: { children: ReactNode }) {
       try {
         await tarefa;
       } finally {
-        if (deteccoesGmailEmCurso.get(userIdSeguro) === tarefa) {
+        if (
+          deteccoesGmailEmCurso.get(userIdSeguro) === tarefa
+        ) {
           deteccoesGmailEmCurso.delete(userIdSeguro);
         }
       }
@@ -321,10 +347,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 
     /*
      * A primeira verificação acontece logo ao entrar na aplicação.
-     * Depois repetimos a verificação periodicamente. Isto é importante
-     * porque o AppShell permanece montado quando o utilizador navega entre
-     * páginas: depender apenas de session?.user.id faria a deteção correr
-     * uma única vez e nunca mais depois de o consentimento ser ativado.
+     * Depois repetimos a verificação periodicamente.
      */
     void detetarNovosEmails();
 
@@ -336,12 +359,20 @@ export function AppShell({ children }: { children: ReactNode }) {
       cancelado = true;
       window.clearInterval(intervalo);
     };
-  }, [session?.user.id, analisar, procurarEmails, verificarGmail]);
+  }, [
+    session?.user.id,
+    analisar,
+    procurarEmails,
+    verificarGmail,
+    navigate,
+  ]);
 
   function abrirPesquisa(e: React.MouseEvent) {
     e.preventDefault();
 
-    const guardada = sessionStorage.getItem("viatorbis-ultima-pesquisa");
+    const guardada = sessionStorage.getItem(
+      "viatorbis-ultima-pesquisa",
+    );
 
     if (!guardada) {
       void navigate({
@@ -420,15 +451,18 @@ export function AppShell({ children }: { children: ReactNode }) {
           idaDepois: ultima.idaDepois ?? 0,
           regressoAntes: ultima.regressoAntes ?? 0,
           regressoDepois: ultima.regressoDepois ?? 0,
-          duracaoMinima: Number(ultima.duracaoMinima ?? 0) || 0,
-          duracaoMaxima: Number(ultima.duracaoMaxima ?? 0) || 0,
+          duracaoMinima:
+            Number(ultima.duracaoMinima ?? 0) || 0,
+          duracaoMaxima:
+            Number(ultima.duracaoMaxima ?? 0) || 0,
           passageiros: ultima.passageiros ?? 1,
           maxEscalas:
             ultima.maxEscalas ??
             (ultima.apenasDiretos ? 0 : null),
           permitirMudancaAeroporto:
             ultima.permitirMudancaAeroporto ?? false,
-          apenasDiretos: ultima.apenasDiretos ?? false,
+          apenasDiretos:
+            ultima.apenasDiretos ?? false,
           executar: 0,
         },
       });
@@ -505,7 +539,10 @@ export function AppShell({ children }: { children: ReactNode }) {
     <div className="flex min-h-screen flex-col bg-background">
       <header className="sticky top-0 z-40 border-b border-border/70 bg-background/85 pt-[env(safe-area-inset-top)] backdrop-blur">
         <div className="mx-auto flex w-full max-w-6xl items-center gap-4 px-4 py-3">
-          <Link to="/" className="flex items-center gap-2">
+          <Link
+            to="/"
+            className="flex items-center gap-2"
+          >
             <span className="flex size-9 items-center justify-center rounded-xl bg-primary text-primary-foreground">
               <Plane className="size-5" />
             </span>
@@ -517,107 +554,41 @@ export function AppShell({ children }: { children: ReactNode }) {
 
           <nav className="ml-auto hidden items-center gap-1 lg:flex">
             {[...ligacoes, ...extras].map((l) => (
-              <Button key={l.to} asChild variant="ghost" size="sm">
-                {"search" in l && l.search ? (
-                  <Link to={l.to} search={l.search}>
-                    <l.icon className="size-4" /> {l.label}
-                  </Link>
-                ) : (
-                  <Link
-                    to={l.to}
-                    onClick={
-                      l.to === "/pesquisa" ? abrirPesquisa : undefined
-                    }
-                  >
-                    <l.icon className="size-4" /> {l.label}
-                  </Link>
-                )}
+              <Button
+                key={l.to}
+                asChild
+                variant="ghost"
+                size="sm"
+              >
+                <Link to={l.to}>
+                  <l.icon className="mr-1.5 size-4" />
+                  {l.label}
+                </Link>
               </Button>
             ))}
-          </nav>
-
-          <div className="ml-auto flex items-center gap-2 lg:ml-0">
-            <SeletorIdioma />
 
             {session ? (
               <Button
-                variant="outline"
+                variant="ghost"
                 size="sm"
-                onClick={() => void sair()}
-                className="h-10 md:h-9"
+                onClick={() => {
+                  void sair();
+                }}
               >
-                <LogOut className="size-4" />
-                <span className="hidden sm:inline">
-                  {t("nav.sair")}
-                </span>
+                <LogOut className="mr-1.5 size-4" />
+                Sair
               </Button>
-            ) : (
-              <Button asChild size="sm" className="h-10 md:h-9">
-                <Link to="/auth">{t("nav.entrar")}</Link>
-              </Button>
-            )}
+            ) : null}
+          </nav>
+
+          <div className="ml-auto flex items-center gap-2 lg:ml-4">
+            <SeletorIdioma />
+            <InstallHint />
           </div>
         </div>
       </header>
 
-      <main className="flex-1 pb-[calc(4.5rem+env(safe-area-inset-bottom))] md:pb-0">
-        {children}
-      </main>
-
-      <footer className="hidden border-t border-border/70 py-6 text-center text-sm text-muted-foreground md:block">
-        <p>{t("rodape.slogan")}</p>
-
-        <p className="mt-2 flex flex-wrap items-center justify-center gap-3">
-          <Link to="/ajuda" className="underline underline-offset-4">
-            {t("rodape.ajuda")}
-          </Link>
-
-          <Link
-            to="/privacidade"
-            className="underline underline-offset-4"
-          >
-            {t("rodape.privacidade")}
-          </Link>
-
-          <Link to="/termos" className="underline underline-offset-4">
-            {t("rodape.termos")}
-          </Link>
-        </p>
-      </footer>
-
-      <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-border/70 bg-background/95 pb-[env(safe-area-inset-bottom)] backdrop-blur md:hidden">
-        <ul className="mx-auto flex w-full max-w-lg items-stretch">
-          {ligacoes.map((l) => (
-            <li key={l.to} className="flex-1">
-              {"search" in l && l.search ? (
-                <Link
-                  to={l.to}
-                  search={l.search}
-                  activeProps={{ className: "text-primary" }}
-                  className="flex h-16 flex-col items-center justify-center gap-1 text-[11px] font-medium text-muted-foreground"
-                >
-                  <l.icon className="size-5" />
-                  {l.label}
-                </Link>
-              ) : (
-                <Link
-                  to={l.to}
-                  onClick={
-                    l.to === "/pesquisa" ? abrirPesquisa : undefined
-                  }
-                  activeProps={{ className: "text-primary" }}
-                  className="flex h-16 flex-col items-center justify-center gap-1 text-[11px] font-medium text-muted-foreground"
-                >
-                  <l.icon className="size-5" />
-                  {l.label}
-                </Link>
-              )}
-            </li>
-          ))}
-        </ul>
-      </nav>
-
-      <InstallHint />
+      <main className="flex-1">{children}</main>
     </div>
   );
 }

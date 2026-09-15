@@ -319,15 +319,34 @@ function extrairPartes(payload: {
     .slice(0, 30000);
 }
 
-/** Devolve candidatos Gmail para posterior classificação semântica pela IA. */
+/**
+ * Devolve candidatos Gmail para posterior classificação semântica.
+ *
+ * `desde` permite uma pesquisa incremental.
+ * `limite` controla quantos emails podem ser recolhidos nessa chamada.
+ *
+ * A pesquisa manual pode usar o limite normal de 1000.
+ * A deteção automática deve usar um limite pequeno, porque é executada
+ * periodicamente e só precisa de procurar mensagens recentes.
+ */
 export const emailsDeViagem = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((input?: { desde?: string | null }) => ({
-    desde:
-      typeof input?.desde === "string" && input.desde.trim()
-        ? input.desde.trim()
-        : null,
-  }))
+  .inputValidator(
+    (input?: {
+      desde?: string | null;
+      limite?: number | null;
+    }) => ({
+      desde:
+        typeof input?.desde === "string" && input.desde.trim()
+          ? input.desde.trim()
+          : null,
+      limite:
+        typeof input?.limite === "number" &&
+        Number.isFinite(input.limite)
+          ? Math.max(1, Math.min(Math.floor(input.limite), 1000))
+          : 1000,
+    }),
+  )
   .handler(
     async ({
       data,
@@ -361,39 +380,36 @@ export const emailsDeViagem = createServerFn({ method: "GET" })
        * O Gmail serve apenas para limitar por data; a decisão sobre o que é
        * ou não uma viagem é feita posteriormente pelo analisador de IA.
        *
-       * Isto evita perder emails de reservas cujo conteúdo não use nenhuma
-       * das palavras previstas num pré-filtro fixo.
+       * Para a deteção automática usamos o instante exato fornecido em
+       * `desde`, convertido para timestamp Unix. Assim evitamos voltar
+       * a procurar o dia inteiro a cada ronda.
        */
       const filtroData = data.desde
         ? (() => {
-            const d = new Date(data.desde);
+            const instante = new Date(data.desde);
 
-            if (Number.isNaN(d.getTime())) {
+            if (Number.isNaN(instante.getTime())) {
               return "newer_than:365d";
             }
 
-            const ano = d.getUTCFullYear();
-            const mes = String(
-              d.getUTCMonth() + 1,
-            ).padStart(2, "0");
-            const dia = String(
-              d.getUTCDate(),
-            ).padStart(2, "0");
+            /*
+             * Recuamos 60 segundos para proteger a fronteira temporal.
+             * A deduplicação na base de dados impede que um email já tratado
+             * seja processado novamente.
+             */
+            const timestamp = Math.max(
+              0,
+              Math.floor(instante.getTime() / 1000) - 60,
+            );
 
-            return `after:${ano}/${mes}/${dia}`;
+            return `after:${timestamp}`;
           })()
         : "newer_than:365d";
 
       const consulta = encodeURIComponent(filtroData);
 
-      /*
-       * Gmail devolve no máximo 500 mensagens por página. Percorremos as
-       * páginas para não perder reservas antigas quando existem muitos
-       * candidatos. Mantemos um limite global para evitar uma pesquisa manual
-       * transformar-se em milhares de leituras/análises de uma só vez.
-       */
-      const LIMITE_TOTAL = 1000;
-      const TAMANHO_PAGINA = 500;
+      const LIMITE_TOTAL = Math.max(1, Math.min(data.limite ?? 1000, 1000));
+      const TAMANHO_PAGINA = Math.min(LIMITE_TOTAL, 100);
 
       const ids: string[] = [];
       let pageToken: string | null = null;
@@ -464,9 +480,8 @@ export const emailsDeViagem = createServerFn({ method: "GET" })
       }> = [];
 
       /*
-       * Lemos o conteúdo completo de cada candidato. O texto já é limpo e
-       * limitado a 30 000 caracteres para manter emails longos controláveis,
-       * mas sem cortar os primeiros 12 000 antes de chegar à IA.
+       * Lemos o conteúdo completo apenas dos candidatos que passaram
+       * pela pesquisa temporal.
        */
       for (const id of ids) {
         const res = await callAsAppUser({
