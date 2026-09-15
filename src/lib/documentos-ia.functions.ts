@@ -201,141 +201,79 @@ function heuristica(input: AnaliseDocumentoInput): FichaDocumento {
 }
 
 /**
- * Barreira local de precisão para a descoberta automática de emails.
+ * Determina, localmente, se existem sinais suficientemente fortes
+ * para reconhecer pelo menos uma comunicação transacional.
  *
- * A IA pode reconhecer corretamente que um email fala de viagens e,
- * ainda assim, marcar como relevante uma campanha, promoção ou evento
- * genérico. Esta segunda validação exige sinais concretos de uma
- * comunicação transacional/operacional de viagem.
- *
- * Não usa os campos extraídos pela IA para decidir a relevância, porque
- * esses campos podem ser preenchidos antes de termos a certeza de que
- * existe uma reserva/bilhete real.
+ * É usado apenas como fallback quando a IA não consegue responder.
  */
-function validarRelevanciaEstrita(
-  input: AnaliseDocumentoInput,
-): {
-  relevante: boolean;
-  motivoRelevancia: string;
-} {
+function heuristicaRelevante(input: AnaliseDocumentoInput): boolean {
   const texto = normalizarTexto(
     `${input.nome}\n${input.texto ?? ""}`,
   );
 
+  const sinaisFortes = [
+    "reserva confirmada",
+    "reserva confirmada",
+    "confirmacao de reserva",
+    "confirmation number",
+    "booking confirmation",
+    "booking confirmed",
+    "booking reference",
+    "reservation number",
+    "reservation confirmed",
+    "check-in",
+    "check in",
+    "check-out",
+    "check out",
+    "boarding pass",
+    "cartao de embarque",
+    "cartão de embarque",
+    "boarding confirmation",
+    "pnr",
+    "voucher",
+    "numero da reserva",
+    "número da reserva",
+    "referencia da reserva",
+    "referência da reserva",
+    "flight number",
+    "numero do voo",
+    "número do voo",
+    "seu voo",
+    "your flight",
+    "departure",
+    "arrival",
+    "passenger",
+    "passageiro",
+    "guest",
+    "hospede",
+    "hóspede",
+    "itinerary",
+    "bilhete",
+    "ticket",
+  ];
+
+  const coincidencias = sinaisFortes.filter((sinal) =>
+    texto.includes(normalizarTexto(sinal)),
+  ).length;
+
   const temData =
     /\b\d{4}-\d{2}-\d{2}\b/.test(texto) ||
-    /\b\d{1,2}[/-]\d{1,2}[/-]\d{2,4}\b/.test(texto) ||
-    /\b(?:jan|fev|mar|abr|mai|jun|jul|ago|set|out|nov|dez)\w*\s+\d{1,2}\b/.test(
-      texto,
-    );
+    /\b\d{1,2}[/-]\d{1,2}[/-]\d{2,4}\b/.test(texto);
 
   const temNumeroVoo =
-    /\b[A-Z]{2}\s?\d{2,4}\b/i.test(texto);
+    /\b[A-Z]{2}\s?\d{2,4}\b/i.test(input.nome) ||
+    /\b[A-Z]{2}\s?\d{2,4}\b/i.test(input.texto ?? "");
 
   const temReferencia =
-    /\b(?:pnr|booking\s*(?:code|reference|number)?|reservation\s*(?:code|reference|number)?|confirmation\s*(?:code|number)?|referencia(?:\s+da)?\s+reserva|referência(?:\s+da)?\s+reserva|numero\s+da\s+reserva|número\s+da\s+reserva)\b[\s:#-]*[A-Z0-9-]{4,20}\b/i.test(
-      texto,
-    ) ||
-    /\bPNR\s*[:#-]?\s*[A-Z0-9]{5,12}\b/i.test(texto);
-
-  const temReserva =
-    /\b(?:reserva|reservado|reservada|booking|booked|reservation|reserved|confirmacao|confirmação|confirmation|confirmed|confirmado|confirmada)\b/i.test(
-      texto,
+    /\b[A-Z0-9]{6}\b/i.test(input.nome) ||
+    /\b(?:pnr|booking|reservation|confirmation|referencia|reserva)\b[\s:#-]*[A-Z0-9]{4,12}\b/i.test(
+      input.texto ?? "",
     );
 
-  const temBilhete =
-    /\b(?:bilhete|bilhetes|ticket|tickets|e-ticket|eticket|voucher|ingresso|ingressos|entrada|entradas|boarding pass|boarding confirmation|cartao de embarque|cartão de embarque)\b/i.test(
-      texto,
-    );
-
-  const temOperacional =
-    /\b(?:check-in|check in|check-out|check out|embarque|embarcar|gate|porta de embarque|terminal|departure|departure time|arrival|arrival time|partida|chegada|passenger|passageiro|guest|hospede|hóspede|seat|assento|lugar|bagagem|itinerary|itinerario|itinerário|your flight|seu voo|your booking|sua reserva|your reservation|sua estadia|your stay)\b/i.test(
-      texto,
-    );
-
-  const temViagem =
-    /\b(?:flight|voo|hotel|hostel|alojamento|apartment|apartamento|resort|train|comboio|ferrovia|rail|bus|autocarro|onibus|ônibus|ferry|barco|cruise|cruzeiro|transfer|airport|aeroporto|station|estacao|estação|car rental|aluguer de carro|rent a car|museu|museum|tour|excursao|excursão|excursion|attraction|atracao|atração|bilheteira|theatre|teatro|concert|concerto|festival|parque|park|aquarium|aquario|aquário|zoo|monument|monumento|exhibition|exposicao|exposição|event|evento)\b/i.test(
-      texto,
-    );
-
-  const temConteudoComercial =
-    /\b(?:sale|sales|desconto|descontos|discount|discounts|promo|promotion|promocao|promoção|promotions|campaign|campanha|campaigns|newsletter|oferta|ofertas|offer|offers|deal|deals|special offer|special offers|20%|30%|40%|50%|save now|last chance|shop now|compre agora|aproveite|loyalty|fidelidade)\b/i.test(
-      texto,
-    );
-
-  const temEventoGenerico =
-    /\b(?:faltam?\s+\d+\s+(?:dias|mes|meses|weeks|days)|fal\w*\s+\d+\s+(?:mes|meses|dias)|descubra|discover|apresenta|presents|em breve|coming soon|este\s+m[eê]s|este\s+fim\s+de\s+semana|this weekend|save the date)\b/i.test(
-      texto,
-    );
-
-  /*
-   * Campanhas e eventos genéricos só passam se houver simultaneamente
-   * evidência transacional muito forte. Isto bloqueia, por exemplo,
-   * "LOYALTY SALE -20%" ou "Rádio Macau no Porto! FALTA 1 MÊS!".
-   */
-  if (
-    (temConteudoComercial || temEventoGenerico) &&
-    !temReserva &&
-    !temBilhete &&
-    !temReferencia
-  ) {
-    return {
-      relevante: false,
-      motivoRelevancia:
-        "Conteúdo promocional ou evento genérico sem reserva, bilhete ou serviço de viagem concreto.",
-    };
-  }
-
-  /*
-   * Reserva/bilhete + contexto de viagem é o caso principal.
-   */
-  if (
-    (temReserva || temBilhete || temReferencia) &&
-    temViagem
-  ) {
-    return {
-      relevante: true,
-      motivoRelevancia:
-        "Foi identificada uma reserva, bilhete ou comunicação transacional relacionada com uma viagem.",
-    };
-  }
-
-  /*
-   * Algumas comunicações operacionais não dizem explicitamente "reserva",
-   * mas identificam claramente um serviço específico.
-   */
-  if (
-    temOperacional &&
-    temViagem &&
-    (temData || temNumeroVoo || temReferencia)
-  ) {
-    return {
-      relevante: true,
-      motivoRelevancia:
-        "Foi identificada informação operacional concreta relacionada com uma viagem.",
-    };
-  }
-
-  /*
-   * Um número de voo isolado só vale quando aparece com contexto de viagem.
-   */
-  if (
-    temNumeroVoo &&
-    temViagem &&
-    (temData || temOperacional)
-  ) {
-    return {
-      relevante: true,
-      motivoRelevancia:
-        "Foi identificado um voo específico associado a informação de viagem.",
-    };
-  }
-
-  return {
-    relevante: false,
-    motivoRelevancia:
-      "Não foram encontradas evidências suficientes de uma reserva, bilhete ou serviço de viagem concreto.",
-  };
+  return (
+    coincidencias >= 2 ||
+    (coincidencias >= 1 && temData && (temNumeroVoo || temReferencia))
+  );
 }
 
 function limpar(
@@ -508,6 +446,127 @@ function obterConteudoResposta(
   );
 }
 
+function evidenciaViagemConcreta(input: AnaliseDocumentoInput): { relevante: boolean; motivo: string } {
+  const texto = normalizarTexto(`${input.nome}\n${input.texto ?? ""}`);
+
+  const negativos = [
+    /newsletter/,
+    /unsubscribe/,
+    /cancelar subscri/,
+    /campanha comercial/,
+    /campanha promocional/,
+    /promocao/,
+    /promocaoes/,
+    /desconto/,
+    /descontos/,
+    /sale/,
+    /sales/,
+    /oferta especial/,
+    /ofertas/,
+    /save \d+%/,
+    /\b\d+%\s*(off|desconto)/,
+    /ate \d+ ?€/,
+    /ate \d+%/,
+    /marketing/,
+    /inspiracao/,
+    /descubra .*destin/,
+    /melhores destinos/,
+    /fique a conhecer/,
+  ];
+
+  const temSinalMarketing = negativos.some((padrao) => padrao.test(texto));
+
+  const sinaisTransacionais = [
+    /reserva(?:cao|ção)?(?: confirmada| confirmado| efetuada| realizada)?/, 
+    /confirmacao de reserva/,
+    /reserva confirmada/,
+    /reserva realizada/,
+    /reservation (?:confirmed|number|details)/,
+    /booking confirmation/,
+    /booking confirmed/,
+    /booking reference/,
+    /reservation number/,
+    /confirmation number/,
+    /numero da reserva/,
+    /referencia da reserva/,
+    /referencia de reserva/,
+    /booking code/,
+    /voucher/,
+    /pnr/,
+    /boarding pass/,
+    /boarding confirmation/,
+    /cartao de embarque/,
+    /bilhete electronico/,
+    /bilhete eletrónico/,
+    /e-ticket/,
+    /ticket number/,
+    /ticket confirmation/,
+    /your ticket/,
+    /seu bilhete/,
+    /bilhete confirmado/,
+    /bilhete reservado/,
+    /entrada reservada/,
+    /ingresso reservado/,
+    /check-in/,
+    /check in/,
+    /check-out/,
+    /check out/,
+    /passageiro/,
+    /passenger/,
+    /hospede/,
+    /guest/,
+    /itinerario/,
+    /itinerary/,
+    /flight number/,
+    /numero do voo/,
+    /seat number/,
+    /assento/,
+  ];
+
+  const sinais = sinaisTransacionais.filter((padrao) => padrao.test(texto)).length;
+
+  const temVooEspecifico = /\b[A-Z]{2}\s?\d{2,4}\b/i.test(`${input.nome}\n${input.texto ?? ""}`) &&
+    /\b\d{1,2}[/-]\d{1,2}[/-]\d{2,4}\b|\b\d{4}-\d{2}-\d{2}\b/.test(texto);
+
+  const temReferencia = /\b(?:pnr|booking(?: reference| code)?|reservation(?: number)?|confirmation(?: number)?|referencia(?: da)? reserva|numero da reserva)\b[\s:#-]*[A-Z0-9-]{4,20}\b/i.test(`${input.nome}\n${input.texto ?? ""}`);
+
+  const temBilheteComData = /\b(?:bilhete|ticket|entrada|voucher|e-ticket|boarding pass)\b/i.test(`${input.nome}\n${input.texto ?? ""}`) &&
+    /\b\d{1,2}[/-]\d{1,2}[/-]\d{2,4}\b|\b\d{4}-\d{2}-\d{2}\b/.test(texto);
+
+  const temHotelComDados = /\b(?:hotel|alojamento|room|quarto|check-in|check out|check-out)\b/.test(texto) &&
+    (temReferencia || /\b(?:check-in|check out|check-out)\b/.test(texto));
+
+  const temTransporteComDados = /\b(?:train|comboio|trem|autocarro|bus|metro|barco|ferry|transfer|car rental|aluguer de carro)\b/.test(texto) &&
+    (temReferencia || temBilheteComData || /\b(?:departure|partida|arrival|chegada)\b/.test(texto));
+
+  const forte =
+    /\b(?:reservation confirmed|booking confirmation|booking confirmed|boarding pass|cartao de embarque|confirmation number|booking reference|reservation number|ticket confirmation|ticket number|bilhete confirmado|reserva confirmada|numero da reserva|pnr)\b/.test(texto) ||
+    temReferencia ||
+    temVooEspecifico ||
+    temHotelComDados ||
+    temTransporteComDados ||
+    temBilheteComData;
+
+  if (!forte) {
+    return {
+      relevante: false,
+      motivo: "Não existem evidências suficientes de uma reserva, bilhete, transporte, alojamento ou serviço de viagem concreto.",
+    };
+  }
+
+  if (temSinalMarketing && sinais < 2 && !temReferencia && !temVooEspecifico) {
+    return {
+      relevante: false,
+      motivo: "O conteúdo apresenta características promocionais ou comerciais sem evidência suficiente de uma reserva ou serviço concreto.",
+    };
+  }
+
+  return {
+    relevante: true,
+    motivo: "Foram encontradas evidências concretas de uma reserva, bilhete, transporte, alojamento ou serviço de viagem.",
+  };
+}
+
 export const analisarDocumento =
   createServerFn({ method: "POST" })
     .inputValidator(validar)
@@ -521,11 +580,8 @@ export const analisarDocumento =
         const fichaFallback =
           heuristica(data);
 
-        const fallbackRelevancia =
-          validarRelevanciaEstrita(data);
-
         const fallbackRelevante =
-          fallbackRelevancia.relevante;
+          heuristicaRelevante(data);
 
         if (!apiKey) {
           console.error(
@@ -770,23 +826,13 @@ export const analisarDocumento =
                 textoResposta,
               );
 
-            const ficha =
-              limpar(
-                dadosIa,
-                data.nome,
-              );
-
-            const decisaoIa =
-              dadosIa["relevante"] === true;
-
-            const relevanciaEstrita =
-              validarRelevanciaEstrita(data);
+            const filtroLocal = evidenciaViagemConcreta(data);
 
             const relevante =
-              decisaoIa &&
-              relevanciaEstrita.relevante;
+              dadosIa["relevante"] === true &&
+              filtroLocal.relevante;
 
-            const motivoIa =
+            const motivoRelevancia =
               typeof dadosIa[
                 "motivoRelevancia"
               ] === "string" &&
@@ -798,13 +844,15 @@ export const analisarDocumento =
                   )
                     .trim()
                     .slice(0, 500)
-                : "";
+                : relevante
+                  ? "Foi identificada uma comunicação concreta relacionada com uma viagem."
+                  : filtroLocal.motivo;
 
-            const motivoRelevancia =
-              relevante
-                ? motivoIa ||
-                  relevanciaEstrita.motivoRelevancia
-                : relevanciaEstrita.motivoRelevancia;
+            const ficha =
+              limpar(
+                dadosIa,
+                data.nome,
+              );
 
             return {
               ficha,
@@ -815,7 +863,7 @@ export const analisarDocumento =
                 ? ficha.porConfirmar
                   ? "Email considerado relevante e analisado por IA. Alguns campos precisam de confirmação."
                   : "Email considerado relevante e analisado por IA. Confirme os dados antes de guardar."
-                : "Email analisado por IA, mas não passou a validação de precisão para uma comunicação concreta de viagem.",
+                : "Email analisado por IA e considerado irrelevante para uma viagem.",
             };
           } catch (erro) {
             ultimoErro = erro;
