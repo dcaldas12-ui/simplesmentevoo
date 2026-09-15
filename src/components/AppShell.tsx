@@ -19,13 +19,11 @@ import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { useSession } from "@/lib/auth";
 import { analisarDocumento } from "@/lib/documentos-ia.functions";
-import {
-  emailsDeViagem,
-  estadoGmail,
-} from "@/lib/gmail.functions";
+import { emailsDeViagem } from "@/lib/gmail.functions";
 import { useIdioma } from "@/lib/i18n";
 
 const deteccoesGmailEmCurso = new Map<string, Promise<void>>();
+const GMAIL_AUTOMACAO_EVENT = "viatorbis:gmail-auto-change";
 
 function valorFicha(
   ficha: unknown,
@@ -53,7 +51,6 @@ export function AppShell({ children }: { children: ReactNode }) {
   const { t } = useIdioma();
   const navigate = useNavigate();
 
-  const verificarGmail = useServerFn(estadoGmail);
   const procurarEmails = useServerFn(emailsDeViagem);
   const analisar = useServerFn(analisarDocumento);
 
@@ -68,12 +65,17 @@ export function AppShell({ children }: { children: ReactNode }) {
     let cancelado = false;
 
     async function detetarNovosEmails() {
-      if (deteccoesGmailEmCurso.has(userIdSeguro)) {
+      if (cancelado || deteccoesGmailEmCurso.has(userIdSeguro)) {
         return;
       }
 
       const tarefa = (async () => {
         try {
+          /*
+           * A preferência é lida a cada execução, e não apenas quando o
+           * AppShell é montado. Assim, ativar/desativar a deteção na página
+           * do Gmail passa a ter efeito imediato sem exigir reload.
+           */
           const { data: preferencia, error: erroPreferencia } =
             await supabase
               .from("preferencias_importacao" as any)
@@ -106,21 +108,12 @@ export function AppShell({ children }: { children: ReactNode }) {
             return;
           }
 
-          const estado = await verificarGmail();
-
-          if (cancelado || estado?.ligado !== true) {
-            return;
-          }
-
           const ultimaAnalise =
             preferenciaTipada.ultima_analise_gmail_em ?? null;
 
           /*
-           * Na primeira execução automática analisamos apenas os últimos
-           * 7 dias.
-           *
-           * Nas seguintes usamos o instante da última verificação e a função
-           * Gmail faz uma pequena margem de segurança de 60 segundos.
+           * Na primeira execução automática procuramos os últimos 7 dias.
+           * Depois fazemos pesquisa incremental a partir da última análise.
            */
           const desde = ultimaAnalise
             ? ultimaAnalise
@@ -129,14 +122,15 @@ export function AppShell({ children }: { children: ReactNode }) {
               ).toISOString();
 
           /*
-           * A deteção automática usa um limite pequeno.
-           * Não precisamos de voltar a descarregar centenas de mensagens
-           * a cada minuto.
+           * O modo automático tem um limite pequeno e usa um pré-filtro
+           * de pesquisa no Gmail para evitar gastar quota em mensagens
+           * obviamente não relacionadas com viagens.
            */
           const emails = await procurarEmails({
             data: {
               desde,
-              limite: 50,
+              limite: 3,
+              automatico: true,
             },
           });
 
@@ -144,14 +138,20 @@ export function AppShell({ children }: { children: ReactNode }) {
             return;
           }
 
+          const agora = new Date().toISOString();
+
           if (emails.length === 0) {
             await supabase
               .from("preferencias_importacao" as any)
               .update({
-                ultima_analise_gmail_em: new Date().toISOString(),
-                updated_at: new Date().toISOString(),
+                ultima_analise_gmail_em: agora,
+                updated_at: agora,
               })
               .eq("user_id", userIdSeguro);
+
+            console.info("Gmail: deteção automática sem novos candidatos", {
+              desde,
+            });
 
             return;
           }
@@ -191,144 +191,180 @@ export function AppShell({ children }: { children: ReactNode }) {
             (email) => !idsJaProcessados.has(email.id),
           );
 
+          if (novosEmails.length === 0) {
+            /*
+             * Os candidatos encontrados já foram tratados manual ou
+             * automaticamente. Avançamos a marca temporal para não repetir
+             * a mesma pesquisa a cada minuto.
+             */
+            await supabase
+              .from("preferencias_importacao" as any)
+              .update({
+                ultima_analise_gmail_em: agora,
+                updated_at: agora,
+              })
+              .eq("user_id", userIdSeguro);
+
+            console.info("Gmail: candidatos já processados", {
+              quantidade: emails.length,
+              desde,
+            });
+
+            return;
+          }
+
           toast.info(
-            `Deteção Gmail: ${emails.length} email${
-              emails.length === 1 ? "" : "s"
-            } encontrado${emails.length === 1 ? "" : "s"} — ${
-              novosEmails.length
-            } novo${novosEmails.length === 1 ? "" : "s"} para analisar.`,
+            `Deteção Gmail: ${novosEmails.length} novo${
+              novosEmails.length === 1 ? "" : "s"
+            } candidato${novosEmails.length === 1 ? "" : "s"} encontrado${
+              novosEmails.length === 1 ? "" : "s"
+            }.`,
           );
 
           let descobertas = 0;
+          let houveFalhaDeAnalise = false;
+          let houveFalhaAoGuardar = false;
           const novasDescobertasAssuntos: string[] = [];
-          const TAMANHO_LOTE = 3;
 
-          for (
-            let inicio = 0;
-            inicio < novosEmails.length;
-            inicio += TAMANHO_LOTE
-          ) {
+          /*
+           * Na deteção automática analisamos um email de cada vez.
+           * Evita rajadas para o gateway de IA e torna o comportamento mais
+           * previsível quando há limites de utilização.
+           */
+          for (const email of novosEmails) {
             if (cancelado) {
               return;
             }
 
-            const lote = novosEmails.slice(
-              inicio,
-              inicio + TAMANHO_LOTE,
-            );
+            try {
+              const resultado = await analisar({
+                data: {
+                  nome: email.assunto || "Email Gmail",
+                  texto: `${email.assunto}\n\n${email.texto}`.trim(),
+                },
+              });
 
-            await Promise.all(
-              lote.map(async (email) => {
-                try {
-                  const resultado = await analisar({
-                    data: {
-                      nome: email.assunto || "Email Gmail",
-                      texto: `${email.assunto}\n\n${email.texto}`.trim(),
-                    },
-                  });
+              const ficha =
+                resultado && typeof resultado === "object"
+                  ? (resultado as { ficha?: unknown }).ficha
+                  : null;
 
-                  const ficha =
-                    resultado && typeof resultado === "object"
-                      ? (resultado as { ficha?: unknown }).ficha
-                      : null;
+              const resultadoTipado =
+                resultado && typeof resultado === "object"
+                  ? (resultado as {
+                      relevante?: boolean;
+                      porIa?: boolean;
+                    })
+                  : null;
 
-                  const resultadoTipado =
-                    resultado && typeof resultado === "object"
-                      ? (resultado as {
-                          relevante?: boolean;
-                          porIa?: boolean;
-                        })
-                      : null;
+              /*
+               * Uma falha do analisador não deve transformar o email em
+               * "irrelevante". Deixamos a marca temporal intacta para que
+               * possa ser tentado novamente numa execução seguinte.
+               */
+              if (resultadoTipado?.porIa !== true) {
+                houveFalhaDeAnalise = true;
+                console.warn(
+                  "Gmail: análise automática não concluída; email ficará para nova tentativa.",
+                  {
+                    gmailMessageId: email.id,
+                    assunto: email.assunto,
+                  },
+                );
+                continue;
+              }
 
-                  /*
-                   * Se a IA não conseguiu responder, não marcamos o email
-                   * como processado. Assim uma falha transitória pode ser
-                   * tentada novamente na próxima ronda.
-                   */
-                  if (resultadoTipado?.porIa !== true) {
-                    return;
-                  }
+              const relevante =
+                resultadoTipado.relevante === true;
 
-                  const relevante =
-                    resultadoTipado.relevante === true;
+              if (relevante) {
+                descobertas += 1;
 
-                  if (relevante) {
-                    descobertas += 1;
-
-                    if (email.assunto?.trim()) {
-                      novasDescobertasAssuntos.push(
-                        email.assunto.trim(),
-                      );
-                    }
-                  }
-
-                  const { error: erroGuardar } = await supabase
-                    .from("emails_gmail_processados" as any)
-                    .upsert(
-                      {
-                        user_id: userIdSeguro,
-                        gmail_message_id: email.id,
-                        relevante,
-                        categoria: valorFicha(ficha, "categoria"),
-                        referencia: valorFicha(ficha, "referencia"),
-                        assunto: email.assunto || null,
-                        ficha: ficha ?? null,
-                        estado: relevante
-                          ? "pendente"
-                          : "processado",
-                        analisado_em: new Date().toISOString(),
-                      },
-                      {
-                        onConflict:
-                          "user_id,gmail_message_id",
-                      },
-                    );
-
-                  if (erroGuardar) {
-                    console.error(
-                      "Erro ao guardar email Gmail processado:",
-                      erroGuardar,
-                    );
-                  }
-                } catch (erro) {
-                  console.error(
-                    "Erro na deteção automática de email Gmail:",
-                    erro,
+                if (email.assunto?.trim()) {
+                  novasDescobertasAssuntos.push(
+                    email.assunto.trim(),
                   );
                 }
-              }),
-            );
+              }
+
+              const { error: erroGuardar } = await supabase
+                .from("emails_gmail_processados" as any)
+                .upsert(
+                  {
+                    user_id: userIdSeguro,
+                    gmail_message_id: email.id,
+                    relevante,
+                    categoria: valorFicha(ficha, "categoria"),
+                    referencia: valorFicha(ficha, "referencia"),
+                    assunto: email.assunto || null,
+                    ficha: ficha ?? null,
+                    estado: relevante
+                      ? "pendente"
+                      : "processado",
+                    analisado_em: new Date().toISOString(),
+                  },
+                  {
+                    onConflict:
+                      "user_id,gmail_message_id",
+                  },
+                );
+
+              if (erroGuardar) {
+                houveFalhaAoGuardar = true;
+                console.error(
+                  "Erro ao guardar email Gmail processado:",
+                  erroGuardar,
+                );
+              }
+            } catch (erro) {
+              houveFalhaDeAnalise = true;
+              console.error(
+                "Erro na deteção automática de email Gmail:",
+                erro,
+              );
+            }
           }
 
           if (cancelado) {
             return;
           }
 
-          const agora = new Date().toISOString();
-
-          await supabase
-            .from("preferencias_importacao" as any)
-            .update({
-              ultima_analise_gmail_em: agora,
-              updated_at: agora,
-            })
-            .eq("user_id", userIdSeguro);
+          /*
+           * Só avançamos a marca temporal quando conseguimos concluir e
+           * guardar a ronda. Se uma análise falhar, os candidatos ficam
+           * disponíveis para nova tentativa na próxima ronda.
+           */
+          if (!houveFalhaDeAnalise && !houveFalhaAoGuardar) {
+            await supabase
+              .from("preferencias_importacao" as any)
+              .update({
+                ultima_analise_gmail_em: agora,
+                updated_at: agora,
+              })
+              .eq("user_id", userIdSeguro);
+          }
 
           console.info("Gmail: deteção automática concluída", {
             candidatos: emails.length,
             novos: novosEmails.length,
             relevantes: descobertas,
+            houveFalhaDeAnalise,
+            houveFalhaAoGuardar,
           });
 
-          if (novosEmails.length > 0 && descobertas === 0 && !cancelado) {
+          if (novosEmails.length > 0 && descobertas === 0) {
             toast.info(
-              `A deteção automática analisou ${novosEmails.length} email${
-                novosEmails.length === 1 ? "" : "s"
-              } novo${novosEmails.length === 1 ? "" : "s"}, mas não encontrou uma reserva ou evento de viagem relevante.`,
+              houveFalhaDeAnalise || houveFalhaAoGuardar
+                ? "A deteção automática encontrou novos emails, mas a análise ainda não ficou concluída. Vamos tentar novamente."
+                : `A deteção automática analisou ${novosEmails.length} novo${
+                    novosEmails.length === 1 ? "" : "s"
+                  } email${
+                    novosEmails.length === 1 ? "" : "s"
+                  } e não encontrou uma reserva ou evento de viagem relevante.`,
             );
           }
 
-          if (descobertas > 0 && !cancelado) {
+          if (descobertas > 0) {
             const assunto =
               novasDescobertasAssuntos[0] ?? null;
 
@@ -382,8 +418,9 @@ export function AppShell({ children }: { children: ReactNode }) {
     }
 
     /*
-     * A primeira verificação acontece logo ao entrar na aplicação.
-     * Depois repetimos a verificação periodicamente.
+     * Corre imediatamente ao entrar, depois a cada minuto, quando a página
+     * volta a ficar visível e também quando o botão de deteção automática
+     * é ativado/desativado.
      */
     void detetarNovosEmails();
 
@@ -391,17 +428,38 @@ export function AppShell({ children }: { children: ReactNode }) {
       void detetarNovosEmails();
     }, 60_000);
 
+    const aoMudarDeteccao = () => {
+      void detetarNovosEmails();
+    };
+
+    const aoFicarVisivel = () => {
+      if (document.visibilityState === "visible") {
+        void detetarNovosEmails();
+      }
+    };
+
+    window.addEventListener(
+      GMAIL_AUTOMACAO_EVENT,
+      aoMudarDeteccao,
+    );
+    document.addEventListener(
+      "visibilitychange",
+      aoFicarVisivel,
+    );
+
     return () => {
       cancelado = true;
       window.clearInterval(intervalo);
+      window.removeEventListener(
+        GMAIL_AUTOMACAO_EVENT,
+        aoMudarDeteccao,
+      );
+      document.removeEventListener(
+        "visibilitychange",
+        aoFicarVisivel,
+      );
     };
-  }, [
-    session?.user.id,
-    analisar,
-    procurarEmails,
-    verificarGmail,
-    navigate,
-  ]);
+  }, [session?.user.id, analisar, procurarEmails, navigate]);
 
   function abrirPesquisa(e: React.MouseEvent) {
     e.preventDefault();

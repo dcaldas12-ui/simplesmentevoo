@@ -31,6 +31,7 @@ import { supabase } from "@/integrations/supabase/client";
 
 const CONNECTOR_ID = "google_mail";
 const GMAIL_OAUTH_STORAGE_KEY = "viatorbis:gmail-oauth-result";
+const GMAIL_AUTOMACAO_EVENT = "viatorbis:gmail-auto-change";
 
 type OAuthStorageResult =
   | {
@@ -867,6 +868,7 @@ export function LigacaoGmail() {
     });
 
     toast.success("Gmail ligado à sua conta.");
+    window.dispatchEvent(new Event(GMAIL_AUTOMACAO_EVENT));
   } catch (e) {
     popup.close();
 
@@ -936,6 +938,7 @@ export function LigacaoGmail() {
           user_id: userId,
           consentimento_analise_automatica: novoEstado,
           consentimento_analise_automatica_em: novoEstado ? agora : null,
+          ultima_analise_gmail_em: novoEstado ? null : undefined,
           updated_at: agora,
         });
 
@@ -948,6 +951,7 @@ export function LigacaoGmail() {
           ? "Deteção automática ativada."
           : "Deteção automática parada.",
       );
+      window.dispatchEvent(new Event(GMAIL_AUTOMACAO_EVENT));
     } catch (e) {
       console.error(
         "Erro ao alterar deteção automática do Gmail:",
@@ -1170,6 +1174,7 @@ export function LigacaoGmail() {
       });
 
       toast.success("Ligação ao Gmail terminada.");
+      window.dispatchEvent(new Event(GMAIL_AUTOMACAO_EVENT));
     } catch (e) {
       const msg =
         e instanceof Error

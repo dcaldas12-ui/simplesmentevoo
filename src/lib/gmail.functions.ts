@@ -335,6 +335,7 @@ export const emailsDeViagem = createServerFn({ method: "GET" })
     (input?: {
       desde?: string | null;
       limite?: number | null;
+      automatico?: boolean | null;
     }) => ({
       desde:
         typeof input?.desde === "string" && input.desde.trim()
@@ -345,6 +346,7 @@ export const emailsDeViagem = createServerFn({ method: "GET" })
         Number.isFinite(input.limite)
           ? Math.max(1, Math.min(Math.floor(input.limite), 1000))
           : 1000,
+      automatico: input?.automatico === true,
     }),
   )
   .handler(
@@ -406,21 +408,25 @@ export const emailsDeViagem = createServerFn({ method: "GET" })
           })()
         : "newer_than:365d";
 
-      const consulta = encodeURIComponent(filtroData);
-
       /*
-       * IMPORTANTE: a deteção automática chama esta função periodicamente.
-       * Não podemos fazer paginação nem descarregar dezenas de mensagens em
-       * cada ronda, porque cada leitura completa de mensagem é uma chamada
-       * adicional ao Gmail e pode esgotar rapidamente a quota por utilizador.
+       * No modo automático usamos o motor de pesquisa do próprio Gmail
+       * como pré-filtro. Assim evitamos ler mensagens normais e gastamos a
+       * quota apenas em candidatos que apresentam sinais plausíveis de
+       * reserva, bilhete ou evento concreto.
        *
-       * Quando `limite` é enviado (caso da deteção automática), aceitamos no
-       * máximo 3 mensagens. Na pesquisa manual, quando nenhum limite é
-       * enviado, aceitamos no máximo 10.
+       * A pesquisa manual usa o mesmo pré-filtro, mas permite recolher mais
+       * candidatos para a análise iniciada pelo utilizador.
        */
-      const LIMITE_TOTAL =
-        data.limite !== null && data.limite !== undefined
-          ? Math.max(1, Math.min(Math.floor(data.limite), 3))
+      const termosViagem =
+        '(reserva OR reservado OR "reserva confirmada" OR confirmacao OR confirmação OR confirmation OR booking OR reservation OR "booking reference" OR "booking confirmation" OR "confirmation number" OR PNR OR voucher OR bilhete OR ticket OR "e-ticket" OR "boarding pass" OR "cartao de embarque" OR "cartão de embarque" OR "flight number" OR "numero do voo" OR "número do voo" OR itinerario OR itinerário OR itinerary OR "check-in" OR "check-out" OR hotel OR alojamento OR transfer OR comboio OR train OR autocarro OR bus OR ferry OR "car rental" OR "aluguer de carro" OR museu OR museum OR concerto OR concert OR tour OR excursao OR excursão OR atividade OR actividade OR ingresso OR entrada)';
+
+      const consultaCompleta = `${filtroData} ${termosViagem}`.trim();
+      const consulta = encodeURIComponent(consultaCompleta);
+
+      const LIMITE_TOTAL = data.automatico
+        ? 3
+        : data.limite !== null && data.limite !== undefined
+          ? Math.max(1, Math.min(Math.floor(data.limite), 25))
           : 10;
 
       const lista = await callAsAppUser({
