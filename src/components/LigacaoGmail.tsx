@@ -984,6 +984,28 @@ export function LigacaoGmail() {
         `${emails.length} candidatos encontrados. A analisar…`,
       );
 
+      const { data: processados, error: erroProcessados } = await supabase
+        .from("emails_gmail_processados" as any)
+        .select("gmail_message_id")
+        .eq("user_id", session?.user.id)
+        .in(
+          "gmail_message_id",
+          emails.map((email) => email.id),
+        );
+
+      if (erroProcessados) {
+        console.error(
+          "Erro ao verificar emails Gmail já processados na pesquisa manual:",
+          erroProcessados,
+        );
+      }
+
+      const idsJaProcessados = new Set(
+        ((processados ?? []) as unknown as Array<{
+          gmail_message_id: string;
+        }>).map((item) => item.gmail_message_id),
+      );
+
       const resultadosRelevantes: ResultadoAnalise[] = [];
 
       /*
@@ -1009,11 +1031,62 @@ export function LigacaoGmail() {
               });
 
               if (resultado?.relevante === true) {
+                const ficha =
+                  resultado && typeof resultado === "object"
+                    ? (resultado as { ficha?: unknown }).ficha
+                    : null;
+
+                if (!idsJaProcessados.has(email.id)) {
+                  const { error: erroGuardarManual } = await supabase
+                    .from("emails_gmail_processados" as any)
+                    .insert({
+                      user_id: session?.user.id,
+                      gmail_message_id: email.id,
+                      relevante: true,
+                      categoria: valorDaFicha(ficha, "categoria"),
+                      referencia: valorDaFicha(ficha, "referencia"),
+                      assunto: email.assunto || null,
+                      ficha: ficha ?? null,
+                      estado: "processado",
+                      analisado_em: new Date().toISOString(),
+                    });
+
+                  if (erroGuardarManual) {
+                    console.error(
+                      "Erro ao registar email Gmail analisado manualmente:",
+                      erroGuardarManual,
+                    );
+                  }
+                }
+
                 return {
                   email,
                   estado: "analisado" as const,
                   resultado,
                 };
+              }
+
+              if (!idsJaProcessados.has(email.id)) {
+                const { error: erroGuardarIrrelevante } = await supabase
+                  .from("emails_gmail_processados" as any)
+                  .insert({
+                    user_id: session?.user.id,
+                    gmail_message_id: email.id,
+                    relevante: false,
+                    categoria: null,
+                    referencia: null,
+                    assunto: email.assunto || null,
+                    ficha: null,
+                    estado: "processado",
+                    analisado_em: new Date().toISOString(),
+                  });
+
+                if (erroGuardarIrrelevante) {
+                  console.error(
+                    "Erro ao registar email Gmail irrelevante analisado manualmente:",
+                    erroGuardarIrrelevante,
+                  );
+                }
               }
             } catch (e) {
               console.error(
@@ -1055,14 +1128,32 @@ export function LigacaoGmail() {
     }
   }
 
-  function ignorar(id: string) {
-    setIgnorados((anteriores) => {
-      if (anteriores.includes(id)) {
-        return anteriores.filter((item) => item !== id);
-      }
+  async function ignorar(id: string) {
+    setIgnorados((anteriores) =>
+      anteriores.includes(id) ? anteriores : [...anteriores, id],
+    );
 
-      return [...anteriores, id];
-    });
+    const userId = session?.user.id;
+
+    if (!userId) {
+      return;
+    }
+
+    const { error } = await supabase
+      .from("emails_gmail_processados" as any)
+      .update({
+        estado: "ignorado",
+      })
+      .eq("user_id", userId)
+      .eq("gmail_message_id", id);
+
+    if (error) {
+      console.error(
+        "Erro ao marcar email Gmail como ignorado:",
+        error,
+      );
+      toast.error("Não foi possível remover esta sugestão definitivamente.");
+    }
   }
 
   async function terminar() {

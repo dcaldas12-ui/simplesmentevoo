@@ -177,6 +177,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           );
 
           let descobertas = 0;
+          const novasDescobertasAssuntos: string[] = [];
           const TAMANHO_LOTE = 3;
 
           for (
@@ -226,6 +227,9 @@ export function AppShell({ children }: { children: ReactNode }) {
 
                   if (relevante) {
                     descobertas += 1;
+                    if (email.assunto?.trim()) {
+                      novasDescobertasAssuntos.push(email.assunto.trim());
+                    }
                   }
 
                   const { error: erroGuardar } = await supabase
@@ -275,11 +279,25 @@ export function AppShell({ children }: { children: ReactNode }) {
             })
             .eq("user_id", userIdSeguro);
 
-          if (descobertas > 0) {
+          if (descobertas > 0 && !cancelado) {
+            const assunto = novasDescobertasAssuntos[0];
+
             toast.info(
-              descobertas === 1
-                ? "Encontrámos uma nova informação de viagem no Gmail."
-                : `Encontrámos ${descobertas} novas informações de viagem no Gmail.`,
+              assunto
+                ? `Nova sugestão de viagem: ${assunto}`
+                : "Encontrámos uma nova informação de viagem no Gmail.",
+              {
+                description:
+                  descobertas === 1
+                    ? "Encontrámos uma nova informação de viagem. Quer rever e adicionar à sua viagem?"
+                    : `Encontrámos ${descobertas} novas informações de viagem. Quer rever e adicionar à sua viagem?`,
+                action: {
+                  label: "Ver",
+                  onClick: () => {
+                    void navigate({ to: "/importar" });
+                  },
+                },
+              },
             );
           }
         } catch (erro) {
