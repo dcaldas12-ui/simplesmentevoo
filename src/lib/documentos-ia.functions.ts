@@ -446,8 +446,264 @@ function obterConteudoResposta(
   );
 }
 
-function evidenciaViagemConcreta(input: AnaliseDocumentoInput): { relevante: boolean; motivo: string } {
-  const texto = normalizarTexto(`${input.nome}\n${input.texto ?? ""}`);
+const ESQUEMA = {
+  type: "object",
+  properties: {
+    relevante: {
+      type: "boolean",
+      description:
+        "true apenas quando existe evidência concreta de uma comunicação de viagem específica do utilizador.",
+    },
+
+    motivoRelevancia: {
+      type: "string",
+      description:
+        "Explicação curta da decisão de relevância.",
+    },
+
+    categoria: {
+      type: "string",
+      enum: [
+        "voo",
+        "hotel",
+        "transporte",
+        "transfer",
+        "bilhete",
+        "documento",
+        "informacao",
+        "outro",
+      ],
+      description:
+        "Categoria principal do email/documento.",
+    },
+
+    tipoDocumento: {
+      type: "string",
+      description:
+        "Tipo concreto de reserva, bilhete, documento ou informação.",
+    },
+
+    fornecedor: {
+      type: "string",
+      description:
+        "Empresa, companhia, hotel, plataforma ou entidade emissora.",
+    },
+
+    operador: {
+      type: "string",
+      description:
+        "Operador efetivo do serviço, quando aplicável.",
+    },
+
+    passageiro: {
+      type: "string",
+      description:
+        "Nome do passageiro, viajante, hóspede ou titular.",
+    },
+
+    local: {
+      type: "string",
+      description:
+        "Local principal: hotel, aeroporto, estação, atração, etc.",
+    },
+
+    referencia: {
+      type: "string",
+      description:
+        "Referência da reserva, PNR, booking code ou confirmation number.",
+    },
+
+    dataHora: {
+      type: "string",
+      description:
+        "Data/hora principal em AAAA-MM-DDTHH:MM.",
+    },
+
+    dataHoraFim: {
+      type: "string",
+      description:
+        "Data/hora final relevante em AAAA-MM-DDTHH:MM, quando existir.",
+    },
+
+    codigo: {
+      type: "string",
+      description:
+        "Código de barras, QR ou outro código legível, quando existir.",
+    },
+
+    companhia: {
+      type: "string",
+      description:
+        "Companhia aérea, quando aplicável.",
+    },
+
+    numeroVoo: {
+      type: "string",
+      description:
+        "Número do voo, por exemplo TP1234 ou FR1234.",
+    },
+
+    origem: {
+      type: "string",
+      description:
+        "Origem da viagem.",
+    },
+
+    destino: {
+      type: "string",
+      description:
+        "Destino da viagem.",
+    },
+
+    horaEmbarque: {
+      type: "string",
+      description:
+        "Hora/data de embarque ou apresentação, quando existir.",
+    },
+
+    terminal: {
+      type: "string",
+      description:
+        "Terminal, quando existir.",
+    },
+
+    porta: {
+      type: "string",
+      description:
+        "Porta/gate, quando existir.",
+    },
+
+    assento: {
+      type: "string",
+      description:
+        "Assento/lugar atribuído, quando existir.",
+    },
+
+    grupoEmbarque: {
+      type: "string",
+      description:
+        "Grupo/zona de embarque, quando existir.",
+    },
+
+    bagagem: {
+      type: "string",
+      description:
+        "Condições de bagagem.",
+    },
+
+    morada: {
+      type: "string",
+      description:
+        "Morada relevante.",
+    },
+
+    quarto: {
+      type: "string",
+      description:
+        "Quarto/tipologia, quando aplicável.",
+    },
+
+    condicoes: {
+      type: "string",
+      description:
+        "Condições de pagamento, cancelamento, alterações, regras ou outras notas.",
+    },
+
+    contacto: {
+      type: "string",
+      description:
+        "Contacto relevante do fornecedor/operador.",
+    },
+
+    porConfirmar: {
+      type: "array",
+      items: {
+        type: "string",
+      },
+      description:
+        "Campos ambíguos, incompletos ou que precisam de confirmação.",
+    },
+  },
+
+  required: [
+    "relevante",
+    "motivoRelevancia",
+    "categoria",
+    "tipoDocumento",
+    "fornecedor",
+    "operador",
+    "passageiro",
+    "local",
+    "referencia",
+    "dataHora",
+    "dataHoraFim",
+    "codigo",
+    "companhia",
+    "numeroVoo",
+    "origem",
+    "destino",
+    "horaEmbarque",
+    "terminal",
+    "porta",
+    "assento",
+    "grupoEmbarque",
+    "bagagem",
+    "morada",
+    "quarto",
+    "condicoes",
+    "contacto",
+    "porConfirmar",
+  ],
+
+  additionalProperties: false,
+} as const;
+
+function extrairDadosEstruturadosDaResposta(
+  json: unknown,
+): Record<string, unknown> {
+  const raiz = (json ?? {}) as {
+    choices?: Array<{
+      message?: {
+        content?: unknown;
+        tool_calls?: Array<{
+          function?: {
+            arguments?: unknown;
+          };
+        }>;
+      };
+    }>;
+  };
+
+  const mensagem = raiz.choices?.[0]?.message;
+
+  const argumentos =
+    mensagem?.tool_calls?.[0]?.function?.arguments;
+
+  if (typeof argumentos === "string") {
+    return extrairJsonDaResposta(argumentos);
+  }
+
+  if (
+    argumentos &&
+    typeof argumentos === "object"
+  ) {
+    return argumentos as Record<string, unknown>;
+  }
+
+  return extrairJsonDaResposta(
+    obterConteudoResposta(json),
+  );
+}
+
+function evidenciaViagemConcreta(
+  input: AnaliseDocumentoInput,
+): {
+  relevante: boolean;
+  motivo: string;
+} {
+  const texto = normalizarTexto(
+    `${input.nome}\n${input.texto ?? ""}`,
+  );
 
   const negativos = [
     /newsletter/,
@@ -474,10 +730,13 @@ function evidenciaViagemConcreta(input: AnaliseDocumentoInput): { relevante: boo
     /fique a conhecer/,
   ];
 
-  const temSinalMarketing = negativos.some((padrao) => padrao.test(texto));
+  const temSinalMarketing =
+    negativos.some((padrao) =>
+      padrao.test(texto),
+    );
 
   const sinaisTransacionais = [
-    /reserva(?:cao|ção)?(?: confirmada| confirmado| efetuada| realizada)?/, 
+    /reserva(?:cao|ção)?(?: confirmada| confirmado| efetuada| realizada)?/,
     /confirmacao de reserva/,
     /reserva confirmada/,
     /reserva realizada/,
@@ -523,24 +782,65 @@ function evidenciaViagemConcreta(input: AnaliseDocumentoInput): { relevante: boo
     /assento/,
   ];
 
-  const sinais = sinaisTransacionais.filter((padrao) => padrao.test(texto)).length;
+  const sinais =
+    sinaisTransacionais.filter((padrao) =>
+      padrao.test(texto),
+    ).length;
 
-  const temVooEspecifico = /\b[A-Z]{2}\s?\d{2,4}\b/i.test(`${input.nome}\n${input.texto ?? ""}`) &&
-    /\b\d{1,2}[/-]\d{1,2}[/-]\d{2,4}\b|\b\d{4}-\d{2}-\d{2}\b/.test(texto);
+  const temVooEspecifico =
+    /\b[A-Z]{2}\s?\d{2,4}\b/i.test(
+      `${input.nome}\n${input.texto ?? ""}`,
+    ) &&
+    (
+      /\b\d{1,2}[/-]\d{1,2}[/-]\d{2,4}\b/.test(
+        texto,
+      ) ||
+      /\b\d{4}-\d{2}-\d{2}\b/.test(texto)
+    );
 
-  const temReferencia = /\b(?:pnr|booking(?: reference| code)?|reservation(?: number)?|confirmation(?: number)?|referencia(?: da)? reserva|numero da reserva)\b[\s:#-]*[A-Z0-9-]{4,20}\b/i.test(`${input.nome}\n${input.texto ?? ""}`);
+  const temReferencia =
+    /\b(?:pnr|booking(?: reference| code)?|reservation(?: number)?|confirmation(?: number)?|referencia(?: da)? reserva|numero da reserva)\b[\s:#-]*[A-Z0-9-]{4,20}\b/i.test(
+      `${input.nome}\n${input.texto ?? ""}`,
+    );
 
-  const temBilheteComData = /\b(?:bilhete|ticket|entrada|voucher|e-ticket|boarding pass)\b/i.test(`${input.nome}\n${input.texto ?? ""}`) &&
-    /\b\d{1,2}[/-]\d{1,2}[/-]\d{2,4}\b|\b\d{4}-\d{2}-\d{2}\b/.test(texto);
+  const temBilheteComData =
+    /\b(?:bilhete|ticket|entrada|voucher|e-ticket|boarding pass)\b/i.test(
+      `${input.nome}\n${input.texto ?? ""}`,
+    ) &&
+    (
+      /\b\d{1,2}[/-]\d{1,2}[/-]\d{2,4}\b/.test(
+        texto,
+      ) ||
+      /\b\d{4}-\d{2}-\d{2}\b/.test(texto)
+    );
 
-  const temHotelComDados = /\b(?:hotel|alojamento|room|quarto|check-in|check out|check-out)\b/.test(texto) &&
-    (temReferencia || /\b(?:check-in|check out|check-out)\b/.test(texto));
+  const temHotelComDados =
+    /\b(?:hotel|alojamento|room|quarto|check-in|check out|check-out)\b/.test(
+      texto,
+    ) &&
+    (
+      temReferencia ||
+      /\b(?:check-in|check out|check-out)\b/.test(
+        texto,
+      )
+    );
 
-  const temTransporteComDados = /\b(?:train|comboio|trem|autocarro|bus|metro|barco|ferry|transfer|car rental|aluguer de carro)\b/.test(texto) &&
-    (temReferencia || temBilheteComData || /\b(?:departure|partida|arrival|chegada)\b/.test(texto));
+  const temTransporteComDados =
+    /\b(?:train|comboio|trem|autocarro|bus|metro|barco|ferry|transfer|car rental|aluguer de carro)\b/.test(
+      texto,
+    ) &&
+    (
+      temReferencia ||
+      temBilheteComData ||
+      /\b(?:departure|partida|arrival|chegada)\b/.test(
+        texto,
+      )
+    );
 
   const forte =
-    /\b(?:reservation confirmed|booking confirmation|booking confirmed|boarding pass|cartao de embarque|confirmation number|booking reference|reservation number|ticket confirmation|ticket number|bilhete confirmado|reserva confirmada|numero da reserva|pnr)\b/.test(texto) ||
+    /\b(?:reservation confirmed|booking confirmation|booking confirmed|boarding pass|cartao de embarque|confirmation number|booking reference|reservation number|ticket confirmation|ticket number|bilhete confirmado|reserva confirmada|numero da reserva|pnr)\b/.test(
+      texto,
+    ) ||
     temReferencia ||
     temVooEspecifico ||
     temHotelComDados ||
@@ -550,20 +850,28 @@ function evidenciaViagemConcreta(input: AnaliseDocumentoInput): { relevante: boo
   if (!forte) {
     return {
       relevante: false,
-      motivo: "Não existem evidências suficientes de uma reserva, bilhete, transporte, alojamento ou serviço de viagem concreto.",
+      motivo:
+        "Não existem evidências suficientes de uma reserva, bilhete, transporte, alojamento ou serviço de viagem concreto.",
     };
   }
 
-  if (temSinalMarketing && sinais < 2 && !temReferencia && !temVooEspecifico) {
+  if (
+    temSinalMarketing &&
+    sinais < 2 &&
+    !temReferencia &&
+    !temVooEspecifico
+  ) {
     return {
       relevante: false,
-      motivo: "O conteúdo apresenta características promocionais ou comerciais sem evidência suficiente de uma reserva ou serviço concreto.",
+      motivo:
+        "O conteúdo apresenta características promocionais ou comerciais sem evidência suficiente de uma reserva ou serviço concreto.",
     };
   }
 
   return {
     relevante: true,
-    motivo: "Foram encontradas evidências concretas de uma reserva, bilhete, transporte, alojamento ou serviço de viagem.",
+    motivo:
+      "Foram encontradas evidências concretas de uma reserva, bilhete, transporte, alojamento ou serviço de viagem.",
   };
 }
 
@@ -605,9 +913,11 @@ export const analisarDocumento =
 
         const textoBase = [
           `Assunto/nome do email: ${data.nome}`,
+
           data.texto
             ? `Conteúdo do email:\n${data.texto}`
             : "",
+
           `Data de hoje: ${new Date()
             .toISOString()
             .slice(0, 10)}`,
@@ -618,94 +928,179 @@ export const analisarDocumento =
         const camposFicha =
           Object.keys(fichaVazia).join(", ");
 
-        const conteudo: Array<Record<string, unknown>> = [
+        const conteudo:
+          Array<Record<string, unknown>> = [
           {
             type: "text",
             text: [
               textoBase,
+
               "",
+
               "Analisa este email para a aplicação de viagens ViatOrbis.",
+
               "",
+
               "Tens primeiro de decidir se este email é uma comunicação concreta relacionada com uma viagem do utilizador.",
+
               "",
+
               "DEVE ser relevante=true quando houver evidência concreta de:",
+
               "- reserva de hotel ou alojamento;",
+
               "- confirmação de Booking ou outra plataforma;",
+
               "- voo reservado ou bilhete de avião;",
+
               "- cartão de embarque;",
+
               "- comboio, autocarro, barco ou outro transporte reservado;",
+
               "- aluguer de carro já reservado;",
+
               "- transfer já reservado;",
+
               "- bilhete de museu, espetáculo, atração, tour ou atividade;",
+
               "- seguro ou outro documento de viagem concreto;",
+
               "- alteração, cancelamento ou instruções de uma reserva existente;",
+
               "- informação operacional diretamente associada a uma viagem específica.",
+
               "",
+
               "DEVE ser relevante=false quando for:",
+
               "- newsletter;",
+
               "- publicidade;",
+
               "- campanha comercial;",
+
               "- promoção ou desconto;",
+
               "- oferta genérica;",
+
               "- conteúdo editorial;",
+
               "- artigo, blog ou podcast;",
+
               "- inspiração para viajar;",
+
               "- recomendação genérica de destinos;",
+
               "- email comercial sem uma reserva, bilhete ou serviço concreto.",
+
               "",
+
               "Não basta aparecerem palavras como hotel, flight, travel, booking ou aeroporto. Procura evidência concreta de uma viagem ou serviço específico.",
+
               "",
+
               "Quando relevante=true, extrai apenas os dados que realmente aparecem no email.",
+
               "",
+
               `Os campos possíveis da ficha são: ${camposFicha}`,
+
               "",
+
               "Para um voo procura passageiro, companhia, número do voo, origem, destino, data/hora de partida, chegada, embarque, terminal, porta, assento, grupo, bagagem e referência/PNR.",
+
               "",
+
               "Para um hotel procura fornecedor, hóspede, hotel, morada, check-in, check-out, referência, quarto, condições e contacto.",
+
               "",
+
               "Para transporte procura operador, fornecedor, passageiro, origem, destino, partida, chegada, referência e lugar.",
+
               "",
+
               "Para transfer procura fornecedor, passageiro, recolha, destino, data/hora, referência, morada e contacto.",
+
               "",
+
               "Para bilhete ou atividade procura entidade, titular, local, data/hora, referência, código e condições.",
+
               "",
+
               "Para informação útil de viagem procura horários, moradas, instruções, regras, contactos ou requisitos concretos.",
+
               "",
+
               "Nunca inventes dados.",
+
               "Quando um campo não aparecer, usa string vazia.",
+
               "Quando um dado for ambíguo ou não puder ser confirmado com segurança, deixa-o vazio e inclui o nome desse campo em porConfirmar.",
+
               "",
+
               "IMPORTANTE: responde APENAS com um objeto JSON válido. Não uses markdown, não uses ```json e não escrevas explicações fora do JSON.",
+
               "",
+
               "O JSON deve ter exatamente esta estrutura conceptual:",
+
               "{",
+
               '  "relevante": true,',
+
               '  "motivoRelevancia": "explicação curta",',
+
               '  "categoria": "voo|hotel|transporte|transfer|bilhete|documento|informacao|outro",',
+
               '  "tipoDocumento": "",',
+
               '  "fornecedor": "",',
+
               '  "operador": "",',
+
               '  "passageiro": "",',
+
               '  "local": "",',
+
               '  "referencia": "",',
+
               '  "dataHora": "",',
+
               '  "dataHoraFim": "",',
+
               '  "codigo": "",',
+
               '  "companhia": "",',
+
               '  "numeroVoo": "",',
+
               '  "origem": "",',
+
               '  "destino": "",',
+
               '  "horaEmbarque": "",',
+
               '  "terminal": "",',
+
               '  "porta": "",',
+
               '  "assento": "",',
+
               '  "grupoEmbarque": "",',
+
               '  "bagagem": "",',
+
               '  "morada": "",',
+
               '  "quarto": "",',
+
               '  "condicoes": "",',
+
               '  "contacto": "",',
+
               '  "porConfirmar": []',
+
               "}",
             ].join("\n"),
           },
@@ -732,7 +1127,7 @@ export const analisarDocumento =
           });
         }
 
-        const maxTentativas = 3;
+        const maxTentativas = 2;
 
         let ultimoErro: unknown = null;
 
@@ -746,27 +1141,60 @@ export const analisarDocumento =
               "https://ai.gateway.lovable.dev/v1/chat/completions",
               {
                 method: "POST",
+
                 headers: {
                   Authorization: `Bearer ${apiKey}`,
                   "Content-Type":
                     "application/json",
                 },
+
                 body: JSON.stringify({
                   model:
                     "google/gemini-2.5-flash",
+
                   temperature: 0,
+
                   max_tokens: 2500,
+
                   messages: [
                     {
                       role: "system",
+
                       content:
-                        "És um assistente especializado em interpretar emails de viagens. Analisa com rigor, não inventes dados e responde apenas com JSON válido.",
+                        "És um assistente especializado em interpretar emails de viagens. Analisa com rigor, não inventes dados. Distingue reservas reais de newsletters e publicidade.",
                     },
+
                     {
                       role: "user",
+
                       content: conteudo,
                     },
                   ],
+
+                  tools: [
+                    {
+                      type: "function",
+
+                      function: {
+                        name: "registar_ficha",
+
+                        description:
+                          "Devolve a decisão de relevância e os dados estruturados encontrados no email de viagem.",
+
+                        parameters:
+                          ESQUEMA,
+                      },
+                    },
+                  ],
+
+                  tool_choice: {
+                    type: "function",
+
+                    function: {
+                      name:
+                        "registar_ficha",
+                    },
+                  },
                 }),
               },
             );
@@ -779,20 +1207,34 @@ export const analisarDocumento =
                 "analisarDocumento gateway",
                 {
                   tentativa,
-                  status: resposta.status,
+
+                  status:
+                    resposta.status,
+
                   statusText:
                     resposta.statusText,
-                  corpo: corpo.slice(0, 2000),
+
+                  corpo:
+                    corpo.slice(
+                      0,
+                      2000,
+                    ),
                 },
               );
 
-              if (resposta.status === 402) {
+              if (
+                resposta.status ===
+                402
+              ) {
                 throw new Error(
                   "A análise por IA está indisponível no gateway (402).",
                 );
               }
 
-              if (resposta.status === 429) {
+              if (
+                resposta.status ===
+                429
+              ) {
                 throw new Error(
                   "A análise por IA foi temporariamente limitada pelo gateway (429).",
                 );
@@ -806,11 +1248,15 @@ export const analisarDocumento =
             let json: unknown;
 
             try {
-              json = JSON.parse(corpo);
+              json =
+                JSON.parse(corpo);
             } catch {
               console.error(
                 "analisarDocumento: resposta do gateway não é JSON",
-                corpo.slice(0, 2000),
+                corpo.slice(
+                  0,
+                  2000,
+                ),
               );
 
               throw new Error(
@@ -818,15 +1264,15 @@ export const analisarDocumento =
               );
             }
 
-            const textoResposta =
-              obterConteudoResposta(json);
-
             const dadosIa =
-              extrairJsonDaResposta(
-                textoResposta,
+              extrairDadosEstruturadosDaResposta(
+                json,
               );
 
-            const filtroLocal = evidenciaViagemConcreta(data);
+            const filtroLocal =
+              evidenciaViagemConcreta(
+                data,
+              );
 
             const relevante =
               dadosIa["relevante"] === true &&
@@ -837,13 +1283,20 @@ export const analisarDocumento =
                 "motivoRelevancia"
               ] === "string" &&
               String(
-                dadosIa["motivoRelevancia"],
+                dadosIa[
+                  "motivoRelevancia"
+                ],
               ).trim()
                 ? String(
-                    dadosIa["motivoRelevancia"],
+                    dadosIa[
+                      "motivoRelevancia"
+                    ],
                   )
                     .trim()
-                    .slice(0, 500)
+                    .slice(
+                      0,
+                      500,
+                    )
                 : relevante
                   ? "Foi identificada uma comunicação concreta relacionada com uma viagem."
                   : filtroLocal.motivo;
@@ -856,9 +1309,13 @@ export const analisarDocumento =
 
             return {
               ficha,
+
               relevante,
+
               motivoRelevancia,
+
               porIa: true,
+
               nota: relevante
                 ? ficha.porConfirmar
                   ? "Email considerado relevante e analisado por IA. Alguns campos precisam de confirmação."
@@ -866,7 +1323,8 @@ export const analisarDocumento =
                 : "Email analisado por IA e considerado irrelevante para uma viagem.",
             };
           } catch (erro) {
-            ultimoErro = erro;
+            ultimoErro =
+              erro;
 
             console.error(
               "analisarDocumento tentativa",
@@ -880,21 +1338,30 @@ export const analisarDocumento =
                 : String(erro);
 
             if (
-              mensagem.includes("(402)")
+              mensagem.includes(
+                "(402)",
+              )
             ) {
               break;
             }
 
             if (
-              tentativa < maxTentativas
+              tentativa <
+              maxTentativas
             ) {
               const espera =
-                mensagem.includes("(429)")
-                  ? 2000 * tentativa
-                  : 1000 * tentativa;
+                mensagem.includes(
+                  "(429)",
+                )
+                  ? 2000 *
+                    tentativa
+                  : 1000 *
+                    tentativa;
 
               await new Promise(
-                (resolve) =>
+                (
+                  resolve,
+                ) =>
                   setTimeout(
                     resolve,
                     espera,
@@ -907,7 +1374,10 @@ export const analisarDocumento =
         const erroFinal =
           ultimoErro instanceof Error
             ? ultimoErro.message
-            : String(ultimoErro ?? "Erro desconhecido.");
+            : String(
+                ultimoErro ??
+                  "Erro desconhecido.",
+              );
 
         /*
          * Muito importante:
@@ -918,13 +1388,19 @@ export const analisarDocumento =
          * claramente transacional continue identificável.
          */
         return {
-          ficha: fichaFallback,
-          relevante: fallbackRelevante,
+          ficha:
+            fichaFallback,
+
+          relevante:
+            fallbackRelevante,
+
           motivoRelevancia:
             fallbackRelevante
               ? "A análise por IA falhou, mas foram encontrados sinais fortes de uma comunicação de viagem."
               : "A análise por IA falhou antes de ser possível determinar a relevância.",
+
           porIa: false,
+
           nota:
             `A análise automática não foi concluída: ${erroFinal}`,
         };
