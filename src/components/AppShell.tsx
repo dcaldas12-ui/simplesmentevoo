@@ -112,24 +112,19 @@ export function AppShell({ children }: { children: ReactNode }) {
             preferenciaTipada.ultima_analise_gmail_em ?? null;
 
           /*
-           * Na primeira execução automática procuramos os últimos 7 dias.
-           * Depois fazemos pesquisa incremental a partir da última análise.
+           * A pesquisa automática usa uma janela móvel no Gmail e não depende
+           * de `ultima_analise_gmail_em` como fronteira. Assim, um email que
+           * chegue entre duas rondas não pode ficar perdido atrás de um
+           * timestamp avançado.
+           *
+           * A tabela `emails_gmail_processados` faz a deduplicação.
            */
-          const desde = ultimaAnalise
-            ? ultimaAnalise
-            : new Date(
-                Date.now() - 7 * 24 * 60 * 60 * 1000,
-              ).toISOString();
+          const desde = ultimaAnalise;
 
-          /*
-           * O modo automático tem um limite pequeno e usa um pré-filtro
-           * de pesquisa no Gmail para evitar gastar quota em mensagens
-           * obviamente não relacionadas com viagens.
-           */
           const emails = await procurarEmails({
             data: {
               desde,
-              limite: 3,
+              limite: 20,
               automatico: true,
             },
           });
@@ -331,9 +326,9 @@ export function AppShell({ children }: { children: ReactNode }) {
           }
 
           /*
-           * Só avançamos a marca temporal quando conseguimos concluir e
-           * guardar a ronda. Se uma análise falhar, os candidatos ficam
-           * disponíveis para nova tentativa na próxima ronda.
+           * `ultima_analise_gmail_em` regista apenas o instante da última ronda.
+           * Já não funciona como fronteira da pesquisa Gmail. Se uma análise
+           * falhar, o candidato continua disponível para nova tentativa.
            */
           if (!houveFalhaDeAnalise && !houveFalhaAoGuardar) {
             await supabase

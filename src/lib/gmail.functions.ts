@@ -378,61 +378,70 @@ export const emailsDeViagem = createServerFn({ method: "GET" })
       );
 
       /*
-       * Aqui não fazemos classificação por palavras-chave.
-       * O Gmail serve apenas para limitar por data; a decisão sobre o que é
-       * ou não uma viagem é feita posteriormente pelo analisador de IA.
+       * A pesquisa automática NÃO usa uma marca temporal exata guardada na
+       * base de dados. Uma pesquisa "after:<timestamp>" cria uma fronteira
+       * frágil: se um email chegar entre duas rondas, pode ficar imediatamente
+       * atrás da fronteira e nunca ser devolvido.
        *
-       * Para a deteção automática usamos o instante exato fornecido em
-       * `desde`, convertido para timestamp Unix. Assim evitamos voltar
-       * a procurar o dia inteiro a cada ronda.
+       * No modo automático usamos uma janela móvel de 7 dias. A tabela
+       * `emails_gmail_processados` é a verdadeira deduplicação, por isso podemos
+       * voltar a consultar mensagens recentes sem as analisar duas vezes.
+       *
+       * O modo manual mantém a pesquisa incremental por data.
        */
-      const filtroData = data.desde
-        ? (() => {
-            const instante = new Date(data.desde);
+      const filtroData = data.automatico
+        ? "newer_than:7d"
+        : data.desde
+          ? (() => {
+              const instante = new Date(data.desde);
 
-            if (Number.isNaN(instante.getTime())) {
-              return "newer_than:365d";
-            }
+              if (Number.isNaN(instante.getTime())) {
+                return "newer_than:365d";
+              }
 
-            /*
-             * Recuamos 60 segundos para proteger a fronteira temporal.
-             * A deduplicação na base de dados impede que um email já tratado
-             * seja processado novamente.
-             */
-            const timestamp = Math.max(
-              0,
-              Math.floor(instante.getTime() / 1000) - 60,
-            );
+              const timestamp = Math.max(
+                0,
+                Math.floor(instante.getTime() / 1000) - 60,
+              );
 
-            return `after:${timestamp}`;
-          })()
-        : "newer_than:365d";
+              return `after:${timestamp}`;
+            })()
+          : "newer_than:365d";
 
       /*
-       * A pesquisa manual usa um pré-filtro do próprio Gmail para reduzir o
-       * número de mensagens analisadas. No modo automático, pelo contrário,
-       * não fazemos classificação por palavras-chave: procuramos os emails
-       * novos pela data e deixamos o Gemini decidir quais são de viagem.
+       * No modo automático não fazemos pré-filtro por palavras-chave.
+       * Procuramos mensagens recentes e deixamos o Gemini decidir quais são
+       * realmente comunicações de viagem.
+       *
+       * No modo manual mantemos o pré-filtro existente.
        */
       const termosViagem =
         '(reserva OR reservado OR "reserva confirmada" OR confirmacao OR confirmação OR confirmation OR booking OR reservation OR "booking reference" OR "booking confirmation" OR "confirmation number" OR PNR OR voucher OR bilhete OR ticket OR "e-ticket" OR "boarding pass" OR "cartao de embarque" OR "cartão de embarque" OR "flight number" OR "numero do voo" OR "número do voo" OR itinerario OR itinerário OR itinerary OR "check-in" OR "check-out" OR hotel OR alojamento OR transfer OR comboio OR train OR autocarro OR bus OR ferry OR "car rental" OR "aluguer de carro" OR museu OR museum OR concerto OR concert OR tour OR excursao OR excursão OR atividade OR actividade OR ingresso OR entrada)';
 
-      /*
-       * No modo automático, não usamos palavras-chave como filtro. O objetivo
-       * é que o Gmail devolva os emails novos e que a decisão semântica seja
-       * feita pelo Gemini através de `analisarDocumento()`.
-       *
-       * No modo manual mantemos o pré-filtro existente para evitar alterar o
-       * comportamento já funcional da pesquisa iniciada pelo utilizador.
-       */
       const consultaCompleta = data.automatico
         ? filtroData
         : `${filtroData} ${termosViagem}`.trim();
 
       const consulta = encodeURIComponent(consultaCompleta);
 
+      console.info("Gmail: pesquisa de mensagens", {
+        automatico: data.automatico === true,
+        consulta: consultaCompleta,
+        limite: data.automatico
+          ? Math.max(10, Math.min(Math.floor(data.limite ?? 20), 25))
+          : data.limite !== null && data.limite !== undefined
+            ? Math.max(1, Math.min(Math.floor(data.limite), 25))
+            : 10,
+      });
+
+      /*
+       * Mantemos uma janela suficientemente grande no modo automático para
+       * que a rotina possa encontrar mensagens relevantes mesmo que tenham
+       * chegado várias mensagens desde a última execução. A deduplicação é
+       * feita pelo AppShell antes da análise Gemini.
+       */
       const LIMITE_TOTAL = data.automatico
-        ? 10
+        ? Math.max(10, Math.min(Math.floor(data.limite ?? 20), 25))
         : data.limite !== null && data.limite !== undefined
           ? Math.max(1, Math.min(Math.floor(data.limite), 25))
           : 10;
