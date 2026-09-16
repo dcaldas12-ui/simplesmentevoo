@@ -269,6 +269,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                   {
                     gmailMessageId: email.id,
                     assunto: email.assunto,
+                    resultado,
                   },
                 );
                 continue;
