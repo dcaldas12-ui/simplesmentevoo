@@ -409,22 +409,30 @@ export const emailsDeViagem = createServerFn({ method: "GET" })
         : "newer_than:365d";
 
       /*
-       * No modo automático usamos o motor de pesquisa do próprio Gmail
-       * como pré-filtro. Assim evitamos ler mensagens normais e gastamos a
-       * quota apenas em candidatos que apresentam sinais plausíveis de
-       * reserva, bilhete ou evento concreto.
-       *
-       * A pesquisa manual usa o mesmo pré-filtro, mas permite recolher mais
-       * candidatos para a análise iniciada pelo utilizador.
+       * A pesquisa manual usa um pré-filtro do próprio Gmail para reduzir o
+       * número de mensagens analisadas. No modo automático, pelo contrário,
+       * não fazemos classificação por palavras-chave: procuramos os emails
+       * novos pela data e deixamos o Gemini decidir quais são de viagem.
        */
       const termosViagem =
         '(reserva OR reservado OR "reserva confirmada" OR confirmacao OR confirmação OR confirmation OR booking OR reservation OR "booking reference" OR "booking confirmation" OR "confirmation number" OR PNR OR voucher OR bilhete OR ticket OR "e-ticket" OR "boarding pass" OR "cartao de embarque" OR "cartão de embarque" OR "flight number" OR "numero do voo" OR "número do voo" OR itinerario OR itinerário OR itinerary OR "check-in" OR "check-out" OR hotel OR alojamento OR transfer OR comboio OR train OR autocarro OR bus OR ferry OR "car rental" OR "aluguer de carro" OR museu OR museum OR concerto OR concert OR tour OR excursao OR excursão OR atividade OR actividade OR ingresso OR entrada)';
 
-      const consultaCompleta = `${filtroData} ${termosViagem}`.trim();
+      /*
+       * No modo automático, não usamos palavras-chave como filtro. O objetivo
+       * é que o Gmail devolva os emails novos e que a decisão semântica seja
+       * feita pelo Gemini através de `analisarDocumento()`.
+       *
+       * No modo manual mantemos o pré-filtro existente para evitar alterar o
+       * comportamento já funcional da pesquisa iniciada pelo utilizador.
+       */
+      const consultaCompleta = data.automatico
+        ? filtroData
+        : `${filtroData} ${termosViagem}`.trim();
+
       const consulta = encodeURIComponent(consultaCompleta);
 
       const LIMITE_TOTAL = data.automatico
-        ? 3
+        ? 10
         : data.limite !== null && data.limite !== undefined
           ? Math.max(1, Math.min(Math.floor(data.limite), 25))
           : 10;
