@@ -409,17 +409,22 @@ export const emailsDeViagem = createServerFn({ method: "GET" })
           : "newer_than:365d";
 
       /*
-       * No modo automático não fazemos pré-filtro por palavras-chave.
-       * Procuramos mensagens recentes e deixamos o Gemini decidir quais são
-       * realmente comunicações de viagem.
+       * O modo automático continua a usar uma janela móvel de 7 dias, mas
+       * volta a aplicar um filtro Gmail amplo por sinais de viagem.
        *
-       * No modo manual mantemos o pré-filtro existente.
+       * Isto é intencional: o Gmail elimina antecipadamente uma grande parte
+       * das mensagens evidentemente alheias a viagens, reduzindo o número de
+       * emails que precisam de passar pelo Gemini e, consequentemente, o
+       * consumo de quota da API. A decisão final de relevância continua a
+       * pertencer ao analisarDocumento/Gemini quando este está disponível.
+       *
+       * O modo manual mantém o mesmo pré-filtro.
        */
       const termosViagem =
         '(reserva OR reservado OR "reserva confirmada" OR confirmacao OR confirmação OR confirmation OR booking OR reservation OR "booking reference" OR "booking confirmation" OR "confirmation number" OR PNR OR voucher OR bilhete OR ticket OR "e-ticket" OR "boarding pass" OR "cartao de embarque" OR "cartão de embarque" OR "flight number" OR "numero do voo" OR "número do voo" OR itinerario OR itinerário OR itinerary OR "check-in" OR "check-out" OR hotel OR alojamento OR transfer OR comboio OR train OR autocarro OR bus OR ferry OR "car rental" OR "aluguer de carro" OR museu OR museum OR concerto OR concert OR tour OR excursao OR excursão OR atividade OR actividade OR ingresso OR entrada)';
 
       const consultaCompleta = data.automatico
-        ? filtroData
+        ? `${filtroData} ${termosViagem}`.trim()
         : `${filtroData} ${termosViagem}`.trim();
 
       const consulta = encodeURIComponent(consultaCompleta);
@@ -435,13 +440,13 @@ export const emailsDeViagem = createServerFn({ method: "GET" })
       });
 
       /*
-       * Mantemos uma janela suficientemente grande no modo automático para
-       * que a rotina possa encontrar mensagens relevantes mesmo que tenham
-       * chegado várias mensagens desde a última execução. A deduplicação é
-       * feita pelo AppShell antes da análise Gemini.
+       * No modo automático limitamos cada ronda a 10 candidatos. A pesquisa
+       * é repetida de forma periódica e a deduplicação é feita pelo AppShell,
+       * por isso os restantes candidatos continuam disponíveis para a ronda
+       * seguinte. Isto evita enviar grandes rajadas de emails para o Gemini.
        */
       const LIMITE_TOTAL = data.automatico
-        ? Math.max(10, Math.min(Math.floor(data.limite ?? 20), 25))
+        ? Math.max(5, Math.min(Math.floor(data.limite ?? 10), 10))
         : data.limite !== null && data.limite !== undefined
           ? Math.max(1, Math.min(Math.floor(data.limite), 25))
           : 10;
