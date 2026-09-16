@@ -217,7 +217,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           );
 
           let descobertas = 0;
-          let houveFalhaDeAnalise = false;
+          let houveFallbackDeAnalise = false;
           let houveFalhaAoGuardar = false;
           const novasDescobertasAssuntos: string[] = [];
 
@@ -253,25 +253,29 @@ export function AppShell({ children }: { children: ReactNode }) {
                   : null;
 
               /*
-               * Uma falha do analisador não deve transformar o email em
-               * "irrelevante". Deixamos a marca temporal intacta para que
-               * possa ser tentado novamente numa execução seguinte.
+               * O modo automático deve aceitar o mesmo resultado que o modo
+               * manual. Quando a IA falha (por exemplo, por limite 429), a
+               * função `analisarDocumento` devolve um resultado provisório
+               * calculado localmente, com `porIa: false`.
+               *
+               * Esse resultado continua a ser útil e deve ser guardado:
+               * caso contrário, o mesmo email seria encontrado em todas as
+               * rondas e nunca chegaria à tabela `emails_gmail_processados`.
                */
               if (resultadoTipado?.porIa !== true) {
-                houveFalhaDeAnalise = true;
+                houveFallbackDeAnalise = true;
                 console.warn(
-                  "Gmail: análise automática não concluída; email ficará para nova tentativa.",
+                  "Gmail: Gemini indisponível; a análise automática vai usar o resultado local provisório.",
                   {
                     gmailMessageId: email.id,
                     assunto: email.assunto,
                     resultado,
                   },
                 );
-                continue;
               }
 
               const relevante =
-                resultadoTipado.relevante === true;
+                resultadoTipado?.relevante === true;
 
               if (relevante) {
                 descobertas += 1;
@@ -313,7 +317,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                 );
               }
             } catch (erro) {
-              houveFalhaDeAnalise = true;
+              houveFallbackDeAnalise = true;
               console.error(
                 "Erro na deteção automática de email Gmail:",
                 erro,
@@ -327,10 +331,11 @@ export function AppShell({ children }: { children: ReactNode }) {
 
           /*
            * `ultima_analise_gmail_em` regista apenas o instante da última ronda.
-           * Já não funciona como fronteira da pesquisa Gmail. Se uma análise
-           * falhar, o candidato continua disponível para nova tentativa.
+           * A análise provisória por fallback local também conta como tratamento
+           * concluído para efeitos da ronda; a tabela `emails_gmail_processados`
+           * garante que o mesmo email não volta a ser tratado indefinidamente.
            */
-          if (!houveFalhaDeAnalise && !houveFalhaAoGuardar) {
+          if (!houveFalhaAoGuardar) {
             await supabase
               .from("preferencias_importacao" as any)
               .update({
@@ -344,15 +349,21 @@ export function AppShell({ children }: { children: ReactNode }) {
             candidatos: emails.length,
             novos: novosEmails.length,
             relevantes: descobertas,
-            houveFalhaDeAnalise,
+            houveFallbackDeAnalise,
             houveFalhaAoGuardar,
           });
 
           if (novosEmails.length > 0 && descobertas === 0) {
             toast.info(
-              houveFalhaDeAnalise || houveFalhaAoGuardar
-                ? "A deteção automática encontrou novos emails, mas a análise ainda não ficou concluída. Vamos tentar novamente."
-                : `A deteção automática analisou ${novosEmails.length} novo${
+              houveFalhaAoGuardar
+                ? "A deteção automática encontrou novos emails, mas não conseguiu guardar todos os resultados."
+                : houveFallbackDeAnalise
+                  ? `A deteção automática analisou ${novosEmails.length} novo${
+                      novosEmails.length === 1 ? "" : "s"
+                    } email${
+                      novosEmails.length === 1 ? "" : "s"
+                    } com análise local provisória porque a IA não estava disponível.`
+                  : `A deteção automática analisou ${novosEmails.length} novo${
                     novosEmails.length === 1 ? "" : "s"
                   } email${
                     novosEmails.length === 1 ? "" : "s"
