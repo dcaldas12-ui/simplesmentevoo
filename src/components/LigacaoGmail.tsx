@@ -18,6 +18,16 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { useSession } from "@/lib/auth";
 import {
   concluirLigacaoGmail,
@@ -265,6 +275,17 @@ type DescobertaAutomatica = {
 };
 
 type Ficha = Record<string, unknown>;
+
+type ViagemEscolha = {
+  id: string;
+  titulo: string;
+  destino: string | null;
+};
+
+type DescobertaAcao = {
+  item: ResultadoAnalise;
+  acao: AcaoSugerida;
+};
 
 type AcaoSugerida =
   | "adicionar_viagem"
@@ -598,9 +619,11 @@ function CampoResumo({
 function CartaoResultado({
   item,
   aoIgnorar,
+  aoAbrirAcao,
 }: {
   item: ResultadoAnalise;
   aoIgnorar: (id: string) => void;
+  aoAbrirAcao: (item: ResultadoAnalise) => void;
 }) {
   if (item.estado !== "analisado" || !analiseEhRelevante(item.resultado)) {
     return null;
@@ -733,11 +756,7 @@ function CartaoResultado({
             type="button"
             size="sm"
             className="h-9"
-            onClick={() => {
-              toast.info(
-                "A ligação desta ação à viagem será feita no próximo passo.",
-              );
-            }}
+            onClick={() => aoAbrirAcao(item)}
           >
             {acaoTexto.titulo}
           </Button>
@@ -747,11 +766,7 @@ function CartaoResultado({
             size="sm"
             variant="outline"
             className="h-9"
-            onClick={() => {
-              toast.info(
-                "Vamos preparar a opção de guardar este elemento no próximo passo.",
-              );
-            }}
+            onClick={() => aoAbrirAcao(item)}
           >
             Rever
           </Button>
@@ -769,6 +784,254 @@ function CartaoResultado({
         </div>
       </div>
     </div>
+  );
+}
+
+
+function DialogAcaoDescoberta({
+  aberta,
+  descoberta,
+  viagens,
+  aGuardar,
+  onOpenChange,
+  onGuardar,
+  onCriarViagem,
+}: {
+  aberta: boolean;
+  descoberta: DescobertaAcao | null;
+  viagens: ViagemEscolha[];
+  aGuardar: boolean;
+  onOpenChange: (open: boolean) => void;
+  onGuardar: (viagemId: string) => Promise<void>;
+  onCriarViagem: (dados: {
+    titulo: string;
+    destino: string;
+    dataInicio: string;
+    dataFim: string;
+  }) => Promise<string | null>;
+}) {
+  const [modoCriar, setModoCriar] = useState(false);
+  const [viagemId, setViagemId] = useState("");
+  const [novaTitulo, setNovaTitulo] = useState("");
+  const [novoDestino, setNovoDestino] = useState("");
+  const [novaDataInicio, setNovaDataInicio] = useState("");
+  const [novaDataFim, setNovaDataFim] = useState("");
+
+  const fichaBruta = descoberta ? fichaDaAnalise(descoberta.item.resultado) : null;
+  const ficha: Ficha | null =
+    fichaBruta && typeof fichaBruta === "object"
+      ? (fichaBruta as Ficha)
+      : null;
+
+  const categoria = valorDaFicha(ficha, "categoria");
+  const fornecedor = valorDaFicha(ficha, "fornecedor");
+  const companhia = valorDaFicha(ficha, "companhia");
+  const operador = valorDaFicha(ficha, "operador");
+  const numeroVoo = valorDaFicha(ficha, "numeroVoo");
+  const origem = valorDaFicha(ficha, "origem");
+  const destino = valorDaFicha(ficha, "destino");
+  const referencia = valorDaFicha(ficha, "referencia");
+  const dataHora = valorDaFicha(ficha, "dataHora");
+  const dataHoraFim = valorDaFicha(ficha, "dataHoraFim");
+  const local = valorDaFicha(ficha, "local");
+
+  useEffect(() => {
+    if (!aberta) return;
+
+    setModoCriar(false);
+    setViagemId(viagens[0]?.id ?? "");
+
+    const titulo = obterTituloPrincipal(
+      ficha,
+      descoberta?.item.email.assunto ?? "",
+    );
+    setNovaTitulo(titulo || "Nova viagem");
+    setNovoDestino(destino ?? local ?? "");
+    setNovaDataInicio(dataHora ? dataHora.slice(0, 10) : "");
+    setNovaDataFim(dataHoraFim ? dataHoraFim.slice(0, 10) : "");
+  }, [aberta, viagens, descoberta]);
+
+  async function confirmar() {
+    if (modoCriar) {
+      if (!novaTitulo.trim()) {
+        toast.error("Indique um nome para a nova viagem.");
+        return;
+      }
+
+      const id = await onCriarViagem({
+        titulo: novaTitulo.trim(),
+        destino: novoDestino.trim(),
+        dataInicio: novaDataInicio,
+        dataFim: novaDataFim,
+      });
+
+      if (id) {
+        await onGuardar(id);
+      }
+      return;
+    }
+
+    if (!viagemId) {
+      toast.error("Selecione uma viagem.");
+      return;
+    }
+
+    await onGuardar(viagemId);
+  }
+
+  return (
+    <Dialog open={aberta} onOpenChange={onOpenChange}>
+      <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>
+            {modoCriar ? "Criar viagem e adicionar" : "Adicionar à viagem"}
+          </DialogTitle>
+          <DialogDescription>
+            Confirme a viagem onde pretende guardar esta informação. Nada é
+            guardado sem a sua confirmação.
+          </DialogDescription>
+        </DialogHeader>
+
+        {descoberta ? (
+          <div className="space-y-4">
+            <div className="rounded-xl bg-secondary/50 p-4">
+              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                {categoriaApresentacao(categoria).titulo}
+              </p>
+              <p className="mt-1 text-base font-semibold">
+                {obterTituloPrincipal(ficha, descoberta.item.email.assunto)}
+              </p>
+              {descoberta.item.email.assunto ? (
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {descoberta.item.email.assunto}
+                </p>
+              ) : null}
+
+              <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                <CampoResumo nome="Fornecedor" valor={fornecedor} />
+                <CampoResumo nome="Companhia" valor={companhia} />
+                <CampoResumo nome="Operador" valor={operador} />
+                <CampoResumo nome="Voo" valor={numeroVoo} />
+                <CampoResumo
+                  nome="Percurso"
+                  valor={origem && destino ? `${origem} → ${destino}` : null}
+                />
+                <CampoResumo nome="Referência" valor={referencia} />
+                <CampoResumo nome="Data" valor={formatarData(dataHora)} />
+                <CampoResumo
+                  nome="Até"
+                  valor={formatarData(dataHoraFim)}
+                />
+                <CampoResumo nome="Local" valor={local} />
+              </div>
+            </div>
+
+            {modoCriar ? (
+              <div className="space-y-3">
+                <div>
+                  <Label htmlFor="gmail-nova-viagem-titulo">Nome da viagem</Label>
+                  <Input
+                    id="gmail-nova-viagem-titulo"
+                    value={novaTitulo}
+                    onChange={(e) => setNovaTitulo(e.target.value)}
+                    className="mt-1.5"
+                  />
+                </div>
+
+                <div>
+                  <Label htmlFor="gmail-nova-viagem-destino">Destino</Label>
+                  <Input
+                    id="gmail-nova-viagem-destino"
+                    value={novoDestino}
+                    onChange={(e) => setNovoDestino(e.target.value)}
+                    className="mt-1.5"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <Label htmlFor="gmail-nova-viagem-inicio">Início</Label>
+                    <Input
+                      id="gmail-nova-viagem-inicio"
+                      type="date"
+                      value={novaDataInicio}
+                      onChange={(e) => setNovaDataInicio(e.target.value)}
+                      className="mt-1.5"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="gmail-nova-viagem-fim">Fim</Label>
+                    <Input
+                      id="gmail-nova-viagem-fim"
+                      type="date"
+                      value={novaDataFim}
+                      onChange={(e) => setNovaDataFim(e.target.value)}
+                      className="mt-1.5"
+                    />
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div>
+                <Label htmlFor="gmail-viagem-destino">Viagem de destino</Label>
+                <select
+                  id="gmail-viagem-destino"
+                  value={viagemId}
+                  onChange={(e) => setViagemId(e.target.value)}
+                  disabled={aGuardar || viagens.length === 0}
+                  className="mt-1.5 flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                >
+                  <option value="">Selecionar viagem</option>
+                  {viagens.map((viagem) => (
+                    <option key={viagem.id} value={viagem.id}>
+                      {viagem.titulo}
+                      {viagem.destino ? ` — ${viagem.destino}` : ""}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+          </div>
+        ) : null}
+
+        <DialogFooter className="flex-col gap-2 sm:flex-row sm:justify-between">
+          <Button
+            type="button"
+            variant="ghost"
+            onClick={() => setModoCriar((valor) => !valor)}
+            disabled={aGuardar}
+          >
+            {modoCriar ? "Escolher viagem existente" : "Criar nova viagem"}
+          </Button>
+
+          <div className="flex gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => onOpenChange(false)}
+              disabled={aGuardar}
+            >
+              Cancelar
+            </Button>
+            <Button
+              type="button"
+              onClick={() => void confirmar()}
+              disabled={
+                aGuardar ||
+                !descoberta ||
+                (!modoCriar && viagens.length === 0)
+              }
+            >
+              {aGuardar
+                ? "A guardar..."
+                : modoCriar
+                  ? "Criar e adicionar"
+                  : "Adicionar à viagem"}
+            </Button>
+          </div>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -797,6 +1060,26 @@ export function LigacaoGmail() {
   >(null);
   const [aAlterarDeteccaoAutomatica, setAAlterarDeteccaoAutomatica] =
     useState(false);
+
+  const [descobertaAcao, setDescobertaAcao] =
+    useState<DescobertaAcao | null>(null);
+  const [aGuardarDescoberta, setAGuardarDescoberta] = useState(false);
+
+  const viagensQuery = useQuery({
+    queryKey: ["viagens"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("viagens")
+        .select("id, titulo, destino")
+        .order("data_inicio", { ascending: true, nullsFirst: false });
+
+      if (error) throw error;
+      return (data ?? []) as ViagemEscolha[];
+    },
+    enabled: Boolean(session),
+  });
+
+  const viagens = viagensQuery.data ?? [];
 
   async function ligar() {
   /*
@@ -1132,6 +1415,217 @@ export function LigacaoGmail() {
     }
   }
 
+
+  function abrirAcao(item: ResultadoAnalise) {
+    const fichaBruta = fichaDaAnalise(item.resultado);
+    const ficha: Ficha | null =
+      fichaBruta && typeof fichaBruta === "object"
+        ? (fichaBruta as Ficha)
+        : null;
+
+    setDescobertaAcao({
+      item,
+      acao: determinarAcao(ficha),
+    });
+  }
+
+  async function criarViagemParaDescoberta(dados: {
+    titulo: string;
+    destino: string;
+    dataInicio: string;
+    dataFim: string;
+  }): Promise<string | null> {
+    if (!session?.user.id) {
+      toast.error("Entre na sua conta para criar a viagem.");
+      return null;
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from("viagens")
+        .insert({
+          titulo: dados.titulo,
+          destino: dados.destino || null,
+          data_inicio: dados.dataInicio || null,
+          data_fim: dados.dataFim || null,
+          notas: null,
+        })
+        .select("id")
+        .single();
+
+      if (error) throw error;
+
+      await queryClient.invalidateQueries({
+        queryKey: ["viagens"],
+      });
+
+      return data.id as string;
+    } catch (erro) {
+      toast.error(
+        erro instanceof Error
+          ? erro.message
+          : "Não foi possível criar a viagem.",
+      );
+      return null;
+    }
+  }
+
+  async function guardarDescobertaNaViagem(viagemId: string) {
+    const descoberta = descobertaAcao;
+    const userId = session?.user.id;
+
+    if (!descoberta || !userId) {
+      return;
+    }
+
+    const fichaBruta = fichaDaAnalise(descoberta.item.resultado);
+    const ficha: Ficha | null =
+      fichaBruta && typeof fichaBruta === "object"
+        ? (fichaBruta as Ficha)
+        : null;
+
+    const categoria = valorDaFicha(ficha, "categoria") ?? "outro";
+    const texto = descoberta.item.email.assunto || "Informação de viagem do Gmail";
+    const fornecedor = valorDaFicha(ficha, "fornecedor");
+    const operador = valorDaFicha(ficha, "operador");
+    const companhia = valorDaFicha(ficha, "companhia");
+    const numeroVoo = valorDaFicha(ficha, "numeroVoo");
+    const origem = valorDaFicha(ficha, "origem");
+    const destino = valorDaFicha(ficha, "destino");
+    const referencia = valorDaFicha(ficha, "referencia");
+    const dataHora = valorDaFicha(ficha, "dataHora");
+    const dataHoraFim = valorDaFicha(ficha, "dataHoraFim");
+    const local = valorDaFicha(ficha, "local");
+    const morada = valorDaFicha(ficha, "morada");
+    const quarto = valorDaFicha(ficha, "quarto");
+    const condicoes = valorDaFicha(ficha, "condicoes");
+
+    setAGuardarDescoberta(true);
+
+    try {
+      if (categoria === "voo") {
+        if (!origem || !destino) {
+          throw new Error(
+            "A descoberta não tem origem e destino suficientes para criar o voo. Reveja os dados antes de guardar.",
+          );
+        }
+
+        const { error } = await supabase.from("voos").insert({
+          viagem_id: viagemId,
+          companhia: companhia || fornecedor || null,
+          numero_voo: numeroVoo || null,
+          origem: origem.toUpperCase(),
+          destino: destino.toUpperCase(),
+          partida: dataHora ? new Date(dataHora).toISOString() : null,
+          referencia: referencia || null,
+          preco: null,
+        });
+
+        if (error) throw error;
+      } else if (categoria === "hotel") {
+        const { error } = await supabase.from("alojamentos").insert({
+          viagem_id: viagemId,
+          nome: fornecedor || local || texto,
+          morada: morada || local || null,
+          check_in: dataHora ? new Date(dataHora).toISOString() : null,
+          check_out: dataHoraFim ? new Date(dataHoraFim).toISOString() : null,
+          referencia: referencia || null,
+          preco: null,
+          notas: condicoes || null,
+        });
+
+        if (error) throw error;
+      } else if (
+        categoria === "transporte" ||
+        categoria === "transfer"
+      ) {
+        const { error } = await supabase.from("transportes").insert({
+          viagem_id: viagemId,
+          tipo: categoria === "transfer" ? "Transfer" : fornecedor || operador || "Transporte",
+          operador: operador || fornecedor || null,
+          origem: origem || null,
+          destino: destino || local || null,
+          partida: dataHora ? new Date(dataHora).toISOString() : null,
+          chegada: dataHoraFim ? new Date(dataHoraFim).toISOString() : null,
+          referencia: referencia || null,
+          preco: null,
+          notas: condicoes || null,
+        });
+
+        if (error) throw error;
+      } else if (
+        categoria === "bilhete" ||
+        categoria === "documento"
+      ) {
+        const { error } = await supabase.from("documentos").insert({
+          viagem_id: viagemId,
+          nome: texto,
+          tipo: categoria,
+          origem: "gmail",
+          ficheiro_path: null,
+          mime_type: null,
+          tamanho_bytes: null,
+          qr_conteudo: valorDaFicha(ficha, "codigo") || null,
+          remetente_email: null,
+          recebido_em: null,
+        });
+
+        if (error) throw error;
+      } else {
+        const { error } = await supabase.from("informacoes").insert({
+          viagem_id: viagemId,
+          titulo: texto,
+          conteudo: [
+            fornecedor,
+            operador,
+            local,
+            morada,
+            referencia ? `Referência: ${referencia}` : null,
+            condicoes,
+          ]
+            .filter(Boolean)
+            .join("\n"),
+        });
+
+        if (error) throw error;
+      }
+
+      const { error: erroEstado } = await supabase
+        .from("emails_gmail_processados" as any)
+        .update({
+          estado: "processado",
+        })
+        .eq("user_id", userId)
+        .eq("gmail_message_id", descoberta.item.email.id);
+
+      if (erroEstado) {
+        console.error(
+          "A informação foi guardada, mas não foi possível atualizar o estado do email Gmail:",
+          erroEstado,
+        );
+      }
+
+      await queryClient.invalidateQueries({
+        queryKey: ["viagens"],
+      });
+
+      toast.success("Informação adicionada à viagem.");
+      setDescobertaAcao(null);
+      setDescobertasAutomaticas((anteriores) =>
+        anteriores.filter((item) => item.gmail_message_id !== descoberta.item.email.id),
+      );
+    } catch (erro) {
+      toast.error(
+        erro instanceof Error
+          ? erro.message
+          : "Não foi possível adicionar esta descoberta à viagem.",
+      );
+      console.error("Erro ao guardar descoberta Gmail numa viagem:", erro);
+    } finally {
+      setAGuardarDescoberta(false);
+    }
+  }
+
   async function ignorar(id: string) {
     setIgnorados((anteriores) =>
       anteriores.includes(id) ? anteriores : [...anteriores, id],
@@ -1451,6 +1945,7 @@ export function LigacaoGmail() {
                       key={item.email.id}
                       item={item}
                       aoIgnorar={ignorar}
+                      aoAbrirAcao={abrirAcao}
                     />
                   ))}
 
@@ -1491,6 +1986,7 @@ export function LigacaoGmail() {
                       key={item.email.id}
                       item={item}
                       aoIgnorar={ignorar}
+                      aoAbrirAcao={abrirAcao}
                     />
                   ))}
                 </>
@@ -1556,6 +2052,20 @@ export function LigacaoGmail() {
           </Button>
         </>
       )}
+
+      <DialogAcaoDescoberta
+        aberta={descobertaAcao !== null}
+        descoberta={descobertaAcao}
+        viagens={viagens}
+        aGuardar={aGuardarDescoberta}
+        onOpenChange={(open) => {
+          if (!open && !aGuardarDescoberta) {
+            setDescobertaAcao(null);
+          }
+        }}
+        onGuardar={guardarDescobertaNaViagem}
+        onCriarViagem={criarViagemParaDescoberta}
+      />
 
       {erro ? (
         <p className="mt-3 text-sm text-destructive" role="alert">
