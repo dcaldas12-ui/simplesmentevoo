@@ -407,42 +407,48 @@ function obterConteudoResposta(
   json: unknown,
 ): string {
   const resposta = (json ?? {}) as {
-    choices?: Array<{
-      message?: {
-        content?: unknown;
+    candidates?: Array<{
+      content?: {
+        parts?: Array<{
+          text?: unknown;
+        }>;
       };
+      finishReason?: string;
+      safetyRatings?: unknown;
     }>;
+    promptFeedback?: unknown;
   };
 
-  const content =
-    resposta.choices?.[0]?.message?.content;
+  const candidato = resposta.candidates?.[0];
 
-  if (typeof content === "string") {
-    return content;
+  if (!candidato) {
+    throw new Error(
+      "A API Gemini não devolveu nenhum candidato de resposta.",
+    );
   }
 
-  if (Array.isArray(content)) {
-    const textos = content
-      .map((part) => {
-        if (
-          part &&
-          typeof part === "object" &&
-          "text" in part
-        ) {
-          return String(
-            (part as { text?: unknown }).text ?? "",
-          );
-        }
+  const partes = candidato.content?.parts ?? [];
 
-        return "";
-      })
-      .filter(Boolean);
+  const textos = partes
+    .map((part) =>
+      part && typeof part.text === "string"
+        ? part.text
+        : "",
+    )
+    .filter(Boolean);
 
-    return textos.join("\n");
+  const texto = textos.join("\n").trim();
+
+  if (texto) {
+    return texto;
   }
 
   throw new Error(
-    "A resposta do gateway não contém message.content.",
+    `A API Gemini devolveu uma resposta sem texto${
+      candidato.finishReason
+        ? ` (finishReason: ${candidato.finishReason})`
+        : "."
+    }`,
   );
 }
 
@@ -883,7 +889,7 @@ export const analisarDocumento =
         data,
       }): Promise<AnaliseDocumentoResultado> => {
         const apiKey =
-          process.env["LOVABLE_API_KEY"];
+          process.env["GEMINI_API_KEY"];
 
         const fichaFallback =
           heuristica(data);
@@ -893,7 +899,7 @@ export const analisarDocumento =
 
         if (!apiKey) {
           console.error(
-            "analisarDocumento: LOVABLE_API_KEY não está disponível.",
+            "analisarDocumento: GEMINI_API_KEY não está disponível.",
           );
 
           return {
@@ -928,203 +934,236 @@ export const analisarDocumento =
         const camposFicha =
           Object.keys(fichaVazia).join(", ");
 
-        const conteudo:
-          Array<Record<string, unknown>> = [
+        const promptTexto = [
+            textoBase,
+
+            "",
+
+            "Analisa este email para a aplicação de viagens ViatOrbis.",
+
+            "",
+
+            "Tens primeiro de decidir se este email é uma comunicação concreta relacionada com uma viagem do utilizador.",
+
+            "",
+
+            "DEVE ser relevante=true quando houver evidência concreta de:",
+
+            "- reserva de hotel ou alojamento;",
+
+            "- confirmação de Booking ou outra plataforma;",
+
+            "- voo reservado ou bilhete de avião;",
+
+            "- cartão de embarque;",
+
+            "- comboio, autocarro, barco ou outro transporte reservado;",
+
+            "- aluguer de carro já reservado;",
+
+            "- transfer já reservado;",
+
+            "- bilhete de museu, espetáculo, atração, tour ou atividade;",
+
+            "- seguro ou outro documento de viagem concreto;",
+
+            "- alteração, cancelamento ou instruções de uma reserva existente;",
+
+            "- informação operacional diretamente associada a uma viagem específica.",
+
+            "",
+
+            "DEVE ser relevante=false quando for:",
+
+            "- newsletter;",
+
+            "- publicidade;",
+
+            "- campanha comercial;",
+
+            "- promoção ou desconto;",
+
+            "- oferta genérica;",
+
+            "- conteúdo editorial;",
+
+            "- artigo, blog ou podcast;",
+
+            "- inspiração para viajar;",
+
+            "- recomendação genérica de destinos;",
+
+            "- email comercial sem uma reserva, bilhete ou serviço concreto.",
+
+            "",
+
+            "Não basta aparecerem palavras como hotel, flight, travel, booking ou aeroporto. Procura evidência concreta de uma viagem ou serviço específico.",
+
+            "",
+
+            "Quando relevante=true, extrai apenas os dados que realmente aparecem no email.",
+
+            "",
+
+            `Os campos possíveis da ficha são: ${camposFicha}`,
+
+            "",
+
+            "Para um voo procura passageiro, companhia, número do voo, origem, destino, data/hora de partida, chegada, embarque, terminal, porta, assento, grupo, bagagem e referência/PNR.",
+
+            "",
+
+            "Para um hotel procura fornecedor, hóspede, hotel, morada, check-in, check-out, referência, quarto, condições e contacto.",
+
+            "",
+
+            "Para transporte procura operador, fornecedor, passageiro, origem, destino, partida, chegada, referência e lugar.",
+
+            "",
+
+            "Para transfer procura fornecedor, passageiro, recolha, destino, data/hora, referência, morada e contacto.",
+
+            "",
+
+            "Para bilhete ou atividade procura entidade, titular, local, data/hora, referência, código e condições.",
+
+            "",
+
+            "Para informação útil de viagem procura horários, moradas, instruções, regras, contactos ou requisitos concretos.",
+
+            "",
+
+            "Nunca inventes dados.",
+
+            "Quando um campo não aparecer, usa string vazia.",
+
+            "Quando um dado for ambíguo ou não puder ser confirmado com segurança, deixa-o vazio e inclui o nome desse campo em porConfirmar.",
+
+            "",
+
+            "IMPORTANTE: responde APENAS com um objeto JSON válido. Não uses markdown, não uses ```json e não escrevas explicações fora do JSON.",
+
+            "",
+
+            "O JSON deve ter exatamente esta estrutura conceptual:",
+
+            "{",
+
+            '  "relevante": true,',
+
+            '  "motivoRelevancia": "explicação curta",',
+
+            '  "categoria": "voo|hotel|transporte|transfer|bilhete|documento|informacao|outro",',
+
+            '  "tipoDocumento": "",',
+
+            '  "fornecedor": "",',
+
+            '  "operador": "",',
+
+            '  "passageiro": "",',
+
+            '  "local": "",',
+
+            '  "referencia": "",',
+
+            '  "dataHora": "",',
+
+            '  "dataHoraFim": "",',
+
+            '  "codigo": "",',
+
+            '  "companhia": "",',
+
+            '  "numeroVoo": "",',
+
+            '  "origem": "",',
+
+            '  "destino": "",',
+
+            '  "horaEmbarque": "",',
+
+            '  "terminal": "",',
+
+            '  "porta": "",',
+
+            '  "assento": "",',
+
+            '  "grupoEmbarque": "",',
+
+            '  "bagagem": "",',
+
+            '  "morada": "",',
+
+            '  "quarto": "",',
+
+            '  "condicoes": "",',
+
+            '  "contacto": "",',
+
+            '  "porConfirmar": []',
+
+            "}",
+            ].join("\n");
+
+        const partesGemini: Array<Record<string, unknown>> = [
           {
-            type: "text",
-            text: [
-              textoBase,
-
-              "",
-
-              "Analisa este email para a aplicação de viagens ViatOrbis.",
-
-              "",
-
-              "Tens primeiro de decidir se este email é uma comunicação concreta relacionada com uma viagem do utilizador.",
-
-              "",
-
-              "DEVE ser relevante=true quando houver evidência concreta de:",
-
-              "- reserva de hotel ou alojamento;",
-
-              "- confirmação de Booking ou outra plataforma;",
-
-              "- voo reservado ou bilhete de avião;",
-
-              "- cartão de embarque;",
-
-              "- comboio, autocarro, barco ou outro transporte reservado;",
-
-              "- aluguer de carro já reservado;",
-
-              "- transfer já reservado;",
-
-              "- bilhete de museu, espetáculo, atração, tour ou atividade;",
-
-              "- seguro ou outro documento de viagem concreto;",
-
-              "- alteração, cancelamento ou instruções de uma reserva existente;",
-
-              "- informação operacional diretamente associada a uma viagem específica.",
-
-              "",
-
-              "DEVE ser relevante=false quando for:",
-
-              "- newsletter;",
-
-              "- publicidade;",
-
-              "- campanha comercial;",
-
-              "- promoção ou desconto;",
-
-              "- oferta genérica;",
-
-              "- conteúdo editorial;",
-
-              "- artigo, blog ou podcast;",
-
-              "- inspiração para viajar;",
-
-              "- recomendação genérica de destinos;",
-
-              "- email comercial sem uma reserva, bilhete ou serviço concreto.",
-
-              "",
-
-              "Não basta aparecerem palavras como hotel, flight, travel, booking ou aeroporto. Procura evidência concreta de uma viagem ou serviço específico.",
-
-              "",
-
-              "Quando relevante=true, extrai apenas os dados que realmente aparecem no email.",
-
-              "",
-
-              `Os campos possíveis da ficha são: ${camposFicha}`,
-
-              "",
-
-              "Para um voo procura passageiro, companhia, número do voo, origem, destino, data/hora de partida, chegada, embarque, terminal, porta, assento, grupo, bagagem e referência/PNR.",
-
-              "",
-
-              "Para um hotel procura fornecedor, hóspede, hotel, morada, check-in, check-out, referência, quarto, condições e contacto.",
-
-              "",
-
-              "Para transporte procura operador, fornecedor, passageiro, origem, destino, partida, chegada, referência e lugar.",
-
-              "",
-
-              "Para transfer procura fornecedor, passageiro, recolha, destino, data/hora, referência, morada e contacto.",
-
-              "",
-
-              "Para bilhete ou atividade procura entidade, titular, local, data/hora, referência, código e condições.",
-
-              "",
-
-              "Para informação útil de viagem procura horários, moradas, instruções, regras, contactos ou requisitos concretos.",
-
-              "",
-
-              "Nunca inventes dados.",
-
-              "Quando um campo não aparecer, usa string vazia.",
-
-              "Quando um dado for ambíguo ou não puder ser confirmado com segurança, deixa-o vazio e inclui o nome desse campo em porConfirmar.",
-
-              "",
-
-              "IMPORTANTE: responde APENAS com um objeto JSON válido. Não uses markdown, não uses ```json e não escrevas explicações fora do JSON.",
-
-              "",
-
-              "O JSON deve ter exatamente esta estrutura conceptual:",
-
-              "{",
-
-              '  "relevante": true,',
-
-              '  "motivoRelevancia": "explicação curta",',
-
-              '  "categoria": "voo|hotel|transporte|transfer|bilhete|documento|informacao|outro",',
-
-              '  "tipoDocumento": "",',
-
-              '  "fornecedor": "",',
-
-              '  "operador": "",',
-
-              '  "passageiro": "",',
-
-              '  "local": "",',
-
-              '  "referencia": "",',
-
-              '  "dataHora": "",',
-
-              '  "dataHoraFim": "",',
-
-              '  "codigo": "",',
-
-              '  "companhia": "",',
-
-              '  "numeroVoo": "",',
-
-              '  "origem": "",',
-
-              '  "destino": "",',
-
-              '  "horaEmbarque": "",',
-
-              '  "terminal": "",',
-
-              '  "porta": "",',
-
-              '  "assento": "",',
-
-              '  "grupoEmbarque": "",',
-
-              '  "bagagem": "",',
-
-              '  "morada": "",',
-
-              '  "quarto": "",',
-
-              '  "condicoes": "",',
-
-              '  "contacto": "",',
-
-              '  "porConfirmar": []',
-
-              "}",
-            ].join("\n"),
+            text: promptTexto,
           },
         ];
 
-        if (data.imagem) {
-          conteudo.push({
-            type: "image_url",
-            image_url: {
-              url: data.imagem,
-            },
-          });
+        const imagem =
+          typeof data.imagem === "string" ? data.imagem : "";
+
+        if (imagem.length > 0) {
+          const separador = imagem.indexOf(",");
+
+          if (separador > 0) {
+            const cabecalho = imagem.slice(0, separador);
+            const mimeType = cabecalho
+              .replace(/^data:/i, "")
+              .split(";")[0]?.trim() ?? "";
+            const base64 = imagem.slice(separador + 1);
+
+            if (
+              mimeType.startsWith("image/") &&
+              base64
+            ) {
+              partesGemini.push({
+                inlineData: {
+                  mimeType,
+                  data: base64,
+                },
+              });
+            }
+          }
         }
 
-        if (data.pdf) {
-          conteudo.push({
-            type: "file",
-            file: {
-              filename: data.nome.endsWith(".pdf")
-                ? data.nome
-                : `${data.nome}.pdf`,
-              file_data: data.pdf,
-            },
-          });
+        const pdf =
+          typeof data.pdf === "string" ? data.pdf : "";
+
+        if (pdf.length > 0) {
+          const separador = pdf.indexOf(",");
+
+          if (separador > 0) {
+            const cabecalho = pdf.slice(0, separador);
+            const mimeType = cabecalho
+              .replace(/^data:/i, "")
+              .split(";")[0]?.trim() ?? "";
+            const base64 = pdf.slice(separador + 1);
+
+            if (
+              mimeType === "application/pdf" &&
+              base64
+            ) {
+              partesGemini.push({
+                inlineData: {
+                  mimeType,
+                  data: base64,
+                },
+              });
+            }
+          }
         }
 
         const maxTentativas = 2;
@@ -1138,62 +1177,41 @@ export const analisarDocumento =
         ) {
           try {
             const resposta = await fetch(
-              "https://ai.gateway.lovable.dev/v1/chat/completions",
+              "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent",
               {
                 method: "POST",
 
                 headers: {
-                  Authorization: `Bearer ${apiKey}`,
+                  "x-goog-api-key": apiKey,
                   "Content-Type":
                     "application/json",
                 },
 
                 body: JSON.stringify({
-                  model:
-                    "google/gemini-2.5-flash",
+                  systemInstruction: {
+                    parts: [
+                      {
+                        text:
+                          "És um assistente especializado em interpretar emails de viagens. Analisa com rigor, não inventes dados. Distingue reservas reais de newsletters e publicidade.",
+                      },
+                    ],
+                  },
 
-                  temperature: 0,
-
-                  max_tokens: 2500,
-
-                  messages: [
-                    {
-                      role: "system",
-
-                      content:
-                        "És um assistente especializado em interpretar emails de viagens. Analisa com rigor, não inventes dados. Distingue reservas reais de newsletters e publicidade.",
-                    },
-
+                  contents: [
                     {
                       role: "user",
-
-                      content: conteudo,
+                      parts:
+                        partesGemini,
                     },
                   ],
 
-                  tools: [
-                    {
-                      type: "function",
-
-                      function: {
-                        name: "registar_ficha",
-
-                        description:
-                          "Devolve a decisão de relevância e os dados estruturados encontrados no email de viagem.",
-
-                        parameters:
-                          ESQUEMA,
-                      },
-                    },
-                  ],
-
-                  tool_choice: {
-                    type: "function",
-
-                    function: {
-                      name:
-                        "registar_ficha",
-                    },
+                  generationConfig: {
+                    temperature: 0,
+                    maxOutputTokens: 2500,
+                    responseMimeType:
+                      "application/json",
+                    responseSchema:
+                      ESQUEMA,
                   },
                 }),
               },
@@ -1204,7 +1222,7 @@ export const analisarDocumento =
 
             if (!resposta.ok) {
               console.error(
-                "analisarDocumento gateway",
+                "analisarDocumento Gemini",
                 {
                   tentativa,
 
@@ -1224,10 +1242,12 @@ export const analisarDocumento =
 
               if (
                 resposta.status ===
-                402
+                401 ||
+                resposta.status ===
+                403
               ) {
                 throw new Error(
-                  "A análise por IA está indisponível no gateway (402).",
+                  `A API Gemini recusou a autenticação (${resposta.status}). Verifique a GEMINI_API_KEY e as permissões da chave.`,
                 );
               }
 
@@ -1236,12 +1256,12 @@ export const analisarDocumento =
                 429
               ) {
                 throw new Error(
-                  "A análise por IA foi temporariamente limitada pelo gateway (429).",
+                  "A API Gemini foi temporariamente limitada pelo limite de utilização (429).",
                 );
               }
 
               throw new Error(
-                `O gateway de IA devolveu ${resposta.status}: ${corpo.slice(0, 500)}`,
+                `A API Gemini devolveu ${resposta.status}: ${corpo.slice(0, 500)}`,
               );
             }
 
@@ -1252,7 +1272,7 @@ export const analisarDocumento =
                 JSON.parse(corpo);
             } catch {
               console.error(
-                "analisarDocumento: resposta do gateway não é JSON",
+                "analisarDocumento: resposta da Gemini não é JSON",
                 corpo.slice(
                   0,
                   2000,
@@ -1260,7 +1280,7 @@ export const analisarDocumento =
               );
 
               throw new Error(
-                "O gateway devolveu uma resposta que não é JSON válido.",
+                "A API Gemini devolveu uma resposta que não é JSON válido.",
               );
             }
 
@@ -1338,9 +1358,8 @@ export const analisarDocumento =
                 : String(erro);
 
             if (
-              mensagem.includes(
-                "(402)",
-              )
+              mensagem.includes("(401)") ||
+              mensagem.includes("(403)")
             ) {
               break;
             }
