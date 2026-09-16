@@ -661,7 +661,6 @@ const ESQUEMA = {
     "porConfirmar",
   ],
 
-  additionalProperties: false,
 } as const;
 
 function extrairDadosEstruturadosDaResposta(
