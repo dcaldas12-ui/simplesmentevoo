@@ -997,7 +997,11 @@ export const analisarDocumento =
 
             "",
 
-            "Não basta aparecerem palavras como hotel, flight, travel, booking ou aeroporto. Procura evidência concreta de uma viagem ou serviço específico.",
+            "A decisão de relevância é tua e será usada diretamente pela aplicação. Não existe outro filtro posterior a corrigir a tua decisão. Portanto, só uses relevante=true quando houver evidência concreta de uma viagem ou serviço específico do utilizador.",
+
+            "Não basta aparecerem palavras como hotel, flight, travel, booking, reservation, trip, viagem, aeroporto ou destino. Procura uma comunicação concreta e específica: uma reserva, bilhete, passagem, serviço contratado, alteração/cancelamento de uma reserva existente, ou informação operacional ligada a uma viagem específica.",
+
+            "Emails promocionais, newsletters, campanhas, descontos, ofertas genéricas, inspiração, artigos, recomendações de destinos ou mensagens comerciais sem uma transação/reserva específica devem ser relevante=false, mesmo que contenham muitos termos relacionados com viagens.",
 
             "",
 
@@ -1289,37 +1293,23 @@ export const analisarDocumento =
                 json,
               );
 
-            const filtroLocal =
-              evidenciaViagemConcreta(
-                data,
-              );
-
+            // A decisão de relevância pertence à análise Gemini.
+            // O reconhecimento local só é usado no fallback quando a IA
+            // não consegue responder. Assim, a mesma regra funciona tanto
+            // na importação manual como na deteção automática do Gmail.
             const relevante =
-              dadosIa["relevante"] === true &&
-              filtroLocal.relevante;
+              dadosIa["relevante"] === true;
+
+            const motivoIa =
+              typeof dadosIa["motivoRelevancia"] === "string"
+                ? String(dadosIa["motivoRelevancia"]).trim().slice(0, 500)
+                : "";
 
             const motivoRelevancia =
-              typeof dadosIa[
-                "motivoRelevancia"
-              ] === "string" &&
-              String(
-                dadosIa[
-                  "motivoRelevancia"
-                ],
-              ).trim()
-                ? String(
-                    dadosIa[
-                      "motivoRelevancia"
-                    ],
-                  )
-                    .trim()
-                    .slice(
-                      0,
-                      500,
-                    )
-                : relevante
-                  ? "Foi identificada uma comunicação concreta relacionada com uma viagem."
-                  : filtroLocal.motivo;
+              motivoIa ||
+              (relevante
+                ? "Foi identificada pelo Gemini uma comunicação concreta relacionada com uma viagem."
+                : "O Gemini considerou que o conteúdo não corresponde a uma comunicação concreta de viagem.");
 
             const ficha =
               limpar(
