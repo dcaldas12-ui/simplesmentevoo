@@ -255,6 +255,8 @@ type EmailEncontrado = {
   id: string;
   assunto: string;
   texto: string;
+  remetente_email: string | null;
+  recebido_em: string | null;
 };
 
 type ResultadoAnalise = {
@@ -699,6 +701,21 @@ function CartaoResultado({
               {item.email.assunto}
             </p>
           ) : null}
+
+          {item.email.remetente_email || item.email.recebido_em ? (
+            <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+              {item.email.remetente_email ? (
+                <span>De: {item.email.remetente_email}</span>
+              ) : null}
+              {item.email.recebido_em ? (
+                <span>
+                  Recebido:{" "}
+                  {formatarData(item.email.recebido_em) ??
+                    item.email.recebido_em}
+                </span>
+              ) : null}
+            </div>
+          ) : null}
         </div>
       </div>
 
@@ -905,6 +922,22 @@ function DialogAcaoDescoberta({
                 <p className="mt-1 text-xs text-muted-foreground">
                   {descoberta.item.email.assunto}
                 </p>
+              ) : null}
+
+              {descoberta.item.email.remetente_email ||
+              descoberta.item.email.recebido_em ? (
+                <div className="mt-2 space-y-1 text-xs text-muted-foreground">
+                  {descoberta.item.email.remetente_email ? (
+                    <p>De: {descoberta.item.email.remetente_email}</p>
+                  ) : null}
+                  {descoberta.item.email.recebido_em ? (
+                    <p>
+                      Recebido:{" "}
+                      {formatarData(descoberta.item.email.recebido_em) ??
+                        descoberta.item.email.recebido_em}
+                    </p>
+                  ) : null}
+                </div>
               ) : null}
 
               <div className="mt-3 grid gap-3 sm:grid-cols-2">
@@ -1470,6 +1503,72 @@ export function LigacaoGmail() {
     }
   }
 
+  async function obterEmailOriginal(
+    email: EmailEncontrado,
+  ): Promise<EmailEncontrado> {
+    if (
+      email.texto.trim() ||
+      email.remetente_email ||
+      email.recebido_em
+    ) {
+      return email;
+    }
+
+    try {
+      const emailsAtuais = await procurarEmails();
+      return (
+        emailsAtuais.find((candidato) => candidato.id === email.id) ?? email
+      );
+    } catch (erro) {
+      console.warn(
+        "Não foi possível recuperar os dados completos do email Gmail antes de o guardar:",
+        erro,
+      );
+      return email;
+    }
+  }
+
+  async function guardarEmailOrigem(
+    viagemId: string,
+    email: EmailEncontrado,
+  ) {
+    const corpoOriginal = email.texto.trim();
+
+    const resumoEmail = [
+      "Email original do Gmail",
+      email.assunto ? `Assunto: ${email.assunto}` : null,
+      email.remetente_email
+        ? `Remetente: ${email.remetente_email}`
+        : null,
+      email.recebido_em
+        ? `Recebido em: ${
+            formatarData(email.recebido_em) ?? email.recebido_em
+          }`
+        : null,
+      corpoOriginal
+        ? `\n${corpoOriginal.slice(0, 12000)}`
+        : null,
+    ]
+      .filter(Boolean)
+      .join("\n");
+
+    const { error } = await supabase.from("documentos").insert({
+      viagem_id: viagemId,
+      nome: email.assunto || "Email Gmail",
+      tipo: "email",
+      origem: "email",
+      ficheiro_path: null,
+      mime_type: null,
+      tamanho_bytes: null,
+      qr_conteudo: null,
+      remetente_email: email.remetente_email || null,
+      recebido_em: email.recebido_em || null,
+      resumo: resumoEmail || null,
+    });
+
+    if (error) throw error;
+  }
+
   async function guardarDescobertaNaViagem(viagemId: string) {
     const descoberta = descobertaAcao;
     const userId = session?.user.id;
@@ -1484,8 +1583,10 @@ export function LigacaoGmail() {
         ? (fichaBruta as Ficha)
         : null;
 
+    const emailOriginal = await obterEmailOriginal(descoberta.item.email);
+
     const categoria = valorDaFicha(ficha, "categoria") ?? "outro";
-    const texto = descoberta.item.email.assunto || "Informação de viagem do Gmail";
+    const texto = emailOriginal.assunto || "Informação de viagem do Gmail";
     const fornecedor = valorDaFicha(ficha, "fornecedor");
     const operador = valorDaFicha(ficha, "operador");
     const companhia = valorDaFicha(ficha, "companhia");
@@ -1522,6 +1623,8 @@ export function LigacaoGmail() {
         });
 
         if (error) throw error;
+
+        await guardarEmailOrigem(viagemId, emailOriginal);
       } else if (categoria === "hotel") {
         const { error } = await supabase.from("alojamentos").insert({
           viagem_id: viagemId,
@@ -1535,6 +1638,8 @@ export function LigacaoGmail() {
         });
 
         if (error) throw error;
+
+        await guardarEmailOrigem(viagemId, emailOriginal);
       } else if (
         categoria === "transporte" ||
         categoria === "transfer"
@@ -1553,6 +1658,8 @@ export function LigacaoGmail() {
         });
 
         if (error) throw error;
+
+        await guardarEmailOrigem(viagemId, emailOriginal);
       } else if (
         categoria === "bilhete" ||
         categoria === "documento"
@@ -1561,13 +1668,24 @@ export function LigacaoGmail() {
           viagem_id: viagemId,
           nome: texto,
           tipo: categoria,
-          origem: "gmail",
+          origem: "email",
           ficheiro_path: null,
           mime_type: null,
           tamanho_bytes: null,
           qr_conteudo: valorDaFicha(ficha, "codigo") || null,
-          remetente_email: null,
-          recebido_em: null,
+          remetente_email: emailOriginal.remetente_email || null,
+          recebido_em: emailOriginal.recebido_em || null,
+          resumo: emailOriginal.texto.trim()
+            ? [
+                "Email original do Gmail",
+                emailOriginal.assunto
+                  ? `Assunto: ${emailOriginal.assunto}`
+                  : null,
+                emailOriginal.texto.trim().slice(0, 12000),
+              ]
+                .filter(Boolean)
+                .join("\n\n")
+            : null,
         });
 
         if (error) throw error;
@@ -1588,6 +1706,8 @@ export function LigacaoGmail() {
         });
 
         if (error) throw error;
+
+        await guardarEmailOrigem(viagemId, emailOriginal);
       }
 
       const { error: erroEstado } = await supabase
@@ -1771,6 +1891,8 @@ export function LigacaoGmail() {
         id: item.gmail_message_id,
         assunto: item.assunto || "Email Gmail",
         texto: "",
+        remetente_email: null,
+        recebido_em: null,
       },
       estado: "analisado",
       resultado: {
