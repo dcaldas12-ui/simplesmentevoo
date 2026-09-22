@@ -325,9 +325,9 @@ function extrairPartes(payload: {
  * `desde` permite uma pesquisa incremental.
  * `limite` controla quantos emails podem ser recolhidos nessa chamada.
  *
- * A pesquisa manual pode usar o limite normal de 1000.
- * A deteção automática deve usar um limite pequeno, porque é executada
- * periodicamente e só precisa de procurar mensagens recentes.
+ * O mesmo mecanismo é usado pela pesquisa manual e pela deteção automática.
+ * O limite é controlado pelo chamador e serve apenas para controlar quantos
+ * candidatos são devolvidos em cada ronda.
  */
 export const emailsDeViagem = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
@@ -380,54 +380,48 @@ export const emailsDeViagem = createServerFn({ method: "GET" })
       );
 
       /*
-       * A pesquisa automática NÃO usa uma marca temporal exata guardada na
-       * base de dados. Uma pesquisa "after:<timestamp>" cria uma fronteira
-       * frágil: se um email chegar entre duas rondas, pode ficar imediatamente
-       * atrás da fronteira e nunca ser devolvido.
+       * O intervalo temporal é definido exclusivamente por `desde`.
        *
-       * No modo automático usamos uma janela móvel de 7 dias. A tabela
-       * `emails_gmail_processados` é a verdadeira deduplicação, por isso podemos
-       * voltar a consultar mensagens recentes sem as analisar duas vezes.
+       * Isto é importante: a pesquisa manual e a deteção automática devem usar
+       * exatamente o mesmo filtro Gmail. A única diferença entre os dois modos
+       * é a origem do `desde`: na pesquisa manual é opcional/escolhido pelo
+       * utilizador; na automática é calculado pelo AppShell com base na última
+       * análise.
        *
-       * O modo manual mantém a pesquisa incremental por data.
+       * A deduplicação dos emails já tratados é feita separadamente pelo
+       * AppShell através de `emails_gmail_processados`.
        */
-      const filtroData = data.automatico
-        ? "newer_than:7d"
-        : data.desde
-          ? (() => {
-              const instante = new Date(data.desde);
+      const filtroData = data.desde
+        ? (() => {
+            const instante = new Date(data.desde);
 
-              if (Number.isNaN(instante.getTime())) {
-                return "newer_than:365d";
-              }
+            if (Number.isNaN(instante.getTime())) {
+              return "newer_than:365d";
+            }
 
-              const timestamp = Math.max(
-                0,
-                Math.floor(instante.getTime() / 1000) - 60,
-              );
+            /*
+             * Recuamos 60 segundos para proteger a fronteira temporal.
+             * A deduplicação impede que um email já tratado seja processado
+             * novamente no modo automático.
+             */
+            const timestamp = Math.max(
+              0,
+              Math.floor(instante.getTime() / 1000) - 60,
+            );
 
-              return `after:${timestamp}`;
-            })()
-          : "newer_than:365d";
+            return `after:${timestamp}`;
+          })()
+        : "newer_than:365d";
 
       /*
-       * O modo automático continua a usar uma janela móvel de 7 dias, mas
-       * volta a aplicar um filtro Gmail amplo por sinais de viagem.
-       *
-       * Isto é intencional: o Gmail elimina antecipadamente uma grande parte
-       * das mensagens evidentemente alheias a viagens, reduzindo o número de
-       * emails que precisam de passar pelo Gemini e, consequentemente, o
-       * consumo de quota da API. A decisão final de relevância continua a
-       * pertencer ao analisarDocumento/Gemini quando este está disponível.
-       *
-       * O modo manual mantém o mesmo pré-filtro.
+       * Manual e automático usam exatamente os mesmos termos de pesquisa.
+       * O Gmail faz apenas o primeiro filtro de candidatos; a decisão final
+       * de relevância continua a ser feita pelo `analisarDocumento()`.
        */
       const termosViagem =
         '(reserva OR reservado OR "reserva confirmada" OR confirmacao OR confirmação OR confirmation OR booking OR reservation OR "booking reference" OR "booking confirmation" OR "confirmation number" OR PNR OR voucher OR bilhete OR ticket OR "e-ticket" OR "boarding pass" OR "cartao de embarque" OR "cartão de embarque" OR "flight number" OR "numero do voo" OR "número do voo" OR itinerario OR itinerário OR itinerary OR "check-in" OR "check-out" OR hotel OR alojamento OR transfer OR comboio OR train OR autocarro OR bus OR ferry OR "car rental" OR "aluguer de carro" OR museu OR museum OR concerto OR concert OR tour OR excursao OR excursão OR atividade OR actividade OR ingresso OR entrada)';
 
-      const consultaCompleta = data.automatico
-        ? `${filtroData} ${termosViagem}`.trim()
-        : `${filtroData} ${termosViagem}`.trim();
+      const consultaCompleta = `${filtroData} ${termosViagem}`.trim();
 
       const consulta = encodeURIComponent(consultaCompleta);
 
