@@ -358,6 +358,8 @@ export const emailsDeViagem = createServerFn({ method: "GET" })
         id: string;
         assunto: string;
         texto: string;
+        remetente_email: string | null;
+        recebido_em: string | null;
       }>
     > => {
       const { getConnectionKeyForUser } = await import(
@@ -492,6 +494,8 @@ export const emailsDeViagem = createServerFn({ method: "GET" })
         id: string;
         assunto: string;
         texto: string;
+        remetente_email: string | null;
+        recebido_em: string | null;
       }> = [];
 
       /*
@@ -547,6 +551,7 @@ export const emailsDeViagem = createServerFn({ method: "GET" })
         const msg = (await res.json()) as {
           snippet?: string;
           id?: string;
+          internalDate?: string;
           payload?: {
             mimeType?: string;
             body?: {
@@ -566,11 +571,34 @@ export const emailsDeViagem = createServerFn({ method: "GET" })
           };
         };
 
-        const assunto =
-          msg.payload?.headers?.find(
-            (h) =>
-              h.name?.toLowerCase() === "subject",
-          )?.value ?? "";
+        const headers = msg.payload?.headers ?? [];
+
+        const valorCabecalho = (nome: string) =>
+          headers.find(
+            (h) => h.name?.toLowerCase() === nome.toLowerCase(),
+          )?.value?.trim() ?? "";
+
+        const assunto = valorCabecalho("subject");
+
+        const remetenteBruto = valorCabecalho("from");
+        const remetente_email =
+          remetenteBruto.match(/<([^>]+)>/)?.[1]?.trim() ||
+          (remetenteBruto.includes("@") ? remetenteBruto : null);
+
+        const dataCabecalho = valorCabecalho("date");
+        const dataInterna = msg.internalDate
+          ? new Date(Number(msg.internalDate))
+          : null;
+        const dataRececao =
+          dataInterna && !Number.isNaN(dataInterna.getTime())
+            ? dataInterna
+            : dataCabecalho
+              ? new Date(dataCabecalho)
+              : null;
+        const recebido_em =
+          dataRececao && !Number.isNaN(dataRececao.getTime())
+            ? dataRececao.toISOString()
+            : null;
 
         const corpo = msg.payload
           ? extrairPartes(msg.payload)
@@ -589,6 +617,8 @@ export const emailsDeViagem = createServerFn({ method: "GET" })
           id,
           assunto,
           texto,
+          remetente_email,
+          recebido_em,
         });
       }
 
