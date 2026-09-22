@@ -278,6 +278,13 @@ type DescobertaAutomatica = {
   analisado_em: string | null;
 };
 
+type GmailProcessado = {
+  gmail_message_id: string;
+  relevante: boolean;
+  estado: string | null;
+  ficha: unknown;
+};
+
 type Ficha = Record<string, unknown>;
 
 type ViagemEscolha = {
@@ -916,7 +923,7 @@ function DialogAcaoDescoberta({
     if (!aberta) return;
 
     setModoCriar(false);
-    setViagemId(viagens[0]?.id ?? "");
+    setViagemId("");
 
     const titulo = obterTituloPrincipal(
       ficha,
@@ -1391,17 +1398,17 @@ export function LigacaoGmail() {
         return;
       }
 
-      toast.info(
-        `${emails.length} candidatos encontrados. A analisar…`,
+      const emailsUnicos = Array.from(
+        new Map(emails.map((email) => [email.id, email])).values(),
       );
 
       const { data: processados, error: erroProcessados } = await supabase
         .from("emails_gmail_processados" as any)
-        .select("gmail_message_id")
+        .select("gmail_message_id, relevante, estado, ficha")
         .eq("user_id", session?.user.id)
         .in(
           "gmail_message_id",
-          emails.map((email) => email.id),
+          emailsUnicos.map((email) => email.id),
         );
 
       if (erroProcessados) {
@@ -1409,29 +1416,77 @@ export function LigacaoGmail() {
           "Erro ao verificar emails Gmail já processados na pesquisa manual:",
           erroProcessados,
         );
+        throw erroProcessados;
       }
 
-      const idsJaProcessados = new Set(
-        ((processados ?? []) as unknown as Array<{
-          gmail_message_id: string;
-        }>).map((item) => item.gmail_message_id),
+      const processadosPorId = new Map<string, GmailProcessado>(
+        ((processados ?? []) as unknown as GmailProcessado[]).map(
+          (item) => [item.gmail_message_id, item],
+        ),
+      );
+
+      const candidatos = emailsUnicos.filter((email) => {
+        const processado = processadosPorId.get(email.id);
+
+        return (
+          !processado ||
+          (processado.estado === "pendente" &&
+            processado.relevante === true)
+        );
+      });
+
+      if (candidatos.length === 0) {
+        toast.info(
+          "Não encontrámos novas informações de viagem. Os emails já tratados não voltam a ser importados.",
+        );
+        return;
+      }
+
+      toast.info(
+        `${candidatos.length} candidato${
+          candidatos.length === 1 ? "" : "s"
+        } novo${
+          candidatos.length === 1 ? "" : "s"
+        } ou pendente${
+          candidatos.length === 1 ? "" : "s"
+        } encontrado${candidatos.length === 1 ? "" : "s"}. A analisar…`,
       );
 
       const resultadosRelevantes: ResultadoAnalise[] = [];
-
-      /*
-       * Pequenos lotes: evitamos centenas de pedidos simultâneos, mas também
-       * não obrigamos o utilizador a esperar por uma análise estritamente
-       * sequencial.
-       */
       const TAMANHO_LOTE = 3;
 
-      for (let inicio = 0; inicio < emails.length; inicio += TAMANHO_LOTE) {
-        const lote = emails.slice(inicio, inicio + TAMANHO_LOTE);
+      for (
+        let inicio = 0;
+        inicio < candidatos.length;
+        inicio += TAMANHO_LOTE
+      ) {
+        const lote = candidatos.slice(inicio, inicio + TAMANHO_LOTE);
 
         const analisados = await Promise.all(
           lote.map(async (email) => {
-            const textoCompleto = `${email.assunto}\n\n${email.texto}`.trim();
+            const processado = processadosPorId.get(email.id);
+
+            /*
+             * Um email que já esteja pendente foi analisado anteriormente.
+             * Reutilizamos a ficha guardada em vez de voltar a chamar a IA.
+             */
+            if (
+              processado?.estado === "pendente" &&
+              processado.relevante === true &&
+              processado.ficha
+            ) {
+              return {
+                email,
+                estado: "analisado" as const,
+                resultado: {
+                  relevante: true,
+                  ficha: processado.ficha,
+                },
+              };
+            }
+
+            const textoCompleto =
+              `${email.assunto}\n\n${email.texto}`.trim();
 
             try {
               const resultado = await analisar({
@@ -1442,16 +1497,16 @@ export function LigacaoGmail() {
                 },
               });
 
-              if (resultado?.relevante === true) {
-                const ficha =
-                  resultado && typeof resultado === "object"
-                    ? (resultado as { ficha?: unknown }).ficha
-                    : null;
+              const ficha =
+                resultado && typeof resultado === "object"
+                  ? (resultado as { ficha?: unknown }).ficha
+                  : null;
 
-                if (!idsJaProcessados.has(email.id)) {
-                  const { error: erroGuardarManual } = await supabase
-                    .from("emails_gmail_processados" as any)
-                    .insert({
+              if (resultado?.relevante === true) {
+                const { error: erroGuardarManual } = await supabase
+                  .from("emails_gmail_processados" as any)
+                  .upsert(
+                    {
                       user_id: session?.user.id,
                       gmail_message_id: email.id,
                       relevante: true,
@@ -1459,16 +1514,26 @@ export function LigacaoGmail() {
                       referencia: valorDaFicha(ficha, "referencia"),
                       assunto: email.assunto || null,
                       ficha: ficha ?? null,
-                      estado: "processado",
+                      estado: "pendente",
                       analisado_em: new Date().toISOString(),
-                    });
+                    },
+                    {
+                      onConflict: "user_id,gmail_message_id",
+                    },
+                  );
 
-                  if (erroGuardarManual) {
-                    console.error(
-                      "Erro ao registar email Gmail analisado manualmente:",
-                      erroGuardarManual,
-                    );
-                  }
+                if (erroGuardarManual) {
+                  console.error(
+                    "Erro ao guardar email Gmail analisado manualmente:",
+                    erroGuardarManual,
+                  );
+                } else {
+                  processadosPorId.set(email.id, {
+                    gmail_message_id: email.id,
+                    relevante: true,
+                    estado: "pendente",
+                    ficha: ficha ?? null,
+                  });
                 }
 
                 return {
@@ -1478,10 +1543,10 @@ export function LigacaoGmail() {
                 };
               }
 
-              if (!idsJaProcessados.has(email.id)) {
-                const { error: erroGuardarIrrelevante } = await supabase
-                  .from("emails_gmail_processados" as any)
-                  .insert({
+              const { error: erroGuardarIrrelevante } = await supabase
+                .from("emails_gmail_processados" as any)
+                .upsert(
+                  {
                     user_id: session?.user.id,
                     gmail_message_id: email.id,
                     relevante: false,
@@ -1491,15 +1556,25 @@ export function LigacaoGmail() {
                     ficha: null,
                     estado: "processado",
                     analisado_em: new Date().toISOString(),
-                  });
+                  },
+                  {
+                    onConflict: "user_id,gmail_message_id",
+                  },
+                );
 
-                if (erroGuardarIrrelevante) {
-                  console.error(
-                    "Erro ao registar email Gmail irrelevante analisado manualmente:",
-                    erroGuardarIrrelevante,
-                  );
-                }
+              if (erroGuardarIrrelevante) {
+                console.error(
+                  "Erro ao registar email Gmail irrelevante analisado manualmente:",
+                  erroGuardarIrrelevante,
+                );
               }
+
+              processadosPorId.set(email.id, {
+                gmail_message_id: email.id,
+                relevante: false,
+                estado: "processado",
+                ficha: null,
+              });
             } catch (e) {
               console.error(
                 "Erro ao analisar email Gmail:",
@@ -1693,7 +1768,7 @@ export function LigacaoGmail() {
     const descoberta = descobertaAcao;
     const userId = session?.user.id;
 
-    if (!descoberta || !userId) {
+    if (!descoberta || !userId || !viagemId) {
       return;
     }
 
@@ -1703,38 +1778,80 @@ export function LigacaoGmail() {
         ? (fichaBruta as Ficha)
         : null;
 
-    const emailOriginal = await obterEmailOriginal(descoberta.item.email);
-
-    const categoria =
-      (valorDaFicha(ficha, "categoria") ?? "outro").trim().toLowerCase();
-    const texto = emailOriginal.assunto || "Informação de viagem do Gmail";
-    const fornecedor = valorDaFicha(ficha, "fornecedor");
-    const operador = valorDaFicha(ficha, "operador");
-    const companhia = valorDaFicha(ficha, "companhia");
-    const numeroVoo = valorDaFicha(ficha, "numeroVoo");
-    const percursoFallback = extrairPercursoDeTexto(
-      [emailOriginal.assunto, emailOriginal.texto]
-        .filter(Boolean)
-        .join("\n"),
-    );
-    const origem =
-      valorDaFicha(ficha, "origem") ?? percursoFallback?.origem ?? null;
-    const destino =
-      valorDaFicha(ficha, "destino") ?? percursoFallback?.destino ?? null;
-    const referencia = valorDaFicha(ficha, "referencia");
-    const dataHora = valorDaFicha(ficha, "dataHora");
-    const dataHoraFim = valorDaFicha(ficha, "dataHoraFim");
-    const local = valorDaFicha(ficha, "local");
-    const morada = valorDaFicha(ficha, "morada");
-    const quarto = valorDaFicha(ficha, "quarto");
-    const condicoes = valorDaFicha(ficha, "condicoes");
-
-    let emailOrigemGuardado = true;
+    const emailId = descoberta.item.email.id;
 
     setAGuardarDescoberta(true);
     setErro(null);
 
     try {
+      /*
+       * A regra de importação é idempotente:
+       * cada mensagem Gmail só pode passar uma vez pelo processo
+       * de confirmação. Depois de guardada fica em "processado" e
+       * não pode voltar a ser adicionada através de refresh ou de
+       * uma segunda abertura do mesmo resultado.
+       */
+      const { data: estadoAtualBruto, error: erroEstadoAtual } =
+        await supabase
+          .from("emails_gmail_processados" as any)
+          .select("id, relevante, estado")
+          .eq("user_id", userId)
+          .eq("gmail_message_id", emailId)
+          .maybeSingle();
+
+      if (erroEstadoAtual) {
+        throw erroEstadoAtual;
+      }
+
+      const estadoAtual = estadoAtualBruto as unknown as GmailProcessado | null;
+
+      if (
+        !estadoAtual ||
+        estadoAtual.estado !== "pendente" ||
+        estadoAtual.relevante !== true
+      ) {
+        throw new Error(
+          "Esta informação do Gmail já foi tratada ou não está disponível para ser adicionada novamente.",
+        );
+      }
+
+      const emailOriginal = await obterEmailOriginal(
+        descoberta.item.email,
+      );
+
+      const categoria =
+        (valorDaFicha(ficha, "categoria") ?? "outro")
+          .trim()
+          .toLowerCase();
+
+      const texto =
+        emailOriginal.assunto || "Informação de viagem do Gmail";
+      const fornecedor = valorDaFicha(ficha, "fornecedor");
+      const operador = valorDaFicha(ficha, "operador");
+      const companhia = valorDaFicha(ficha, "companhia");
+      const numeroVoo = valorDaFicha(ficha, "numeroVoo");
+      const percursoFallback = extrairPercursoDeTexto(
+        [emailOriginal.assunto, emailOriginal.texto]
+          .filter(Boolean)
+          .join("\n"),
+      );
+      const origem =
+        valorDaFicha(ficha, "origem") ??
+        percursoFallback?.origem ??
+        null;
+      const destino =
+        valorDaFicha(ficha, "destino") ??
+        percursoFallback?.destino ??
+        null;
+      const referencia = valorDaFicha(ficha, "referencia");
+      const dataHora = valorDaFicha(ficha, "dataHora");
+      const dataHoraFim = valorDaFicha(ficha, "dataHoraFim");
+      const local = valorDaFicha(ficha, "local");
+      const morada = valorDaFicha(ficha, "morada");
+      const condicoes = valorDaFicha(ficha, "condicoes");
+
+      let emailOrigemGuardado = true;
+
       if (categoria === "voo") {
         if (!origem || !destino) {
           throw new Error(
@@ -1754,8 +1871,6 @@ export function LigacaoGmail() {
         });
 
         if (error) throw error;
-
-        emailOrigemGuardado = await guardarEmailOrigemSemBloquear(viagemId, emailOriginal);
       } else if (categoria === "hotel") {
         const { error } = await supabase.from("alojamentos").insert({
           viagem_id: viagemId,
@@ -1769,15 +1884,16 @@ export function LigacaoGmail() {
         });
 
         if (error) throw error;
-
-        emailOrigemGuardado = await guardarEmailOrigemSemBloquear(viagemId, emailOriginal);
       } else if (
         categoria === "transporte" ||
         categoria === "transfer"
       ) {
         const { error } = await supabase.from("transportes").insert({
           viagem_id: viagemId,
-          tipo: categoria === "transfer" ? "Transfer" : fornecedor || operador || "Transporte",
+          tipo:
+            categoria === "transfer"
+              ? "Transfer"
+              : fornecedor || operador || "Transporte",
           operador: operador || fornecedor || null,
           origem: origem || null,
           destino: destino || local || null,
@@ -1789,8 +1905,6 @@ export function LigacaoGmail() {
         });
 
         if (error) throw error;
-
-        emailOrigemGuardado = await guardarEmailOrigemSemBloquear(viagemId, emailOriginal);
       } else if (
         categoria === "bilhete" ||
         categoria === "documento"
@@ -1804,7 +1918,8 @@ export function LigacaoGmail() {
           mime_type: null,
           tamanho_bytes: null,
           qr_conteudo: valorDaFicha(ficha, "codigo") || null,
-          remetente_email: emailOriginal.remetente_email || null,
+          remetente_email:
+            emailOriginal.remetente_email || null,
           recebido_em: emailOriginal.recebido_em || null,
           resumo: emailOriginal.texto.trim()
             ? [
@@ -1837,24 +1952,34 @@ export function LigacaoGmail() {
         });
 
         if (error) throw error;
-
-        emailOrigemGuardado = await guardarEmailOrigemSemBloquear(viagemId, emailOriginal);
       }
 
-      const { error: erroEstado } = await supabase
+      /*
+       * Marcamos a mensagem como processada imediatamente depois de
+       * guardar o conteúdo principal. Assim, mesmo que o registo do
+       * email original falhe, uma segunda tentativa não cria uma cópia
+       * da reserva.
+       */
+      const { error: erroMarcarProcessado } = await supabase
         .from("emails_gmail_processados" as any)
         .update({
           estado: "processado",
         })
         .eq("user_id", userId)
-        .eq("gmail_message_id", descoberta.item.email.id);
+        .eq("gmail_message_id", emailId)
+        .eq("estado", "pendente");
 
-      if (erroEstado) {
+      if (erroMarcarProcessado) {
         console.error(
-          "A informação foi guardada, mas não foi possível atualizar o estado do email Gmail:",
-          erroEstado,
+          "A informação principal foi guardada, mas não foi possível marcar o email Gmail como processado:",
+          erroMarcarProcessado,
         );
       }
+
+      emailOrigemGuardado = await guardarEmailOrigemSemBloquear(
+        viagemId,
+        emailOriginal,
+      );
 
       await Promise.all([
         queryClient.invalidateQueries({
@@ -1887,8 +2012,19 @@ export function LigacaoGmail() {
 
       setErro(null);
       setDescobertaAcao(null);
+
+      /*
+       * Retiramos o resultado dos dois estados locais. Isto evita que
+       * o utilizador consiga voltar a clicar no mesmo cartão sem fazer
+       * uma nova pesquisa.
+       */
+      setAnalises((anteriores) =>
+        anteriores.filter((item) => item.email.id !== emailId),
+      );
       setDescobertasAutomaticas((anteriores) =>
-        anteriores.filter((item) => item.gmail_message_id !== descoberta.item.email.id),
+        anteriores.filter(
+          (item) => item.gmail_message_id !== emailId,
+        ),
       );
     } catch (erro) {
       const mensagem =
@@ -1898,7 +2034,29 @@ export function LigacaoGmail() {
 
       setErro(mensagem);
       toast.error(mensagem);
-      console.error("Erro ao guardar descoberta Gmail numa viagem:", erro);
+
+      /*
+       * Se o email já estiver processado, removemos o cartão local para
+       * que uma nova tentativa não volte a apresentar a mesma reserva.
+       */
+      if (
+        mensagem.includes("já foi tratada") ||
+        mensagem.includes("já foi tratada ou")
+      ) {
+        setAnalises((anteriores) =>
+          anteriores.filter((item) => item.email.id !== emailId),
+        );
+        setDescobertasAutomaticas((anteriores) =>
+          anteriores.filter(
+            (item) => item.gmail_message_id !== emailId,
+          ),
+        );
+      }
+
+      console.error(
+        "Erro ao guardar descoberta Gmail numa viagem:",
+        erro,
+      );
     } finally {
       setAGuardarDescoberta(false);
     }

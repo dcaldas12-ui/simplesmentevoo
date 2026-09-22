@@ -236,6 +236,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                 data: {
                   nome: email.assunto || "Email Gmail",
                   texto: `${email.assunto}\n\n${email.texto}`.trim(),
+                  anexos: email.anexos,
                 },
               });
 
