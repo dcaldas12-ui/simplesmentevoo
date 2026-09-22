@@ -679,7 +679,13 @@ export function AppShell({ children }: { children: ReactNode }) {
                 <LogOut className="mr-1.5 size-4" />
                 Sair
               </Button>
-            ) : null}
+            ) : (
+              <Button asChild size="sm">
+                <Link to="/auth">
+                  Entrar
+                </Link>
+              </Button>
+            )}
           </nav>
 
           <div className="ml-auto flex items-center gap-2 lg:ml-4">
