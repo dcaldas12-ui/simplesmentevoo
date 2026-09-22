@@ -35,6 +35,7 @@ import {
   emailsDeViagem,
   estadoGmail,
   iniciarLigacaoGmail,
+  type GmailAnexo,
 } from "@/lib/gmail.functions";
 import { analisarDocumento } from "@/lib/documentos-ia.functions";
 import { supabase } from "@/integrations/supabase/client";
@@ -257,6 +258,7 @@ type EmailEncontrado = {
   texto: string;
   remetente_email: string | null;
   recebido_em: string | null;
+  anexos: GmailAnexo[];
 };
 
 type ResultadoAnalise = {
@@ -474,6 +476,46 @@ function formatarCategoria(categoria: string | null): string | null {
   };
 
   return nomes[categoria] ?? categoria;
+}
+
+function extrairPercursoDeTexto(
+  texto: string,
+): { origem: string; destino: string } | null {
+  const conteudo = texto.trim();
+
+  if (!conteudo) {
+    return null;
+  }
+
+  const comNomes = conteudo.match(
+    /\b[A-Za-zÀ-ÿ][A-Za-zÀ-ÿ .\'-]{1,60}\s*\(([A-Za-z]{3})\)\s*(?:-|–|—|→|>)\s*[A-Za-zÀ-ÿ][A-Za-zÀ-ÿ .\'-]{1,60}\s*\(([A-Za-z]{3})\)/i,
+  );
+
+  const origemComNomes = comNomes?.[1];
+  const destinoComNomes = comNomes?.[2];
+
+  if (origemComNomes && destinoComNomes) {
+    return {
+      origem: origemComNomes.toUpperCase(),
+      destino: destinoComNomes.toUpperCase(),
+    };
+  }
+
+  const apenasCodigos = conteudo.match(
+    /\b([A-Za-z]{3})\s*(?:-|–|—|→|>|\bto\b|\bpara\b)\s*([A-Za-z]{3})\b/i,
+  );
+
+  const origemApenasCodigos = apenasCodigos?.[1];
+  const destinoApenasCodigos = apenasCodigos?.[2];
+
+  if (origemApenasCodigos && destinoApenasCodigos) {
+    return {
+      origem: origemApenasCodigos.toUpperCase(),
+      destino: destinoApenasCodigos.toUpperCase(),
+    };
+  }
+
+  return null;
 }
 
 function formatarData(data: string | null): string | null {
@@ -702,7 +744,9 @@ function CartaoResultado({
             </p>
           ) : null}
 
-          {item.email.remetente_email || item.email.recebido_em ? (
+          {item.email.remetente_email ||
+          item.email.recebido_em ||
+          item.email.anexos.length > 0 ? (
             <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
               {item.email.remetente_email ? (
                 <span>De: {item.email.remetente_email}</span>
@@ -712,6 +756,13 @@ function CartaoResultado({
                   Recebido:{" "}
                   {formatarData(item.email.recebido_em) ??
                     item.email.recebido_em}
+                </span>
+              ) : null}
+              {item.email.anexos.length > 0 ? (
+                <span>
+                  {item.email.anexos.length === 1
+                    ? "1 anexo analisado"
+                    : `${item.email.anexos.length} anexos analisados`}
                 </span>
               ) : null}
             </div>
@@ -851,6 +902,13 @@ function DialogAcaoDescoberta({
   const dataHora = valorDaFicha(ficha, "dataHora");
   const dataHoraFim = valorDaFicha(ficha, "dataHoraFim");
   const local = valorDaFicha(ficha, "local");
+  const percursoFallback = extrairPercursoDeTexto(
+    [descoberta?.item.email.assunto ?? "", descoberta?.item.email.texto ?? ""]
+      .filter(Boolean)
+      .join("\n"),
+  );
+  const origemExibicao = origem ?? percursoFallback?.origem ?? null;
+  const destinoExibicao = destino ?? percursoFallback?.destino ?? null;
 
   useEffect(() => {
     if (!aberta) return;
@@ -947,7 +1005,11 @@ function DialogAcaoDescoberta({
                 <CampoResumo nome="Voo" valor={numeroVoo} />
                 <CampoResumo
                   nome="Percurso"
-                  valor={origem && destino ? `${origem} → ${destino}` : null}
+                  valor={
+                    origemExibicao && destinoExibicao
+                      ? `${origemExibicao} → ${destinoExibicao}`
+                      : null
+                  }
                 />
                 <CampoResumo nome="Referência" valor={referencia} />
                 <CampoResumo nome="Data" valor={formatarData(dataHora)} />
@@ -1347,6 +1409,7 @@ export function LigacaoGmail() {
                 data: {
                   nome: email.assunto || "Email Gmail",
                   texto: textoCompleto,
+                  anexos: email.anexos,
                 },
               });
 
@@ -1591,8 +1654,15 @@ export function LigacaoGmail() {
     const operador = valorDaFicha(ficha, "operador");
     const companhia = valorDaFicha(ficha, "companhia");
     const numeroVoo = valorDaFicha(ficha, "numeroVoo");
-    const origem = valorDaFicha(ficha, "origem");
-    const destino = valorDaFicha(ficha, "destino");
+    const percursoFallback = extrairPercursoDeTexto(
+      [emailOriginal.assunto, emailOriginal.texto]
+        .filter(Boolean)
+        .join("\n"),
+    );
+    const origem =
+      valorDaFicha(ficha, "origem") ?? percursoFallback?.origem ?? null;
+    const destino =
+      valorDaFicha(ficha, "destino") ?? percursoFallback?.destino ?? null;
     const referencia = valorDaFicha(ficha, "referencia");
     const dataHora = valorDaFicha(ficha, "dataHora");
     const dataHoraFim = valorDaFicha(ficha, "dataHoraFim");
@@ -1607,7 +1677,7 @@ export function LigacaoGmail() {
       if (categoria === "voo") {
         if (!origem || !destino) {
           throw new Error(
-            "A descoberta não tem origem e destino suficientes para criar o voo. Reveja os dados antes de guardar.",
+            "Não conseguimos determinar a origem e o destino deste voo a partir do email. Reveja os dados antes de guardar.",
           );
         }
 
@@ -1893,6 +1963,7 @@ export function LigacaoGmail() {
         texto: "",
         remetente_email: null,
         recebido_em: null,
+        anexos: [],
       },
       estado: "analisado",
       resultado: {
