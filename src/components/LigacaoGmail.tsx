@@ -861,6 +861,7 @@ function DialogAcaoDescoberta({
   descoberta,
   viagens,
   aGuardar,
+  erro,
   onOpenChange,
   onGuardar,
   onCriarViagem,
@@ -869,6 +870,7 @@ function DialogAcaoDescoberta({
   descoberta: DescobertaAcao | null;
   viagens: ViagemEscolha[];
   aGuardar: boolean;
+  erro: string | null;
   onOpenChange: (open: boolean) => void;
   onGuardar: (viagemId: string) => Promise<void>;
   onCriarViagem: (dados: {
@@ -941,7 +943,16 @@ function DialogAcaoDescoberta({
       });
 
       if (id) {
-        await onGuardar(id);
+        try {
+          await onGuardar(id);
+        } catch (erro) {
+          const mensagem =
+            erro instanceof Error
+              ? erro.message
+              : "Não foi possível adicionar esta descoberta à viagem.";
+
+          toast.error(mensagem);
+        }
       }
       return;
     }
@@ -951,7 +962,16 @@ function DialogAcaoDescoberta({
       return;
     }
 
-    await onGuardar(viagemId);
+    try {
+      await onGuardar(viagemId);
+    } catch (erro) {
+      const mensagem =
+        erro instanceof Error
+          ? erro.message
+          : "Não foi possível adicionar esta descoberta à viagem.";
+
+      toast.error(mensagem);
+    }
   }
 
   return (
@@ -1087,6 +1107,15 @@ function DialogAcaoDescoberta({
               </div>
             )}
           </div>
+        ) : null}
+
+        {erro ? (
+          <p
+            className="mt-3 rounded-lg border border-destructive/20 bg-destructive/5 p-3 text-sm text-destructive"
+            role="alert"
+          >
+            {erro}
+          </p>
         ) : null}
 
         <DialogFooter className="flex-col gap-2 sm:flex-row sm:justify-between">
@@ -1513,6 +1542,8 @@ export function LigacaoGmail() {
 
 
   function abrirAcao(item: ResultadoAnalise) {
+    setErro(null);
+
     const fichaBruta = fichaDaAnalise(item.resultado);
     const ficha: Ficha | null =
       fichaBruta && typeof fichaBruta === "object"
@@ -1632,6 +1663,32 @@ export function LigacaoGmail() {
     if (error) throw error;
   }
 
+  function dataIsoSegura(valor: string | null): string | null {
+    if (!valor?.trim()) {
+      return null;
+    }
+
+    const data = new Date(valor);
+
+    return Number.isNaN(data.getTime()) ? null : data.toISOString();
+  }
+
+  async function guardarEmailOrigemSemBloquear(
+    viagemId: string,
+    email: EmailEncontrado,
+  ): Promise<boolean> {
+    try {
+      await guardarEmailOrigem(viagemId, email);
+      return true;
+    } catch (erro) {
+      console.error(
+        "A informação principal foi guardada, mas não foi possível guardar o email original do Gmail:",
+        erro,
+      );
+      return false;
+    }
+  }
+
   async function guardarDescobertaNaViagem(viagemId: string) {
     const descoberta = descobertaAcao;
     const userId = session?.user.id;
@@ -1648,7 +1705,8 @@ export function LigacaoGmail() {
 
     const emailOriginal = await obterEmailOriginal(descoberta.item.email);
 
-    const categoria = valorDaFicha(ficha, "categoria") ?? "outro";
+    const categoria =
+      (valorDaFicha(ficha, "categoria") ?? "outro").trim().toLowerCase();
     const texto = emailOriginal.assunto || "Informação de viagem do Gmail";
     const fornecedor = valorDaFicha(ficha, "fornecedor");
     const operador = valorDaFicha(ficha, "operador");
@@ -1671,7 +1729,10 @@ export function LigacaoGmail() {
     const quarto = valorDaFicha(ficha, "quarto");
     const condicoes = valorDaFicha(ficha, "condicoes");
 
+    let emailOrigemGuardado = true;
+
     setAGuardarDescoberta(true);
+    setErro(null);
 
     try {
       if (categoria === "voo") {
@@ -1687,21 +1748,21 @@ export function LigacaoGmail() {
           numero_voo: numeroVoo || null,
           origem: origem.toUpperCase(),
           destino: destino.toUpperCase(),
-          partida: dataHora ? new Date(dataHora).toISOString() : null,
+          partida: dataIsoSegura(dataHora),
           referencia: referencia || null,
           preco: null,
         });
 
         if (error) throw error;
 
-        await guardarEmailOrigem(viagemId, emailOriginal);
+        emailOrigemGuardado = await guardarEmailOrigemSemBloquear(viagemId, emailOriginal);
       } else if (categoria === "hotel") {
         const { error } = await supabase.from("alojamentos").insert({
           viagem_id: viagemId,
           nome: fornecedor || local || texto,
           morada: morada || local || null,
-          check_in: dataHora ? new Date(dataHora).toISOString() : null,
-          check_out: dataHoraFim ? new Date(dataHoraFim).toISOString() : null,
+          check_in: dataIsoSegura(dataHora),
+          check_out: dataIsoSegura(dataHoraFim),
           referencia: referencia || null,
           preco: null,
           notas: condicoes || null,
@@ -1709,7 +1770,7 @@ export function LigacaoGmail() {
 
         if (error) throw error;
 
-        await guardarEmailOrigem(viagemId, emailOriginal);
+        emailOrigemGuardado = await guardarEmailOrigemSemBloquear(viagemId, emailOriginal);
       } else if (
         categoria === "transporte" ||
         categoria === "transfer"
@@ -1720,8 +1781,8 @@ export function LigacaoGmail() {
           operador: operador || fornecedor || null,
           origem: origem || null,
           destino: destino || local || null,
-          partida: dataHora ? new Date(dataHora).toISOString() : null,
-          chegada: dataHoraFim ? new Date(dataHoraFim).toISOString() : null,
+          partida: dataIsoSegura(dataHora),
+          chegada: dataIsoSegura(dataHoraFim),
           referencia: referencia || null,
           preco: null,
           notas: condicoes || null,
@@ -1729,7 +1790,7 @@ export function LigacaoGmail() {
 
         if (error) throw error;
 
-        await guardarEmailOrigem(viagemId, emailOriginal);
+        emailOrigemGuardado = await guardarEmailOrigemSemBloquear(viagemId, emailOriginal);
       } else if (
         categoria === "bilhete" ||
         categoria === "documento"
@@ -1777,7 +1838,7 @@ export function LigacaoGmail() {
 
         if (error) throw error;
 
-        await guardarEmailOrigem(viagemId, emailOriginal);
+        emailOrigemGuardado = await guardarEmailOrigemSemBloquear(viagemId, emailOriginal);
       }
 
       const { error: erroEstado } = await supabase
@@ -1795,21 +1856,48 @@ export function LigacaoGmail() {
         );
       }
 
-      await queryClient.invalidateQueries({
-        queryKey: ["viagens"],
-      });
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: ["viagens"],
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ["voos", viagemId],
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ["alojamentos", viagemId],
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ["transportes", viagemId],
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ["documentos", viagemId],
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ["informacoes", viagemId],
+        }),
+      ]);
 
-      toast.success("Informação adicionada à viagem.");
+      if (!emailOrigemGuardado) {
+        toast.warning(
+          "A informação foi adicionada, mas o email original não pôde ser guardado.",
+        );
+      } else {
+        toast.success("Informação adicionada à viagem.");
+      }
+
+      setErro(null);
       setDescobertaAcao(null);
       setDescobertasAutomaticas((anteriores) =>
         anteriores.filter((item) => item.gmail_message_id !== descoberta.item.email.id),
       );
     } catch (erro) {
-      toast.error(
+      const mensagem =
         erro instanceof Error
           ? erro.message
-          : "Não foi possível adicionar esta descoberta à viagem.",
-      );
+          : "Não foi possível adicionar esta descoberta à viagem.";
+
+      setErro(mensagem);
+      toast.error(mensagem);
       console.error("Erro ao guardar descoberta Gmail numa viagem:", erro);
     } finally {
       setAGuardarDescoberta(false);
@@ -2251,6 +2339,7 @@ export function LigacaoGmail() {
         descoberta={descobertaAcao}
         viagens={viagens}
         aGuardar={aGuardarDescoberta}
+        erro={erro}
         onOpenChange={(open) => {
           if (!open && !aGuardarDescoberta) {
             setDescobertaAcao(null);
