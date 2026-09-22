@@ -3260,6 +3260,7 @@ type Documento = {
   remetente_email: string | null;
   recebido_em: string | null;
   mime_type: string | null;
+  resumo: string | null;
 };
 
 function NovoDocumentoDialog({
@@ -3387,6 +3388,9 @@ function DocumentosPainel({
     erro: string | null;
     leitura: boolean;
   } | null>(null);
+
+  const [visualizarEmail, setVisualizarEmail] =
+    useState<Documento | null>(null);
 
   useEffect(
     () => () => {
@@ -3584,6 +3588,14 @@ function DocumentosPainel({
     });
   }
 
+  function abrirEmail(doc: Documento) {
+    if (doc.origem !== "email") {
+      return;
+    }
+
+    setVisualizarEmail(doc);
+  }
+
   async function remover(doc: Documento) {
     if (doc.ficheiro_path) {
       await supabase.storage
@@ -3665,6 +3677,15 @@ function DocumentosPainel({
                   >
                     {d.nome}
                   </button>
+                ) : d.origem === "email" && d.resumo?.trim() ? (
+                  <button
+                    type="button"
+                    className="cursor-pointer text-left font-medium text-primary underline underline-offset-4"
+                    aria-label={`Ler o email ${d.nome}`}
+                    onClick={() => abrirEmail(d)}
+                  >
+                    {d.nome}
+                  </button>
                 ) : (
                   <p className="font-medium">{d.nome}</p>
                 )}
@@ -3727,6 +3748,56 @@ function DocumentosPainel({
           ))}
         </ul>
       )}
+
+      <Dialog
+        open={visualizarEmail !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setVisualizarEmail(null);
+          }
+        }}
+      >
+        <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>{visualizarEmail?.nome || "Email Gmail"}</DialogTitle>
+            <DialogDescription>
+              Email original importado do Gmail para esta viagem.
+            </DialogDescription>
+          </DialogHeader>
+
+          {visualizarEmail ? (
+            <div className="rounded-xl border border-border bg-secondary/30 p-4">
+              <div className="mb-4 space-y-1 text-xs text-muted-foreground">
+                {visualizarEmail.remetente_email ? (
+                  <p>De: {visualizarEmail.remetente_email}</p>
+                ) : null}
+                {visualizarEmail.recebido_em ? (
+                  <p>
+                    Recebido: {
+                      dataHora(visualizarEmail.recebido_em) ||
+                      visualizarEmail.recebido_em
+                    }
+                  </p>
+                ) : null}
+              </div>
+
+              <pre className="max-h-[55vh] overflow-auto whitespace-pre-wrap break-words text-sm leading-relaxed">
+                {visualizarEmail.resumo || "O conteúdo deste email não foi guardado."}
+              </pre>
+            </div>
+          ) : null}
+
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setVisualizarEmail(null)}
+            >
+              Fechar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <VisualizadorDocumento
         aberto={visualizar !== null}

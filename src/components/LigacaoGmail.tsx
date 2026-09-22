@@ -1,6 +1,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import {
+  AlertTriangle,
   CheckCircle2,
   ChevronRight,
   FileText,
@@ -298,6 +299,16 @@ type DescobertaAcao = {
   acao: AcaoSugerida;
 };
 
+type ConfirmacaoDuplicacao = {
+  viagemId: string;
+  origem: string;
+  destino: string;
+  companhia: string | null;
+  numeroVoo: string | null;
+  partida: string | null;
+  referencia: string | null;
+};
+
 type AcaoSugerida =
   | "adicionar_viagem"
   | "guardar_documento"
@@ -542,6 +553,24 @@ function formatarData(data: string | null): string | null {
   }
 
   return dataLimpa;
+}
+
+function normalizarValorVoo(valor: string | null): string {
+  return (valor ?? "").trim().toUpperCase().replace(/\s+/g, "");
+}
+
+function dataCalendarioVoo(valor: string | null): string | null {
+  if (!valor?.trim()) {
+    return null;
+  }
+
+  const tentativa = new Date(valor);
+
+  if (!Number.isNaN(tentativa.getTime())) {
+    return tentativa.toISOString().slice(0, 10);
+  }
+
+  return valor.slice(0, 10);
 }
 
 function obterTituloPrincipal(
@@ -1195,6 +1224,8 @@ export function LigacaoGmail() {
   const [descobertaAcao, setDescobertaAcao] =
     useState<DescobertaAcao | null>(null);
   const [aGuardarDescoberta, setAGuardarDescoberta] = useState(false);
+  const [duplicacaoPendente, setDuplicacaoPendente] =
+    useState<ConfirmacaoDuplicacao | null>(null);
 
   const viagensQuery = useQuery({
     queryKey: ["viagens"],
@@ -1700,7 +1731,15 @@ export function LigacaoGmail() {
   async function guardarEmailOrigem(
     viagemId: string,
     email: EmailEncontrado,
-  ) {
+    opcoes?: {
+      tipo?: string;
+      qrConteudo?: string | null;
+    },
+  ): Promise<{
+    guardado: boolean;
+    anexosGuardados: number;
+    anexosTotais: number;
+  }> {
     const corpoOriginal = email.texto.trim();
 
     const resumoEmail = [
@@ -1716,26 +1755,135 @@ export function LigacaoGmail() {
         : null,
       corpoOriginal
         ? `\n${corpoOriginal.slice(0, 12000)}`
-        : null,
+        : "\nO email não disponibilizou texto suficiente para apresentar o conteúdo completo.",
     ]
       .filter(Boolean)
       .join("\n");
 
-    const { error } = await supabase.from("documentos").insert({
-      viagem_id: viagemId,
-      nome: email.assunto || "Email Gmail",
-      tipo: "email",
-      origem: "email",
-      ficheiro_path: null,
-      mime_type: null,
-      tamanho_bytes: null,
-      qr_conteudo: null,
-      remetente_email: email.remetente_email || null,
-      recebido_em: email.recebido_em || null,
-      resumo: resumoEmail || null,
-    });
+    const { error: erroEmail } = await supabase
+      .from("documentos")
+      .insert({
+        viagem_id: viagemId,
+        nome: email.assunto || "Email Gmail",
+        tipo: opcoes?.tipo || "email",
+        origem: "email",
+        ficheiro_path: null,
+        mime_type: "message/rfc822",
+        tamanho_bytes: null,
+        qr_conteudo: opcoes?.qrConteudo || null,
+        remetente_email: email.remetente_email || null,
+        recebido_em: email.recebido_em || null,
+        resumo: resumoEmail,
+      })
+      ;
 
-    if (error) throw error;
+    if (erroEmail) {
+      throw erroEmail;
+    }
+
+    let anexosGuardados = 0;
+    let anexosTotais = email.anexos.length;
+
+    if (anexosTotais > 0) {
+      const userId = session?.user.id;
+
+      if (!userId) {
+        console.warn("Sessão indisponível para guardar anexos Gmail.");
+      } else {
+        for (const [indice, anexo] of email.anexos.entries()) {
+          try {
+            if (!anexo.data?.trim()) {
+              throw new Error("O anexo não contém dados para guardar.");
+            }
+
+            const resposta = await fetch(anexo.data);
+
+            if (!resposta.ok) {
+              throw new Error(
+                `Não foi possível obter o conteúdo do anexo (${resposta.status}).`,
+              );
+            }
+
+            const blob = await resposta.blob();
+            const mimeType =
+              anexo.mimeType?.trim() ||
+              blob.type ||
+              "application/octet-stream";
+            const nomeSeguro = (anexo.nome || `anexo-${indice + 1}`)
+              .normalize("NFD")
+              .replace(/[^\w.-]+/g, "_");
+            const path = `${userId}/${viagemId}/gmail/${email.id}/${Date.now()}-${indice}-${nomeSeguro}`;
+
+            const { data: upload, error: erroUpload } = await supabase.storage
+              .from("documentos")
+              .upload(path, blob, {
+                contentType: mimeType,
+                upsert: false,
+              });
+
+            if (erroUpload) {
+              throw erroUpload;
+            }
+
+            const pathGuardado = upload?.path ?? null;
+
+            if (!pathGuardado || pathGuardado.split("/")[0] !== userId) {
+              if (pathGuardado) {
+                await supabase.storage
+                  .from("documentos")
+                  .remove([pathGuardado]);
+              }
+
+              throw new Error(
+                "O armazenamento não confirmou o caminho seguro do anexo.",
+              );
+            }
+
+            const tipoAnexo = mimeType === "application/pdf"
+              ? "pdf"
+              : mimeType.startsWith("image/")
+                ? "imagem"
+                : "ficheiro";
+
+            const { error: erroDocumentoAnexo } = await supabase
+              .from("documentos")
+              .insert({
+                viagem_id: viagemId,
+                nome: anexo.nome || `Anexo do email ${indice + 1}`,
+                tipo: tipoAnexo,
+                origem: "email",
+                ficheiro_path: pathGuardado,
+                mime_type: mimeType,
+                tamanho_bytes: blob.size,
+                qr_conteudo: null,
+                remetente_email: email.remetente_email || null,
+                recebido_em: email.recebido_em || null,
+                resumo: `Anexo do email: ${email.assunto || "Email Gmail"}`,
+              });
+
+            if (erroDocumentoAnexo) {
+              await supabase.storage
+                .from("documentos")
+                .remove([pathGuardado]);
+              throw erroDocumentoAnexo;
+            }
+
+            anexosGuardados += 1;
+          } catch (erro) {
+            console.error(
+              `Erro ao guardar o anexo Gmail ${anexo.nome || indice + 1}:`,
+              erro,
+            );
+          }
+        }
+      }
+    }
+
+    return {
+      guardado: true,
+      anexosGuardados,
+      anexosTotais,
+    };
   }
 
   function dataIsoSegura(valor: string | null): string | null {
@@ -1751,20 +1899,34 @@ export function LigacaoGmail() {
   async function guardarEmailOrigemSemBloquear(
     viagemId: string,
     email: EmailEncontrado,
-  ): Promise<boolean> {
+    opcoes?: {
+      tipo?: string;
+      qrConteudo?: string | null;
+    },
+  ): Promise<{
+    guardado: boolean;
+    anexosGuardados: number;
+    anexosTotais: number;
+  }> {
     try {
-      await guardarEmailOrigem(viagemId, email);
-      return true;
+      return await guardarEmailOrigem(viagemId, email, opcoes);
     } catch (erro) {
       console.error(
         "A informação principal foi guardada, mas não foi possível guardar o email original do Gmail:",
         erro,
       );
-      return false;
+      return {
+        guardado: false,
+        anexosGuardados: 0,
+        anexosTotais: email.anexos.length,
+      };
     }
   }
 
-  async function guardarDescobertaNaViagem(viagemId: string) {
+  async function guardarDescobertaNaViagem(
+    viagemId: string,
+    forcarDuplicacao = false,
+  ) {
     const descoberta = descobertaAcao;
     const userId = session?.user.id;
 
@@ -1850,7 +2012,75 @@ export function LigacaoGmail() {
       const morada = valorDaFicha(ficha, "morada");
       const condicoes = valorDaFicha(ficha, "condicoes");
 
-      let emailOrigemGuardado = true;
+      if (categoria === "voo" && !forcarDuplicacao) {
+        const { data: voosExistentes, error: erroVoosExistentes } =
+          await supabase
+            .from("voos")
+            .select(
+              "id, companhia, numero_voo, origem, destino, partida, referencia",
+            )
+            .eq("viagem_id", viagemId);
+
+        if (erroVoosExistentes) {
+          throw erroVoosExistentes;
+        }
+
+        const origemNormalizada = normalizarValorVoo(origem);
+        const destinoNormalizado = normalizarValorVoo(destino);
+        const numeroNormalizado = normalizarValorVoo(numeroVoo);
+        const referenciaNormalizada = normalizarValorVoo(referencia);
+        const dataVoo = dataCalendarioVoo(dataHora);
+
+        const vooDuplicado = (voosExistentes ?? []).find((voo) => {
+          const mesmaRota =
+            normalizarValorVoo(voo.origem) === origemNormalizada &&
+            normalizarValorVoo(voo.destino) === destinoNormalizado;
+
+          if (!mesmaRota) {
+            return false;
+          }
+
+          const mesmaData =
+            dataVoo === null || !voo.partida
+              ? dataVoo === null && !voo.partida
+              : dataCalendarioVoo(voo.partida) === dataVoo;
+
+          if (!mesmaData) {
+            return false;
+          }
+
+          const mesmoNumero =
+            Boolean(numeroNormalizado) &&
+            normalizarValorVoo(voo.numero_voo) === numeroNormalizado;
+
+          const mesmaReferencia =
+            Boolean(referenciaNormalizada) &&
+            normalizarValorVoo(voo.referencia) === referenciaNormalizada;
+
+          return mesmoNumero || mesmaReferencia;
+        });
+
+        if (vooDuplicado) {
+          setDuplicacaoPendente({
+            viagemId,
+            origem: origem || vooDuplicado.origem || "",
+            destino: destino || vooDuplicado.destino || "",
+            companhia:
+              companhia || vooDuplicado.companhia || fornecedor || null,
+            numeroVoo: numeroVoo || vooDuplicado.numero_voo || null,
+            partida: dataHora || vooDuplicado.partida || null,
+            referencia: referencia || vooDuplicado.referencia || null,
+          });
+          setAGuardarDescoberta(false);
+          return;
+        }
+      }
+
+      let emailOrigemGuardado = {
+        guardado: true,
+        anexosGuardados: 0,
+        anexosTotais: emailOriginal.anexos.length,
+      };
 
       if (categoria === "voo") {
         if (!origem || !destino) {
@@ -1909,32 +2139,8 @@ export function LigacaoGmail() {
         categoria === "bilhete" ||
         categoria === "documento"
       ) {
-        const { error } = await supabase.from("documentos").insert({
-          viagem_id: viagemId,
-          nome: texto,
-          tipo: categoria,
-          origem: "email",
-          ficheiro_path: null,
-          mime_type: null,
-          tamanho_bytes: null,
-          qr_conteudo: valorDaFicha(ficha, "codigo") || null,
-          remetente_email:
-            emailOriginal.remetente_email || null,
-          recebido_em: emailOriginal.recebido_em || null,
-          resumo: emailOriginal.texto.trim()
-            ? [
-                "Email original do Gmail",
-                emailOriginal.assunto
-                  ? `Assunto: ${emailOriginal.assunto}`
-                  : null,
-                emailOriginal.texto.trim().slice(0, 12000),
-              ]
-                .filter(Boolean)
-                .join("\n\n")
-            : null,
-        });
-
-        if (error) throw error;
+        // O email e os seus anexos são guardados depois, num único ponto,
+        // para que o conteúdo original não fique duplicado na viagem.
       } else {
         const { error } = await supabase.from("informacoes").insert({
           viagem_id: viagemId,
@@ -1953,6 +2159,20 @@ export function LigacaoGmail() {
 
         if (error) throw error;
       }
+
+      const tipoEmail =
+        categoria === "bilhete" || categoria === "documento"
+          ? categoria
+          : "email";
+
+      emailOrigemGuardado = await guardarEmailOrigemSemBloquear(
+        viagemId,
+        emailOriginal,
+        {
+          tipo: tipoEmail,
+          qrConteudo: valorDaFicha(ficha, "codigo"),
+        },
+      );
 
       /*
        * Marcamos a mensagem como processada imediatamente depois de
@@ -1976,11 +2196,6 @@ export function LigacaoGmail() {
         );
       }
 
-      emailOrigemGuardado = await guardarEmailOrigemSemBloquear(
-        viagemId,
-        emailOriginal,
-      );
-
       await Promise.all([
         queryClient.invalidateQueries({
           queryKey: ["viagens"],
@@ -2002,9 +2217,16 @@ export function LigacaoGmail() {
         }),
       ]);
 
-      if (!emailOrigemGuardado) {
+      if (!emailOrigemGuardado.guardado) {
         toast.warning(
           "A informação foi adicionada, mas o email original não pôde ser guardado.",
+        );
+      } else if (
+        emailOrigemGuardado.anexosTotais >
+        emailOrigemGuardado.anexosGuardados
+      ) {
+        toast.warning(
+          `A informação foi adicionada, mas apenas ${emailOrigemGuardado.anexosGuardados} de ${emailOrigemGuardado.anexosTotais} anexos do email puderam ser guardados.`,
         );
       } else {
         toast.success("Informação adicionada à viagem.");
@@ -2491,6 +2713,78 @@ export function LigacaoGmail() {
           </Button>
         </>
       )}
+
+      <Dialog
+        open={duplicacaoPendente !== null}
+        onOpenChange={(open) => {
+          if (!open && !aGuardarDescoberta) {
+            setDuplicacaoPendente(null);
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="size-5 text-amber-600" />
+              Voo já adicionado
+            </DialogTitle>
+            <DialogDescription>
+              Encontrámos um voo igual já guardado nesta viagem. Quer
+              adicioná-lo novamente?
+            </DialogDescription>
+          </DialogHeader>
+
+          {duplicacaoPendente ? (
+            <div className="rounded-xl bg-secondary/50 p-4">
+              <p className="text-sm font-semibold">
+                {duplicacaoPendente.origem || "?"} → {duplicacaoPendente.destino || "?"}
+              </p>
+              <div className="mt-2 grid gap-2 text-sm text-muted-foreground">
+                {duplicacaoPendente.companhia ? (
+                  <p>Companhia: {duplicacaoPendente.companhia}</p>
+                ) : null}
+                {duplicacaoPendente.numeroVoo ? (
+                  <p>Voo: {duplicacaoPendente.numeroVoo}</p>
+                ) : null}
+                {duplicacaoPendente.partida ? (
+                  <p>Partida: {formatarData(duplicacaoPendente.partida)}</p>
+                ) : null}
+                {duplicacaoPendente.referencia ? (
+                  <p>Referência: {duplicacaoPendente.referencia}</p>
+                ) : null}
+              </div>
+            </div>
+          ) : null}
+
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setDuplicacaoPendente(null)}
+            >
+              Não, manter apenas o existente
+            </Button>
+            <Button
+              type="button"
+              onClick={() => {
+                const pendente = duplicacaoPendente;
+
+                if (!pendente) {
+                  return;
+                }
+
+                setDuplicacaoPendente(null);
+                void guardarDescobertaNaViagem(
+                  pendente.viagemId,
+                  true,
+                );
+              }}
+            >
+              Sim, adicionar novamente
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <DialogAcaoDescoberta
         aberta={descobertaAcao !== null}
