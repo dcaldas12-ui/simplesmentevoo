@@ -229,33 +229,40 @@ type Mensagem = {
   id?: string;
 };
 
+type GmailParte = {
+  filename?: string;
+  mimeType?: string;
+  body?: {
+    data?: string;
+    attachmentId?: string;
+    size?: number;
+  };
+  parts?: GmailParte[];
+};
+
+export type GmailAnexo = {
+  /** Nome original do anexo no Gmail. */
+  nome: string;
+
+  /** MIME type efetivo do anexo. */
+  mimeType: string;
+
+  /** Tamanho aproximado em bytes, quando conhecido. */
+  tamanhoBytes: number | null;
+
+  /** Conteúdo em data URL, pronto para ser enviado à análise multimodal. */
+  data: string;
+};
+
 /**
  * Extrai recursivamente o texto das partes de uma mensagem Gmail.
  * O Gmail pode devolver o conteúdo em text/plain, text/html ou em partes
  * aninhadas de multipart/alternative e multipart/mixed.
  */
-function extrairPartes(payload: {
-  mimeType?: string;
-  body?: {
-    data?: string;
-  };
-  parts?: Array<{
-    mimeType?: string;
-    body?: {
-      data?: string;
-    };
-    parts?: Array<unknown>;
-  }>;
-}): string {
+function extrairPartes(payload: GmailParte): string {
   const textos: string[] = [];
 
-  function visitar(parte: {
-    mimeType?: string;
-    body?: {
-      data?: string;
-    };
-    parts?: Array<unknown>;
-  }) {
+  function visitar(parte: GmailParte) {
     if (parte.body?.data) {
       try {
         const decoded = Buffer.from(
@@ -295,17 +302,7 @@ function extrairPartes(payload: {
     }
 
     for (const subparte of parte.parts ?? []) {
-      if (subparte && typeof subparte === "object") {
-        visitar(
-          subparte as {
-            mimeType?: string;
-            body?: {
-              data?: string;
-            };
-            parts?: Array<unknown>;
-          },
-        );
-      }
+      visitar(subparte);
     }
   }
 
@@ -317,6 +314,231 @@ function extrairPartes(payload: {
     .replace(/\n{3,}/g, "\n\n")
     .trim()
     .slice(0, 30000);
+}
+
+const MAX_ANEXOS_GMAIL = 6;
+
+/*
+ * Mantemos limites prudentes no lado Gmail para não transportar para o
+ * navegador ficheiros enormes que a análise multimodal atual não consegue
+ * consumir. O analisador de IA tem limites próprios ainda mais explícitos.
+ */
+const MAX_BYTES_IMAGEM_GMAIL = 4_000_000;
+const MAX_BYTES_PDF_GMAIL = 8_000_000;
+const MAX_BYTES_TOTAIS_GMAIL = 16_000_000;
+
+function mimeSuportadoParaIA(mimeType: string): boolean {
+  return (
+    mimeType.startsWith("image/") ||
+    mimeType === "application/pdf"
+  );
+}
+
+function percorrerAnexos(
+  payload: GmailParte,
+): GmailParte[] {
+  const encontrados: GmailParte[] = [];
+
+  function visitar(parte: GmailParte) {
+    if (
+      parte.filename?.trim() &&
+      parte.mimeType &&
+      mimeSuportadoParaIA(parte.mimeType)
+    ) {
+      encontrados.push(parte);
+    } else if (
+      parte.body?.attachmentId &&
+      parte.mimeType &&
+      mimeSuportadoParaIA(parte.mimeType)
+    ) {
+      /*
+       * Alguns emails podem não trazer filename num nível esperado, mas
+       * continuam a fornecer attachmentId. Nesse caso também tentamos ler.
+       */
+      encontrados.push(parte);
+    }
+
+    for (const subparte of parte.parts ?? []) {
+      visitar(subparte);
+    }
+  }
+
+  visitar(payload);
+
+  return encontrados;
+}
+
+function converterBase64UrlParaDataUrl(
+  base64url: string,
+  mimeType: string,
+): {
+  dataUrl: string;
+  tamanhoBytes: number;
+} | null {
+  if (!base64url || !mimeType) {
+    return null;
+  }
+
+  try {
+    const buffer = Buffer.from(
+      base64url,
+      "base64url",
+    );
+
+    return {
+      dataUrl: `data:${mimeType};base64,${buffer.toString("base64")}`,
+      tamanhoBytes: buffer.length,
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function extrairAnexosGmail(
+  payload: GmailParte,
+  messageId: string,
+  callAsAppUser: (args: {
+    gatewayBaseUrl: string;
+    connectionAPIKey: string;
+    connectorId: string;
+    path: string;
+  }) => Promise<Response>,
+  chave: string,
+): Promise<GmailAnexo[]> {
+  const candidatos = percorrerAnexos(payload);
+
+  const anexos: GmailAnexo[] = [];
+  const vistos = new Set<string>();
+  let bytesTotais = 0;
+
+  for (const parte of candidatos) {
+    if (anexos.length >= MAX_ANEXOS_GMAIL) {
+      break;
+    }
+
+    const mimeType = parte.mimeType?.trim() ?? "";
+
+    if (!mimeSuportadoParaIA(mimeType)) {
+      continue;
+    }
+
+    const chaveUnica =
+      parte.body?.attachmentId ||
+      `${parte.filename ?? ""}|${mimeType}|${parte.body?.size ?? ""}`;
+
+    if (vistos.has(chaveUnica)) {
+      continue;
+    }
+
+    vistos.add(chaveUnica);
+
+    let base64url = parte.body?.data ?? "";
+
+    if (!base64url && parte.body?.attachmentId) {
+      const anexoRes = await callAsAppUser({
+        gatewayBaseUrl: GATEWAY_BASE_URL,
+        connectionAPIKey: chave,
+        connectorId: CONNECTOR_ID,
+        path:
+          `/gmail/v1/users/me/messages/${encodeURIComponent(messageId)}` +
+          `/attachments/${encodeURIComponent(parte.body.attachmentId)}`,
+      });
+
+      if (!anexoRes.ok) {
+        let detalhe = "";
+
+        try {
+          detalhe = await anexoRes.text();
+        } catch {
+          detalhe = "";
+        }
+
+        console.warn(
+          "Gmail: não foi possível descarregar o anexo",
+          {
+            messageId,
+            nome: parte.filename ?? "",
+            mimeType,
+            attachmentId: parte.body.attachmentId,
+            status: anexoRes.status,
+            statusText: anexoRes.statusText,
+            detalhe,
+          },
+        );
+
+        continue;
+      }
+
+      const anexoJson = (await anexoRes.json()) as {
+        data?: string;
+        size?: number;
+      };
+
+      base64url = anexoJson.data ?? "";
+    }
+
+    const convertido = converterBase64UrlParaDataUrl(
+      base64url,
+      mimeType,
+    );
+
+    if (!convertido) {
+      continue;
+    }
+
+    const limite =
+      mimeType === "application/pdf"
+        ? MAX_BYTES_PDF_GMAIL
+        : MAX_BYTES_IMAGEM_GMAIL;
+
+    if (convertido.tamanhoBytes > limite) {
+      console.warn(
+        "Gmail: anexo ignorado por exceder o limite para análise",
+        {
+          messageId,
+          nome: parte.filename ?? "",
+          mimeType,
+          tamanhoBytes: convertido.tamanhoBytes,
+          limiteBytes: limite,
+        },
+      );
+
+      continue;
+    }
+
+    if (
+      bytesTotais + convertido.tamanhoBytes >
+      MAX_BYTES_TOTAIS_GMAIL
+    ) {
+      console.warn(
+        "Gmail: restantes anexos ignorados por excederem o limite total",
+        {
+          messageId,
+          limiteTotalBytes:
+            MAX_BYTES_TOTAIS_GMAIL,
+        },
+      );
+
+      break;
+    }
+
+    bytesTotais += convertido.tamanhoBytes;
+
+    anexos.push({
+      nome:
+        parte.filename?.trim() ||
+        (
+          mimeType === "application/pdf"
+            ? "anexo.pdf"
+            : "anexo-imagem"
+        ),
+      mimeType,
+      tamanhoBytes: convertido.tamanhoBytes,
+      data: convertido.dataUrl,
+    });
+  }
+
+  return anexos;
 }
 
 /**
@@ -360,6 +582,7 @@ export const emailsDeViagem = createServerFn({ method: "GET" })
         texto: string;
         remetente_email: string | null;
         recebido_em: string | null;
+        anexos: GmailAnexo[];
       }>
     > => {
       const { getConnectionKeyForUser } = await import(
@@ -490,6 +713,7 @@ export const emailsDeViagem = createServerFn({ method: "GET" })
         texto: string;
         remetente_email: string | null;
         recebido_em: string | null;
+        anexos: GmailAnexo[];
       }> = [];
 
       /*
@@ -546,18 +770,7 @@ export const emailsDeViagem = createServerFn({ method: "GET" })
           snippet?: string;
           id?: string;
           internalDate?: string;
-          payload?: {
-            mimeType?: string;
-            body?: {
-              data?: string;
-            };
-            parts?: Array<{
-              mimeType?: string;
-              body?: {
-                data?: string;
-              };
-              parts?: Array<unknown>;
-            }>;
+          payload?: GmailParte & {
             headers?: Array<{
               name?: string;
               value?: string;
@@ -607,12 +820,22 @@ export const emailsDeViagem = createServerFn({ method: "GET" })
           .join("\n\n")
           .slice(0, 30000);
 
+        const anexos = msg.payload
+          ? await extrairAnexosGmail(
+              msg.payload,
+              id,
+              callAsAppUser,
+              chave,
+            )
+          : [];
+
         resultados.push({
           id,
           assunto,
           texto,
           remetente_email,
           recebido_em,
+          anexos,
         });
       }
 
