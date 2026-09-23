@@ -558,6 +558,8 @@ export const emailsDeViagem = createServerFn({ method: "GET" })
       desde?: string | null;
       limite?: number | null;
       automatico?: boolean | null;
+      modo?: "viagens" | "todos" | null;
+      intervalos?: Array<{ inicio?: unknown; fim?: unknown }> | null;
     }) => ({
       desde:
         typeof input?.desde === "string" && input.desde.trim()
@@ -567,8 +569,32 @@ export const emailsDeViagem = createServerFn({ method: "GET" })
         typeof input?.limite === "number" &&
         Number.isFinite(input.limite)
           ? Math.max(1, Math.min(Math.floor(input.limite), 1000))
-          : 1000,
+          : 100,
       automatico: input?.automatico === true,
+      modo:
+        input?.modo === "viagens" || input?.modo === "todos"
+          ? input.modo
+          : "todos",
+      intervalos: Array.isArray(input?.intervalos)
+        ? input.intervalos
+            .filter(
+              (intervalo): intervalo is { inicio: string; fim: string } =>
+                Boolean(
+                  intervalo &&
+                    typeof intervalo === "object" &&
+                    typeof (intervalo as Record<string, unknown>)["inicio"] ===
+                      "string" &&
+                    typeof (intervalo as Record<string, unknown>)["fim"] ===
+                      "string",
+                ),
+            )
+            .map((intervalo) => ({
+              inicio: intervalo.inicio.trim(),
+              fim: intervalo.fim.trim(),
+            }))
+            .filter((intervalo) => intervalo.inicio && intervalo.fim)
+            .slice(0, 100)
+        : [],
     }),
   )
   .handler(
@@ -602,110 +628,195 @@ export const emailsDeViagem = createServerFn({ method: "GET" })
         "@/integrations/lovable/appUserConnector"
       );
 
-      /*
-       * O intervalo temporal é definido exclusivamente por `desde`.
-       *
-       * Isto é importante: a pesquisa manual e a deteção automática devem usar
-       * exatamente o mesmo filtro Gmail. A única diferença entre os dois modos
-       * é a origem do `desde`: na pesquisa manual é opcional/escolhido pelo
-       * utilizador; na automática é calculado pelo AppShell com base na última
-       * análise.
-       *
-       * A deduplicação dos emails já tratados é feita separadamente pelo
-       * AppShell através de `emails_gmail_processados`.
-       */
-      const filtroData = data.desde
-        ? (() => {
-            const instante = new Date(data.desde);
+      function timestampUnixSegundos(valor: string): number | null {
+        const instante = new Date(valor);
 
-            if (Number.isNaN(instante.getTime())) {
-              return "newer_than:365d";
+        if (Number.isNaN(instante.getTime())) {
+          return null;
+        }
+
+        return Math.floor(instante.getTime() / 1000);
+      }
+
+      function filtroPorIntervalos(
+        intervalos: Array<{ inicio: string; fim: string }>,
+      ): string {
+        const partes = intervalos
+          .map((intervalo) => {
+            const inicio = timestampUnixSegundos(intervalo.inicio);
+            const fim = timestampUnixSegundos(intervalo.fim);
+
+            if (inicio === null || fim === null || fim < inicio) {
+              return null;
             }
 
             /*
-             * Recuamos 60 segundos para proteger a fronteira temporal.
-             * A deduplicação impede que um email já tratado seja processado
-             * novamente no modo automático.
+             * `after` é exclusivo, por isso recuamos um segundo no início.
+             * `before` também é exclusivo; acrescentamos um dia ao fim quando
+             * recebemos apenas uma data YYYY-MM-DD e um segundo quando já há
+             * hora explícita.
              */
-            const timestamp = Math.max(
-              0,
-              Math.floor(instante.getTime() / 1000) - 60,
+            const inicioSeguro = Math.max(0, inicio - 1);
+            const fimTemApenasData = /^\d{4}-\d{2}-\d{2}$/.test(
+              intervalo.fim,
             );
+            const fimSeguro = fimTemApenasData
+              ? fim + 24 * 60 * 60
+              : fim + 1;
 
-            return `after:${timestamp}`;
-          })()
-        : "newer_than:365d";
+            return `after:${inicioSeguro} before:${fimSeguro}`;
+          })
+          .filter((parte): parte is string => Boolean(parte));
+
+        if (partes.length === 0) {
+          return "";
+        }
+
+        if (partes.length === 1) {
+          return partes[0] ?? "";
+        }
+
+        return `{${partes.join(" ")}}`;
+      }
 
       /*
-       * Manual e automático usam exatamente os mesmos termos de pesquisa.
-       * O Gmail faz apenas o primeiro filtro de candidatos; a decisão final
-       * de relevância continua a ser feita pelo `analisarDocumento()`.
+       * Existem agora dois modos manuais distintos:
+       *
+       * 1. `viagens`: o Gmail é usado apenas para localizar mensagens dentro
+       *    dos intervalos das viagens. O conteúdo decide depois se são ou não
+       *    relevantes. Não usamos palavras-chave de viagem como barreira,
+       *    porque isso poderia eliminar reservas legítimas.
+       *
+       * 2. `todos`: não existe limite temporal nem pré-filtro por palavras.
+       *    A pesquisa pode percorrer toda a caixa Gmail e a classificação final
+       *    pertence à IA.
+       *
+       * A deteção automática continua deliberadamente mais restrita: é uma
+       * rotina periódica e não deve tentar descarregar a caixa inteira.
        */
+      let filtroData = "";
+
+      if (data.automatico) {
+        filtroData = "newer_than:7d";
+      } else if (data.modo === "viagens" && data.intervalos.length > 0) {
+        filtroData = filtroPorIntervalos(data.intervalos);
+      } else if (data.modo === "viagens") {
+        filtroData = data.desde
+          ? (() => {
+              const timestamp = timestampUnixSegundos(data.desde ?? "");
+              return timestamp === null
+                ? "newer_than:365d"
+                : `after:${Math.max(0, timestamp - 1)}`;
+            })()
+          : "newer_than:365d";
+      } else if (data.desde) {
+        const timestamp = timestampUnixSegundos(data.desde);
+        filtroData =
+          timestamp === null
+            ? ""
+            : `after:${Math.max(0, timestamp - 1)}`;
+      }
+
       const termosViagem =
         '(reserva OR reservado OR "reserva confirmada" OR confirmacao OR confirmação OR confirmation OR booking OR reservation OR "booking reference" OR "booking confirmation" OR "confirmation number" OR PNR OR voucher OR bilhete OR ticket OR "e-ticket" OR "boarding pass" OR "cartao de embarque" OR "cartão de embarque" OR "flight number" OR "numero do voo" OR "número do voo" OR itinerario OR itinerário OR itinerary OR "check-in" OR "check-out" OR hotel OR alojamento OR transfer OR comboio OR train OR autocarro OR bus OR ferry OR "car rental" OR "aluguer de carro" OR museu OR museum OR concerto OR concert OR tour OR excursao OR excursão OR atividade OR actividade OR ingresso OR entrada)';
 
-      const consultaCompleta = `${filtroData} ${termosViagem}`.trim();
+      const consultaCompleta = data.automatico
+        ? `${filtroData} ${termosViagem}`.trim()
+        : filtroData;
 
       const consulta = encodeURIComponent(consultaCompleta);
 
+      const limiteSolicitado =
+        data.automatico
+          ? Math.max(5, Math.min(Math.floor(data.limite ?? 10), 10))
+          : Math.max(1, Math.min(Math.floor(data.limite ?? 100), 1000));
+
+      const LIMITE_PAGINA_GMAIL = 500;
+
       console.info("Gmail: pesquisa de mensagens", {
         automatico: data.automatico === true,
-        consulta: consultaCompleta,
-        limite: data.automatico
-          ? Math.max(10, Math.min(Math.floor(data.limite ?? 20), 25))
-          : data.limite !== null && data.limite !== undefined
-            ? Math.max(1, Math.min(Math.floor(data.limite), 25))
-            : 10,
+        modo: data.modo,
+        consulta: consultaCompleta || "(caixa Gmail inteira)",
+        limite: limiteSolicitado,
+        intervalos: data.intervalos.length,
       });
 
       /*
-       * No modo automático limitamos cada ronda a 10 candidatos. A pesquisa
-       * é repetida de forma periódica e a deduplicação é feita pelo AppShell,
-       * por isso os restantes candidatos continuam disponíveis para a ronda
-       * seguinte. Isto evita enviar grandes rajadas de emails para o Gemini.
+       * O Gmail devolve no máximo 500 mensagens por página. Percorremos tantas
+       * páginas quantas forem necessárias para atingir o limite desta ronda.
+       * Assim, 100 mensagens já não significa "as primeiras 100" de uma única
+       * página quando o filtro tiver paginação.
        */
-      const LIMITE_TOTAL = data.automatico
-        ? Math.max(5, Math.min(Math.floor(data.limite ?? 10), 10))
-        : data.limite !== null && data.limite !== undefined
-          ? Math.max(1, Math.min(Math.floor(data.limite), 25))
-          : 10;
+      const ids: string[] = [];
+      let pageToken: string | null = null;
 
-      const lista = await callAsAppUser({
-        gatewayBaseUrl: GATEWAY_BASE_URL,
-        connectionAPIKey: chave,
-        connectorId: CONNECTOR_ID,
-        path: `/gmail/v1/users/me/messages?maxResults=${LIMITE_TOTAL}&includeSpamTrash=false&q=${consulta}`,
-      });
+      do {
+        const tokenQuery = pageToken
+          ? `&pageToken=${encodeURIComponent(pageToken)}`
+          : "";
+        const maxResults = Math.min(
+          LIMITE_PAGINA_GMAIL,
+          limiteSolicitado - ids.length,
+        );
 
-      if (!lista.ok) {
-        let detalhe = "";
-
-        try {
-          detalhe = await lista.text();
-        } catch {
-          detalhe = "";
+        if (maxResults <= 0) {
+          break;
         }
 
-        console.error("Gmail: falha ao listar mensagens", {
-          status: lista.status,
-          statusText: lista.statusText,
-          detalhe,
+        const lista = await callAsAppUser({
+          gatewayBaseUrl: GATEWAY_BASE_URL,
+          connectionAPIKey: chave,
+          connectorId: CONNECTOR_ID,
+          path:
+            `/gmail/v1/users/me/messages?maxResults=${maxResults}` +
+            `&includeSpamTrash=false${consultaCompleta ? `&q=${consulta}` : ""}` +
+            tokenQuery,
         });
 
-        throw new Error(
-          `Não foi possível ler os emails. HTTP ${lista.status}${
-            lista.statusText ? ` ${lista.statusText}` : ""
-          }${detalhe ? ` — ${detalhe}` : ""}`,
-        );
-      }
+        if (!lista.ok) {
+          let detalhe = "";
 
-      const pagina = (await lista.json()) as {
-        messages?: Mensagem[];
-      };
+          try {
+            detalhe = await lista.text();
+          } catch {
+            detalhe = "";
+          }
 
-      const ids = (pagina.messages ?? [])
-        .map((mensagem) => mensagem.id)
-        .filter((id): id is string => Boolean(id));
+          console.error("Gmail: falha ao listar mensagens", {
+            status: lista.status,
+            statusText: lista.statusText,
+            detalhe,
+          });
+
+          throw new Error(
+            `Não foi possível ler os emails. HTTP ${lista.status}${
+              lista.statusText ? ` ${lista.statusText}` : ""
+            }${detalhe ? ` — ${detalhe}` : ""}`,
+          );
+        }
+
+        const pagina = (await lista.json()) as {
+          messages?: Mensagem[];
+          nextPageToken?: string;
+        };
+
+        for (const mensagem of pagina.messages ?? []) {
+          const id = mensagem.id;
+
+          if (id && !ids.includes(id)) {
+            ids.push(id);
+          }
+
+          if (ids.length >= limiteSolicitado) {
+            break;
+          }
+        }
+
+        pageToken =
+          ids.length < limiteSolicitado && pagina.nextPageToken
+            ? pagina.nextPageToken
+            : null;
+      } while (pageToken);
 
       const resultados: Array<{
         id: string;
@@ -717,126 +828,135 @@ export const emailsDeViagem = createServerFn({ method: "GET" })
       }> = [];
 
       /*
-       * Lemos o conteúdo completo apenas dos candidatos que passaram
-       * pela pesquisa temporal.
+       * Ler o conteúdo completo em pequenos lotes reduz bastante o tempo total
+       * da pesquisa sem criar uma rajada grande de pedidos ao Gmail.
        */
-      for (let indice = 0; indice < ids.length; indice += 1) {
-        const id = ids[indice];
+      const TAMANHO_LOTE_LEITURA = 5;
 
-        if (!id) {
-          continue;
-        }
+      for (
+        let inicioLote = 0;
+        inicioLote < ids.length;
+        inicioLote += TAMANHO_LOTE_LEITURA
+      ) {
+        const loteIds = ids.slice(
+          inicioLote,
+          inicioLote + TAMANHO_LOTE_LEITURA,
+        );
 
-        /* Pequena pausa entre leituras completas para evitar rajadas. */
-        if (indice > 0) {
-          await new Promise((resolve) => setTimeout(resolve, 1200));
-        }
+        const loteResultados = await Promise.all(
+          loteIds.map(async (id) => {
+            const res = await callAsAppUser({
+              gatewayBaseUrl: GATEWAY_BASE_URL,
+              connectionAPIKey: chave,
+              connectorId: CONNECTOR_ID,
+              path: `/gmail/v1/users/me/messages/${id}?format=full`,
+            });
 
-        const res = await callAsAppUser({
-          gatewayBaseUrl: GATEWAY_BASE_URL,
-          connectionAPIKey: chave,
-          connectorId: CONNECTOR_ID,
-          path: `/gmail/v1/users/me/messages/${id}?format=full`,
-        });
+            if (!res.ok) {
+              let detalhe = "";
 
-        if (!res.ok) {
-          let detalhe = "";
+              try {
+                detalhe = await res.text();
+              } catch {
+                detalhe = "";
+              }
 
-          try {
-            detalhe = await res.text();
-          } catch {
-            detalhe = "";
-          }
+              console.warn("Gmail: não foi possível ler a mensagem", {
+                id,
+                status: res.status,
+                statusText: res.statusText,
+                detalhe,
+              });
 
-          console.warn("Gmail: não foi possível ler a mensagem", {
-            id,
-            status: res.status,
-            statusText: res.statusText,
-            detalhe,
-          });
+              if (res.status === 403 || res.status === 429) {
+                throw new Error(
+                  `Gmail atingiu um limite de utilização (HTTP ${res.status})${
+                    detalhe ? ` — ${detalhe}` : ""
+                  }. Aguarde alguns instantes antes de tentar novamente.`,
+                );
+              }
 
-          if (res.status === 403 || res.status === 429) {
-            throw new Error(
-              `Gmail atingiu um limite de utilização (HTTP ${res.status})${
-                detalhe ? ` — ${detalhe}` : ""
-              }. Aguarde alguns instantes antes de tentar novamente.`,
-            );
-          }
+              return null;
+            }
 
-          continue;
-        }
+            const msg = (await res.json()) as {
+              snippet?: string;
+              id?: string;
+              internalDate?: string;
+              payload?: GmailParte & {
+                headers?: Array<{
+                  name?: string;
+                  value?: string;
+                }>;
+              };
+            };
 
-        const msg = (await res.json()) as {
-          snippet?: string;
-          id?: string;
-          internalDate?: string;
-          payload?: GmailParte & {
-            headers?: Array<{
-              name?: string;
-              value?: string;
-            }>;
-          };
-        };
+            const headers = msg.payload?.headers ?? [];
 
-        const headers = msg.payload?.headers ?? [];
+            const valorCabecalho = (nome: string) =>
+              headers.find(
+                (h) => h.name?.toLowerCase() === nome.toLowerCase(),
+              )?.value?.trim() ?? "";
 
-        const valorCabecalho = (nome: string) =>
-          headers.find(
-            (h) => h.name?.toLowerCase() === nome.toLowerCase(),
-          )?.value?.trim() ?? "";
+            const assunto = valorCabecalho("subject");
+            const remetenteBruto = valorCabecalho("from");
+            const remetente_email =
+              remetenteBruto.match(/<([^>]+)>/)?.[1]?.trim() ||
+              (remetenteBruto.includes("@") ? remetenteBruto : null);
 
-        const assunto = valorCabecalho("subject");
-
-        const remetenteBruto = valorCabecalho("from");
-        const remetente_email =
-          remetenteBruto.match(/<([^>]+)>/)?.[1]?.trim() ||
-          (remetenteBruto.includes("@") ? remetenteBruto : null);
-
-        const dataCabecalho = valorCabecalho("date");
-        const dataInterna = msg.internalDate
-          ? new Date(Number(msg.internalDate))
-          : null;
-        const dataRececao =
-          dataInterna && !Number.isNaN(dataInterna.getTime())
-            ? dataInterna
-            : dataCabecalho
-              ? new Date(dataCabecalho)
+            const dataCabecalho = valorCabecalho("date");
+            const dataInterna = msg.internalDate
+              ? new Date(Number(msg.internalDate))
               : null;
-        const recebido_em =
-          dataRececao && !Number.isNaN(dataRececao.getTime())
-            ? dataRececao.toISOString()
-            : null;
+            const dataRececao =
+              dataInterna && !Number.isNaN(dataInterna.getTime())
+                ? dataInterna
+                : dataCabecalho
+                  ? new Date(dataCabecalho)
+                  : null;
+            const recebido_em =
+              dataRececao && !Number.isNaN(dataRececao.getTime())
+                ? dataRececao.toISOString()
+                : null;
 
-        const corpo = msg.payload
-          ? extrairPartes(msg.payload)
-          : "";
+            const corpo = msg.payload
+              ? extrairPartes(msg.payload)
+              : "";
 
-        const texto = [
-          assunto,
-          corpo,
-          !corpo ? msg.snippet ?? "" : "",
-        ]
-          .filter(Boolean)
-          .join("\n\n")
-          .slice(0, 30000);
+            const texto = [
+              assunto,
+              corpo,
+              !corpo ? msg.snippet ?? "" : "",
+            ]
+              .filter(Boolean)
+              .join("\n\n")
+              .slice(0, 30000);
 
-        const anexos = msg.payload
-          ? await extrairAnexosGmail(
-              msg.payload,
+            const anexos = msg.payload
+              ? await extrairAnexosGmail(
+                  msg.payload,
+                  id,
+                  callAsAppUser,
+                  chave,
+                )
+              : [];
+
+            return {
               id,
-              callAsAppUser,
-              chave,
-            )
-          : [];
+              assunto,
+              texto,
+              remetente_email,
+              recebido_em,
+              anexos,
+            };
+          }),
+        );
 
-        resultados.push({
-          id,
-          assunto,
-          texto,
-          remetente_email,
-          recebido_em,
-          anexos,
-        });
+        for (const resultado of loteResultados) {
+          if (resultado) {
+            resultados.push(resultado);
+          }
+        }
       }
 
       return resultados;
