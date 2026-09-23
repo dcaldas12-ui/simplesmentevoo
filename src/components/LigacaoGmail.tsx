@@ -38,7 +38,7 @@ import {
   iniciarLigacaoGmail,
   type GmailAnexo,
 } from "@/lib/gmail.functions";
-import { analisarDocumento } from "@/lib/documentos-ia.functions";
+import { analisarDocumento, type AnaliseDocumentoViagem } from "@/lib/documentos-ia.functions";
 import { supabase } from "@/integrations/supabase/client";
 
 const CONNECTOR_ID = "google_mail";
@@ -291,7 +291,12 @@ type Ficha = Record<string, unknown>;
 type ViagemEscolha = {
   id: string;
   titulo: string;
+  origem: string | null;
   destino: string | null;
+  data_inicio: string | null;
+  data_fim: string | null;
+  numero_passageiros: number | null;
+  passageiros: unknown;
 };
 
 type DescobertaAcao = {
@@ -1207,6 +1212,9 @@ export function LigacaoGmail() {
 
   const [ocupado, setOcupado] = useState(false);
   const [aProcurar, setAProcurar] = useState(false);
+  const [modoAProcurar, setModoAProcurar] = useState<
+    "viagens" | "todos" | null
+  >(null);
   const [erro, setErro] = useState<string | null>(null);
 
   const [analises, setAnalises] = useState<ResultadoAnalise[]>([]);
@@ -1232,7 +1240,9 @@ export function LigacaoGmail() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("viagens")
-        .select("id, titulo, destino")
+        .select(
+          "id, titulo, origem, destino, data_inicio, data_fim, numero_passageiros, passageiros",
+        )
         .order("data_inicio", { ascending: true, nullsFirst: false });
 
       if (error) throw error;
@@ -1242,6 +1252,69 @@ export function LigacaoGmail() {
   });
 
   const viagens = viagensQuery.data ?? [];
+
+  function prepararViagensParaIa(
+    lista: ViagemEscolha[],
+  ): AnaliseDocumentoViagem[] {
+    return lista.flatMap((viagem) => {
+      const titulo = viagem.titulo?.trim() ?? "";
+      const origem = viagem.origem?.trim() ?? "";
+      const destino = viagem.destino?.trim() ?? "";
+      const dataInicio = viagem.data_inicio?.trim() ?? "";
+      const dataFim = viagem.data_fim?.trim() ?? "";
+
+      if (
+        !titulo ||
+        !origem ||
+        !destino ||
+        !/^\d{4}-\d{2}-\d{2}$/.test(dataInicio) ||
+        !/^\d{4}-\d{2}-\d{2}$/.test(dataFim)
+      ) {
+        return [];
+      }
+
+      const passageiros = Array.isArray(viagem.passageiros)
+        ? viagem.passageiros.flatMap((valor) => {
+            if (!valor || typeof valor !== "object") {
+              return [];
+            }
+
+            const passageiro = valor as Record<string, unknown>;
+            const nome =
+              typeof passageiro["nome"] === "string"
+                ? passageiro["nome"].trim()
+                : "";
+            const apelido =
+              typeof passageiro["apelido"] === "string"
+                ? passageiro["apelido"].trim()
+                : "";
+
+            if (!nome && !apelido) {
+              return [];
+            }
+
+            return [{ nome, apelido }];
+          })
+        : [];
+
+      return [
+        {
+          titulo,
+          origem,
+          destino,
+          dataInicio,
+          dataFim,
+          numeroPassageiros:
+            typeof viagem.numero_passageiros === "number" &&
+            Number.isFinite(viagem.numero_passageiros) &&
+            viagem.numero_passageiros >= 1
+              ? Math.floor(viagem.numero_passageiros)
+              : null,
+          passageiros,
+        },
+      ];
+    });
+  }
 
   async function ligar() {
   /*
@@ -1415,13 +1488,23 @@ export function LigacaoGmail() {
     void carregarPreferenciaDeteccao();
   }, [session?.user.id]);
 
-  async function procurar() {
+  async function procurar(modo: "viagens" | "todos" = "viagens") {
     setAProcurar(true);
+    setModoAProcurar(modo);
     setErro(null);
     setAnalises([]);
     setIgnorados([]);
 
     try {
+      const viagensParaIa = prepararViagensParaIa(viagens);
+
+      if (modo === "viagens" && viagensParaIa.length === 0) {
+        toast.error(
+          "Crie pelo menos uma viagem com origem, destino e datas antes de procurar informação relacionada com as suas viagens.",
+        );
+        return;
+      }
+
       const emails = await procurarEmails();
 
       if (emails.length === 0) {
@@ -1495,27 +1578,6 @@ export function LigacaoGmail() {
 
         const analisados = await Promise.all(
           lote.map(async (email) => {
-            const processado = processadosPorId.get(email.id);
-
-            /*
-             * Um email que já esteja pendente foi analisado anteriormente.
-             * Reutilizamos a ficha guardada em vez de voltar a chamar a IA.
-             */
-            if (
-              processado?.estado === "pendente" &&
-              processado.relevante === true &&
-              processado.ficha
-            ) {
-              return {
-                email,
-                estado: "analisado" as const,
-                resultado: {
-                  relevante: true,
-                  ficha: processado.ficha,
-                },
-              };
-            }
-
             const textoCompleto =
               `${email.assunto}\n\n${email.texto}`.trim();
 
@@ -1525,6 +1587,11 @@ export function LigacaoGmail() {
                   nome: email.assunto || "Email Gmail",
                   texto: textoCompleto,
                   anexos: email.anexos,
+                  modoAnalise: modo,
+                  viagens:
+                    modo === "viagens"
+                      ? viagensParaIa
+                      : [],
                 },
               });
 
@@ -1549,7 +1616,8 @@ export function LigacaoGmail() {
                       analisado_em: new Date().toISOString(),
                     },
                     {
-                      onConflict: "user_id,gmail_message_id",
+                      onConflict:
+                        "user_id,gmail_message_id",
                     },
                   );
 
@@ -1589,7 +1657,8 @@ export function LigacaoGmail() {
                     analisado_em: new Date().toISOString(),
                   },
                   {
-                    onConflict: "user_id,gmail_message_id",
+                    onConflict:
+                      "user_id,gmail_message_id",
                   },
                 );
 
@@ -1643,9 +1712,9 @@ export function LigacaoGmail() {
       toast.error(msg);
     } finally {
       setAProcurar(false);
+      setModoAProcurar(null);
     }
   }
-
 
   function abrirAcao(item: ResultadoAnalise) {
     setErro(null);
@@ -2518,11 +2587,22 @@ export function LigacaoGmail() {
               variant="secondary"
               className="h-11"
               disabled={aProcurar || ocupado}
-              onClick={() => void procurar()}
+              onClick={() => void procurar("viagens")}
             >
-              {aProcurar
-                ? "A procurar e analisar emails…"
-                : "Procurar emails de viagem"}
+              {aProcurar && modoAProcurar === "viagens"
+                ? "A procurar e analisar…"
+                : "Procurar informação relacionada com as minhas viagens"}
+            </Button>
+
+            <Button
+              variant="outline"
+              className="h-11"
+              disabled={aProcurar || ocupado}
+              onClick={() => void procurar("todos")}
+            >
+              {aProcurar && modoAProcurar === "todos"
+                ? "A analisar todos os emails…"
+                : "Analisar todos os emails"}
             </Button>
 
             <Button
@@ -2570,12 +2650,15 @@ export function LigacaoGmail() {
 
                 <div>
                   <p className="text-sm font-medium">
-                    A analisar os seus emails
+                    {modoAProcurar === "todos"
+                      ? "A analisar todos os emails"
+                      : "A analisar informação das suas viagens"}
                   </p>
 
                   <p className="mt-0.5 text-xs text-muted-foreground">
-                    Estamos a procurar reservas, bilhetes, alojamentos e
-                    outras informações de viagem.
+                    {modoAProcurar === "todos"
+                      ? "Estamos a procurar comunicações concretas de viagem em toda a pesquisa Gmail."
+                      : "Estamos a cruzar os emails e anexos com as viagens existentes, usando as datas como principal filtro."}
                   </p>
                 </div>
               </div>
@@ -2691,8 +2774,9 @@ export function LigacaoGmail() {
             </div>
           ) : (
             <p className="mt-2 text-xs text-muted-foreground">
-              Procuraremos reservas de voos, hotéis, transfers, bilhetes e
-              outras informações de viagem nos emails encontrados.
+              O modo personalizado usa as suas viagens e uma margem de ±2 dias
+              em torno de cada período. O modo "Analisar todos os emails" faz
+              uma pesquisa sem esse filtro temporal.
             </p>
           )}
         </>
