@@ -23,7 +23,11 @@ import { emailsDeViagem } from "@/lib/gmail.functions";
 import { useIdioma } from "@/lib/i18n";
 
 const deteccoesGmailEmCurso = new Map<string, Promise<void>>();
+const ultimaDeteccaoGmailEm = new Map<string, number>();
 const GMAIL_AUTOMACAO_EVENT = "viatorbis:gmail-auto-change";
+const GMAIL_AUTOMACAO_MIN_INTERVALO_MS = 2 * 60 * 1000;
+const GMAIL_AUTOMACAO_INTERVALO_MS = 5 * 60 * 1000;
+const GMAIL_AUTOMACAO_LIMITE = 3;
 
 function valorFicha(
   ficha: unknown,
@@ -44,6 +48,20 @@ function valorFicha(
   }
 
   return null;
+}
+
+function erroEhQuotaGmail(erro: unknown): boolean {
+  const mensagem = erro instanceof Error ? erro.message : String(erro ?? "");
+  const normalizada = mensagem.toLowerCase();
+
+  return (
+    normalizada.includes("http 403") ||
+    normalizada.includes("http 429") ||
+    normalizada.includes("total_query_cost") ||
+    normalizada.includes("rate_limit_exceeded") ||
+    normalizada.includes("ratelimitexceeded") ||
+    normalizada.includes("quota exceeded")
+  );
 }
 
 export function AppShell({ children }: { children: ReactNode }) {
@@ -68,6 +86,17 @@ export function AppShell({ children }: { children: ReactNode }) {
       if (cancelado || deteccoesGmailEmCurso.has(userIdSeguro)) {
         return;
       }
+
+      const agoraTimestamp = Date.now();
+      const ultimaExecucao = ultimaDeteccaoGmailEm.get(userIdSeguro) ?? 0;
+
+      if (
+        agoraTimestamp - ultimaExecucao < GMAIL_AUTOMACAO_MIN_INTERVALO_MS
+      ) {
+        return;
+      }
+
+      ultimaDeteccaoGmailEm.set(userIdSeguro, agoraTimestamp);
 
       const tarefa = (async () => {
         try {
@@ -124,7 +153,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           const emails = await procurarEmails({
             data: {
               desde,
-              limite: 20,
+              limite: GMAIL_AUTOMACAO_LIMITE,
               automatico: true,
             },
           });
@@ -397,17 +426,24 @@ export function AppShell({ children }: { children: ReactNode }) {
             );
           }
         } catch (erro) {
-          console.error(
-            "Erro na deteção automática do Gmail:",
-            erro,
-          );
-
-          if (!cancelado) {
-            toast.error(
-              erro instanceof Error
-                ? `Deteção Gmail: ${erro.message}`
-                : "A deteção automática do Gmail falhou.",
+          if (erroEhQuotaGmail(erro)) {
+            console.warn(
+              "Gmail: deteção automática adiada por limite de utilização.",
+              erro,
             );
+          } else {
+            console.error(
+              "Erro na deteção automática do Gmail:",
+              erro,
+            );
+
+            if (!cancelado) {
+              toast.error(
+                erro instanceof Error
+                  ? `Deteção Gmail: ${erro.message}`
+                  : "A deteção automática do Gmail falhou.",
+              );
+            }
           }
         }
       })();
@@ -434,7 +470,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 
     const intervalo = window.setInterval(() => {
       void detetarNovosEmails();
-    }, 60_000);
+    }, GMAIL_AUTOMACAO_INTERVALO_MS);
 
     const aoMudarDeteccao = () => {
       void detetarNovosEmails();
