@@ -125,9 +125,15 @@ type CategoriaAdicionar =
 
 type AnexoCategoria = "alojamento" | "transporte" | "informacao";
 
+type Passageiro = {
+  nome: string;
+  apelido: string;
+};
+
 type ViagemEscolha = {
   id: string;
   titulo: string;
+  origem: string | null;
   destino: string | null;
 };
 
@@ -1008,10 +1014,13 @@ function ViagensPage() {
 
   const [form, setForm] = useState({
     titulo: "",
+    origem: "",
     destino: "",
     data_inicio: "",
     data_fim: "",
     notas: "",
+    numero_passageiros: "",
+    passageiros: [] as Passageiro[],
   });
 
   const { data: viagens, isLoading } = useQuery({
@@ -1020,7 +1029,7 @@ function ViagensPage() {
       const { data, error } = await supabase
         .from("viagens")
         .select(
-          "id, titulo, destino, data_inicio, data_fim, estado, voos(count), documentos(count), alojamentos(count), transportes(count), informacoes(count)",
+          "id, titulo, origem, destino, data_inicio, data_fim, estado, voos(count), documentos(count), alojamentos(count), transportes(count), informacoes(count)",
         )
         .order("data_inicio", {
           ascending: true,
@@ -1058,12 +1067,73 @@ function ViagensPage() {
 
   const criar = useMutation({
     mutationFn: async () => {
+      const titulo = form.titulo.trim();
+      const origem = form.origem.trim();
+      const destino = form.destino.trim();
+      const dataInicio = form.data_inicio;
+      const dataFim = form.data_fim;
+
+      if (!titulo) {
+        throw new Error("Indique um título para a viagem.");
+      }
+
+      if (!origem) {
+        throw new Error("Indique a origem da viagem.");
+      }
+
+      if (!destino) {
+        throw new Error("Indique o destino da viagem.");
+      }
+
+      if (!dataInicio) {
+        throw new Error("Indique a data de partida.");
+      }
+
+      if (!dataFim) {
+        throw new Error("Indique a data de regresso.");
+      }
+
+      if (dataFim < dataInicio) {
+        throw new Error(
+          "A data de regresso não pode ser anterior à data de partida.",
+        );
+      }
+
+      const numeroPassageiros =
+        form.numero_passageiros.trim() === ""
+          ? null
+          : Number(form.numero_passageiros);
+
+      if (
+        numeroPassageiros !== null &&
+        (!Number.isInteger(numeroPassageiros) || numeroPassageiros < 1)
+      ) {
+        throw new Error(
+          "O número de passageiros deve ser um número inteiro igual ou superior a 1.",
+        );
+      }
+
+      const passageiros = form.passageiros
+        .map((passageiro) => ({
+          nome: passageiro.nome.trim(),
+          apelido: passageiro.apelido.trim(),
+        }))
+        .filter((passageiro) => passageiro.nome || passageiro.apelido);
+
+      const numeroFinal =
+        passageiros.length > (numeroPassageiros ?? 0)
+          ? passageiros.length
+          : numeroPassageiros;
+
       const { error } = await supabase.from("viagens").insert({
-        titulo: form.titulo,
-        destino: form.destino || null,
-        data_inicio: form.data_inicio || null,
-        data_fim: form.data_fim || null,
-        notas: form.notas || null,
+        titulo,
+        origem,
+        destino,
+        data_inicio: dataInicio,
+        data_fim: dataFim,
+        numero_passageiros: numeroFinal,
+        passageiros,
+        notas: form.notas.trim() || null,
       });
 
       if (error) throw error;
@@ -1079,10 +1149,13 @@ function ViagensPage() {
 
       setForm({
         titulo: "",
+        origem: "",
         destino: "",
         data_inicio: "",
         data_fim: "",
         notas: "",
+        numero_passageiros: "",
+        passageiros: [],
       });
     },
     onError: (e) =>
@@ -1118,9 +1191,9 @@ function ViagensPage() {
                 <DialogTitle>Nova viagem</DialogTitle>
               </DialogHeader>
 
-              <div className="space-y-4">
+              <div className="space-y-5">
                 <div>
-                  <Label htmlFor="titulo">Nome da viagem</Label>
+                  <Label htmlFor="titulo">Título da viagem *</Label>
 
                   <Input
                     id="titulo"
@@ -1136,26 +1209,45 @@ function ViagensPage() {
                   />
                 </div>
 
-                <div>
-                  <Label htmlFor="destino">Destino</Label>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div>
+                    <Label htmlFor="origem">Origem *</Label>
 
-                  <Input
-                    id="destino"
-                    value={form.destino}
-                    onChange={(e) =>
-                      setForm({
-                        ...form,
-                        destino: e.target.value,
-                      })
-                    }
-                    placeholder="Barcelona"
-                    className="mt-1.5"
-                  />
+                    <Input
+                      id="origem"
+                      value={form.origem}
+                      onChange={(e) =>
+                        setForm({
+                          ...form,
+                          origem: e.target.value,
+                        })
+                      }
+                      placeholder="Porto"
+                      className="mt-1.5"
+                    />
+                  </div>
+
+                  <div>
+                    <Label htmlFor="destino">Destino *</Label>
+
+                    <Input
+                      id="destino"
+                      value={form.destino}
+                      onChange={(e) =>
+                        setForm({
+                          ...form,
+                          destino: e.target.value,
+                        })
+                      }
+                      placeholder="Barcelona"
+                      className="mt-1.5"
+                    />
+                  </div>
                 </div>
 
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <Label htmlFor="inicio">Início</Label>
+                    <Label htmlFor="inicio">Data de partida *</Label>
 
                     <Input
                       id="inicio"
@@ -1172,12 +1264,13 @@ function ViagensPage() {
                   </div>
 
                   <div>
-                    <Label htmlFor="fim">Fim</Label>
+                    <Label htmlFor="fim">Data de regresso *</Label>
 
                     <Input
                       id="fim"
                       type="date"
                       value={form.data_fim}
+                      min={form.data_inicio || undefined}
                       onChange={(e) =>
                         setForm({
                           ...form,
@@ -1189,8 +1282,145 @@ function ViagensPage() {
                   </div>
                 </div>
 
+                <div className="rounded-xl border border-border p-4">
+                  <div>
+                    <Label htmlFor="numero-passageiros">
+                      Passageiros
+                    </Label>
+
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Opcional. Pode indicar apenas o número ou identificar
+                      cada passageiro.
+                    </p>
+                  </div>
+
+                  <div className="mt-3">
+                    <Label htmlFor="numero-passageiros">
+                      Número de passageiros
+                    </Label>
+
+                    <Input
+                      id="numero-passageiros"
+                      type="number"
+                      min={1}
+                      step={1}
+                      value={form.numero_passageiros}
+                      onChange={(e) =>
+                        setForm({
+                          ...form,
+                          numero_passageiros: e.target.value,
+                        })
+                      }
+                      placeholder="Ex.: 2"
+                      className="mt-1.5"
+                    />
+                  </div>
+
+                  <div className="mt-4 space-y-3">
+                    {form.passageiros.map((passageiro, index) => (
+                      <div
+                        key={index}
+                        className="grid gap-3 sm:grid-cols-[1fr_1fr_auto]"
+                      >
+                        <div>
+                          <Label htmlFor={`passageiro-nome-${index}`}>
+                            Nome
+                          </Label>
+
+                          <Input
+                            id={`passageiro-nome-${index}`}
+                            value={passageiro.nome}
+                            onChange={(e) => {
+                              const passageiros = [...form.passageiros];
+                              const passageiroAtual = passageiros[index];
+
+                              if (!passageiroAtual) return;
+
+                              passageiros[index] = {
+                                nome: e.target.value,
+                                apelido: passageiroAtual.apelido,
+                              };
+
+                              setForm({
+                                ...form,
+                                passageiros,
+                              });
+                            }}
+                            placeholder="Nome"
+                            className="mt-1.5"
+                          />
+                        </div>
+
+                        <div>
+                          <Label htmlFor={`passageiro-apelido-${index}`}>
+                            Apelido
+                          </Label>
+
+                          <Input
+                            id={`passageiro-apelido-${index}`}
+                            value={passageiro.apelido}
+                            onChange={(e) => {
+                              const passageiros = [...form.passageiros];
+                              const passageiroAtual = passageiros[index];
+
+                              if (!passageiroAtual) return;
+
+                              passageiros[index] = {
+                                nome: passageiroAtual.nome,
+                                apelido: e.target.value,
+                              };
+
+                              setForm({
+                                ...form,
+                                passageiros,
+                              });
+                            }}
+                            placeholder="Apelido"
+                            className="mt-1.5"
+                          />
+                        </div>
+
+                        <div className="flex items-end">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() =>
+                              setForm({
+                                ...form,
+                                passageiros: form.passageiros.filter(
+                                  (_, passageiroIndex) =>
+                                    passageiroIndex !== index,
+                                ),
+                              })
+                            }
+                          >
+                            Remover
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() =>
+                        setForm({
+                          ...form,
+                          passageiros: [
+                            ...form.passageiros,
+                            { nome: "", apelido: "" },
+                          ],
+                        })
+                      }
+                    >
+                      <Plus className="size-4" />
+                      Adicionar passageiro
+                    </Button>
+                  </div>
+                </div>
+
                 <div>
-                  <Label htmlFor="notas">Notas</Label>
+                  <Label htmlFor="notas">Notas (opcional)</Label>
 
                   <Textarea
                     id="notas"
@@ -1210,7 +1440,14 @@ function ViagensPage() {
               <DialogFooter>
                 <Button
                   onClick={() => criar.mutate()}
-                  disabled={!form.titulo.trim() || criar.isPending}
+                  disabled={
+                    criar.isPending ||
+                    !form.titulo.trim() ||
+                    !form.origem.trim() ||
+                    !form.destino.trim() ||
+                    !form.data_inicio ||
+                    !form.data_fim
+                  }
                 >
                   {criar.isPending ? "A criar..." : "Criar viagem"}
                 </Button>
@@ -1277,6 +1514,7 @@ function ViagensPage() {
               (viagens ?? []).map((v) => ({
                 id: v.id,
                 titulo: v.titulo,
+                origem: v.origem,
                 destino: v.destino,
               }))
             }
@@ -1377,11 +1615,14 @@ function ViagensPage() {
                               {v.titulo}
                             </h3>
 
-                            {v.destino ? (
+                            {v.origem || v.destino ? (
                               <p className="mt-1 flex items-center gap-1.5 text-sm text-muted-foreground">
                                 <MapPin className="size-4 shrink-0" />
                                 <span className="truncate">
-                                  {v.destino}
+                                  {v.origem || "Origem não indicada"}
+                                  {v.destino
+                                    ? ` → ${v.destino}`
+                                    : ""}
                                 </span>
                               </p>
                             ) : null}
@@ -1457,6 +1698,7 @@ function ViagensPage() {
                             setViagemParaApagar({
                               id: v.id,
                               titulo: v.titulo,
+                              origem: v.origem,
                               destino: v.destino,
                             })
                           }
@@ -1499,9 +1741,12 @@ function ViagensPage() {
             {viagemParaApagar ? (
               <div className="rounded-xl border border-border bg-secondary/40 p-4">
                 <p className="font-medium">{viagemParaApagar.titulo}</p>
-                {viagemParaApagar.destino ? (
+                {viagemParaApagar.origem || viagemParaApagar.destino ? (
                   <p className="mt-1 text-sm text-muted-foreground">
-                    {viagemParaApagar.destino}
+                    {viagemParaApagar.origem || "Origem não indicada"}
+                    {viagemParaApagar.destino
+                      ? ` → ${viagemParaApagar.destino}`
+                      : ""}
                   </p>
                 ) : null}
               </div>

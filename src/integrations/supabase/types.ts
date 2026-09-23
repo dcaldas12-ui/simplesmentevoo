@@ -598,6 +598,9 @@ export type Database = {
           estado: string
           id: string
           notas: string | null
+          numero_passageiros: number | null
+          origem: string | null
+          passageiros: Json
           titulo: string
           user_id: string
         }
@@ -609,6 +612,9 @@ export type Database = {
           estado?: string
           id?: string
           notas?: string | null
+          numero_passageiros?: number | null
+          origem?: string | null
+          passageiros?: Json
           titulo: string
           user_id?: string
         }
@@ -620,6 +626,9 @@ export type Database = {
           estado?: string
           id?: string
           notas?: string | null
+          numero_passageiros?: number | null
+          origem?: string | null
+          passageiros?: Json
           titulo?: string
           user_id?: string
         }
