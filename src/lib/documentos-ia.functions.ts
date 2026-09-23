@@ -1377,6 +1377,73 @@ function deslocarDataIso(
   return valor.toISOString().slice(0, 10);
 }
 
+/**
+ * A API Gemini aplica limites por projeto, incluindo pedidos por minuto.
+ * Como a interface pode analisar vários emails em paralelo, as chamadas
+ * passam por uma fila neste módulo para evitar vários pedidos simultâneos.
+ *
+ * Mantemos uma margem abaixo de um limite de 20 RPM:
+ * no máximo um pedido Gemini a cada 4 segundos.
+ */
+const GEMINI_INTERVALO_MS = 4_000;
+let proximoPedidoGemini = 0;
+let filaGemini: Promise<void> = Promise.resolve();
+
+function esperar(milisegundos: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, milisegundos);
+  });
+}
+
+async function aguardarTurnoGemini(): Promise<void> {
+  const turno = filaGemini.then(async () => {
+    const agora = Date.now();
+    const esperaNecessaria = Math.max(
+      0,
+      proximoPedidoGemini - agora,
+    );
+
+    if (esperaNecessaria > 0) {
+      await esperar(esperaNecessaria);
+    }
+
+    proximoPedidoGemini =
+      Date.now() + GEMINI_INTERVALO_MS;
+  });
+
+  filaGemini = turno.catch(() => undefined);
+  await turno;
+}
+
+function obterEsperaRetryAfter(
+  resposta: Response,
+): number | null {
+  const valor = resposta.headers.get("retry-after");
+
+  if (!valor) {
+    return null;
+  }
+
+  const segundos = Number(valor);
+  if (Number.isFinite(segundos) && segundos >= 0) {
+    return Math.min(
+      Math.max(segundos * 1000, 4_000),
+      60_000,
+    );
+  }
+
+  const data = Date.parse(valor);
+  if (!Number.isNaN(data)) {
+    return Math.min(
+      Math.max(data - Date.now(), 4_000),
+      60_000,
+    );
+  }
+
+  return null;
+}
+
+
 function contextoViagensParaPrompt(
   input: AnaliseDocumentoInput,
 ): string {
@@ -1711,6 +1778,8 @@ export const analisarDocumento =
           tentativa++
         ) {
           try {
+            await aguardarTurnoGemini();
+
             const resposta =
               await fetch(
                 "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent",
@@ -1784,6 +1853,16 @@ export const analisarDocumento =
                 resposta.status ===
                 429
               ) {
+                const esperaRetryAfter =
+                  obterEsperaRetryAfter(resposta);
+
+                if (tentativa < maxTentativas) {
+                  await esperar(
+                    esperaRetryAfter ??
+                      10_000,
+                  );
+                }
+
                 throw new Error(
                   "A API Gemini foi temporariamente limitada pelo limite de utilização (429).",
                 );
@@ -1904,7 +1983,7 @@ export const analisarDocumento =
             ) {
               const espera =
                 mensagem.includes("(429)")
-                  ? 2000 * tentativa
+                  ? 10_000
                   : 1000 * tentativa;
 
               await new Promise(
