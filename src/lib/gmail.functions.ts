@@ -717,12 +717,19 @@ export const emailsDeViagem = createServerFn({ method: "GET" })
             : `after:${Math.max(0, timestamp - 1)}`;
       }
 
-      const termosViagem =
-        '(reserva OR reservado OR "reserva confirmada" OR confirmacao OR confirmação OR confirmation OR booking OR reservation OR "booking reference" OR "booking confirmation" OR "confirmation number" OR PNR OR voucher OR bilhete OR ticket OR "e-ticket" OR "boarding pass" OR "cartao de embarque" OR "cartão de embarque" OR "flight number" OR "numero do voo" OR "número do voo" OR itinerario OR itinerário OR itinerary OR "check-in" OR "check-out" OR hotel OR alojamento OR transfer OR comboio OR train OR autocarro OR bus OR ferry OR "car rental" OR "aluguer de carro" OR museu OR museum OR concerto OR concert OR tour OR excursao OR excursão OR atividade OR actividade OR ingresso OR entrada)';
-
-      const consultaCompleta = data.automatico
-        ? `${filtroData} ${termosViagem}`.trim()
-        : filtroData;
+      /*
+       * A deteção automática não usa uma expressão grande de palavras-chave.
+       * Essa pesquisa com muitos OR torna a consulta Gmail muito mais cara e
+       * pode provocar o limite `total_query_cost` da Gmail API.
+       *
+       * No modo automático basta restringir às mensagens recentes. A análise
+       * semântica posterior decide se cada email é realmente uma comunicação
+       * de viagem.
+       *
+       * Nos modos manuais: `viagens` usa os intervalos das viagens e `todos`
+       * pesquisa a caixa inteira sem palavras-chave.
+       */
+      const consultaCompleta = filtroData;
 
       const consulta = encodeURIComponent(consultaCompleta);
 
