@@ -64,6 +64,145 @@ function erroEhQuotaGmail(erro: unknown): boolean {
   );
 }
 
+type ViagemParaPesquisaGmail = {
+  id: string;
+  titulo: string;
+  origem: string | null;
+  destino: string | null;
+  data_inicio: string | null;
+  data_fim: string | null;
+  numero_passageiros: number | null;
+  passageiros: unknown;
+};
+
+type ViagemParaIa = {
+  titulo: string;
+  origem: string;
+  destino: string;
+  dataInicio: string;
+  dataFim: string;
+  numeroPassageiros: number | null;
+  passageiros: Array<{
+    nome: string;
+    apelido: string;
+  }>;
+};
+
+function deslocarDataIso(
+  data: string,
+  dias: number,
+): string {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(data)) {
+    return data;
+  }
+
+  const valor = new Date(`${data}T00:00:00Z`);
+
+  if (Number.isNaN(valor.getTime())) {
+    return data;
+  }
+
+  valor.setUTCDate(valor.getUTCDate() + dias);
+
+  return valor.toISOString().slice(0, 10);
+}
+
+function viagensParaPesquisaEIA(
+  viagens: ViagemParaPesquisaGmail[],
+): {
+  intervalos: Array<{ inicio: string; fim: string }>;
+  viagensParaIa: ViagemParaIa[];
+} {
+  const intervalos: Array<{ inicio: string; fim: string }> = [];
+  const viagensParaIa: ViagemParaIa[] = [];
+
+  for (const viagem of viagens) {
+    const titulo = viagem.titulo?.trim();
+    const origem = viagem.origem?.trim();
+    const destino = viagem.destino?.trim();
+    const dataInicio = viagem.data_inicio?.trim();
+    const dataFim = viagem.data_fim?.trim();
+
+    if (
+      !titulo ||
+      !origem ||
+      !destino ||
+      !dataInicio ||
+      !dataFim ||
+      !/^\d{4}-\d{2}-\d{2}$/.test(dataInicio) ||
+      !/^\d{4}-\d{2}-\d{2}$/.test(dataFim)
+    ) {
+      continue;
+    }
+
+    if (dataFim < dataInicio) {
+      continue;
+    }
+
+    intervalos.push({
+      inicio: deslocarDataIso(dataInicio, -2),
+      fim: deslocarDataIso(dataFim, 2),
+    });
+
+    const passageiros = Array.isArray(viagem.passageiros)
+      ? viagem.passageiros
+          .slice(0, 20)
+          .map((passageiro) => {
+            if (!passageiro || typeof passageiro !== "object") {
+              return null;
+            }
+
+            const item = passageiro as Record<string, unknown>;
+            const nome =
+              typeof item["nome"] === "string"
+                ? item["nome"].trim()
+                : "";
+            const apelido =
+              typeof item["apelido"] === "string"
+                ? item["apelido"].trim()
+                : "";
+
+            if (!nome && !apelido) {
+              return null;
+            }
+
+            return {
+              nome,
+              apelido,
+            };
+          })
+          .filter(
+            (
+              passageiro,
+            ): passageiro is {
+              nome: string;
+              apelido: string;
+            } => passageiro !== null,
+          )
+      : [];
+
+    viagensParaIa.push({
+      titulo,
+      origem,
+      destino,
+      dataInicio,
+      dataFim,
+      numeroPassageiros:
+        typeof viagem.numero_passageiros === "number" &&
+        Number.isFinite(viagem.numero_passageiros) &&
+        viagem.numero_passageiros >= 1
+          ? Math.floor(viagem.numero_passageiros)
+          : null,
+      passageiros,
+    });
+  }
+
+  return {
+    intervalos,
+    viagensParaIa,
+  };
+}
+
 export function AppShell({ children }: { children: ReactNode }) {
   const { session } = useSession();
   const { t } = useIdioma();
@@ -141,20 +280,61 @@ export function AppShell({ children }: { children: ReactNode }) {
             preferenciaTipada.ultima_analise_gmail_em ?? null;
 
           /*
-           * A pesquisa automática usa uma janela móvel no Gmail e não depende
-           * de `ultima_analise_gmail_em` como fronteira. Assim, um email que
-           * chegue entre duas rondas não pode ficar perdido atrás de um
-           * timestamp avançado.
+           * A deteção automática usa as viagens existentes como filtro de
+           * pesquisa no Gmail. Cada viagem é pesquisada com uma margem de
+           * dois dias antes e depois das respetivas datas.
            *
-           * A tabela `emails_gmail_processados` faz a deduplicação.
+           * O mesmo contexto é enviado à IA para que a decisão final tenha em
+           * conta as datas, a origem, o destino e os passageiros da viagem.
+           *
+           * `ultima_analise_gmail_em` continua a servir apenas como marca
+           * temporal da última ronda concluída; não é usado como fronteira da
+           * pesquisa Gmail.
            */
-          const desde = ultimaAnalise;
+          const { data: viagens, error: erroViagens } = await supabase
+            .from("viagens")
+            .select(
+              "id, titulo, origem, destino, data_inicio, data_fim, numero_passageiros, passageiros",
+            )
+            .eq("user_id", userIdSeguro)
+            .order("data_inicio", {
+              ascending: true,
+              nullsFirst: false,
+            });
+
+          if (erroViagens || cancelado) {
+            if (erroViagens) {
+              console.error(
+                "Erro ao carregar viagens para a deteção automática do Gmail:",
+                erroViagens,
+              );
+            }
+
+            return;
+          }
+
+          const {
+            intervalos,
+            viagensParaIa,
+          } = viagensParaPesquisaEIA(
+            (viagens ?? []) as unknown as ViagemParaPesquisaGmail[],
+          );
+
+          if (intervalos.length === 0) {
+            console.info(
+              "Gmail: deteção automática sem viagens válidas para pesquisar",
+            );
+
+            return;
+          }
 
           const emails = await procurarEmails({
             data: {
-              desde,
+              desde: ultimaAnalise,
               limite: GMAIL_AUTOMACAO_LIMITE,
               automatico: true,
+              modo: "viagens",
+              intervalos,
             },
           });
 
@@ -174,7 +354,8 @@ export function AppShell({ children }: { children: ReactNode }) {
               .eq("user_id", userIdSeguro);
 
             console.info("Gmail: deteção automática sem novos candidatos", {
-              desde,
+              ultimaAnalise,
+              intervalos: intervalos.length,
             });
 
             return;
@@ -184,7 +365,8 @@ export function AppShell({ children }: { children: ReactNode }) {
 
           console.info("Gmail: deteção automática encontrou candidatos", {
             quantidade: emails.length,
-            desde,
+            ultimaAnalise,
+            intervalos: intervalos.length,
             primeiroAssunto: emails[0]?.assunto ?? "",
           });
 
@@ -231,7 +413,8 @@ export function AppShell({ children }: { children: ReactNode }) {
 
             console.info("Gmail: candidatos já processados", {
               quantidade: emails.length,
-              desde,
+              ultimaAnalise,
+              intervalos: intervalos.length,
             });
 
             return;
@@ -266,6 +449,8 @@ export function AppShell({ children }: { children: ReactNode }) {
                   nome: email.assunto || "Email Gmail",
                   texto: `${email.assunto}\n\n${email.texto}`.trim(),
                   anexos: email.anexos,
+                  modoAnalise: "viagens",
+                  viagens: viagensParaIa,
                 },
               });
 

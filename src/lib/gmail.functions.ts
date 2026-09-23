@@ -680,23 +680,29 @@ export const emailsDeViagem = createServerFn({ method: "GET" })
       }
 
       /*
-       * Existem agora dois modos manuais distintos:
+       * Existem dois modos manuais distintos e a deteção automática pode
+       * receber os mesmos intervalos das viagens:
        *
-       * 1. `viagens`: o Gmail é usado apenas para localizar mensagens dentro
-       *    dos intervalos das viagens. O conteúdo decide depois se são ou não
-       *    relevantes. Não usamos palavras-chave de viagem como barreira,
-       *    porque isso poderia eliminar reservas legítimas.
+       * 1. `viagens`: o Gmail é usado para localizar mensagens dentro dos
+       *    intervalos das viagens. O conteúdo decide depois se são ou não
+       *    relevantes.
        *
        * 2. `todos`: não existe limite temporal nem pré-filtro por palavras.
-       *    A pesquisa pode percorrer toda a caixa Gmail e a classificação final
+       *    A pesquisa pode percorrer a caixa Gmail e a classificação final
        *    pertence à IA.
        *
-       * A deteção automática continua deliberadamente mais restrita: é uma
-       * rotina periódica e não deve tentar descarregar a caixa inteira.
+       * Na deteção automática, quando o chamador fornece `intervalos`, esses
+       * intervalos têm prioridade sobre a janela fixa de 7 dias. Assim, o
+       * AppShell pode procurar diretamente nas janelas das viagens existentes.
+       *
+       * Mantemos `newer_than:7d` apenas como fallback de segurança quando a
+       * deteção automática não recebe intervalos válidos.
        */
       let filtroData = "";
 
-      if (data.automatico) {
+      if (data.automatico && data.intervalos.length > 0) {
+        filtroData = filtroPorIntervalos(data.intervalos);
+      } else if (data.automatico) {
         filtroData = "newer_than:7d";
       } else if (data.modo === "viagens" && data.intervalos.length > 0) {
         filtroData = filtroPorIntervalos(data.intervalos);
@@ -719,12 +725,12 @@ export const emailsDeViagem = createServerFn({ method: "GET" })
 
       /*
        * A deteção automática não usa uma expressão grande de palavras-chave.
-       * Essa pesquisa com muitos OR torna a consulta Gmail muito mais cara e
-       * pode provocar o limite `total_query_cost` da Gmail API.
+       * A análise semântica posterior decide se cada email é realmente uma
+       * comunicação de viagem.
        *
-       * No modo automático basta restringir às mensagens recentes. A análise
-       * semântica posterior decide se cada email é realmente uma comunicação
-       * de viagem.
+       * Quando existem intervalos de viagem, o filtro temporal é construído
+       * a partir dessas janelas; quando não existem, usamos os últimos 7 dias
+       * como fallback para a rotina periódica.
        *
        * Nos modos manuais: `viagens` usa os intervalos das viagens e `todos`
        * pesquisa a caixa inteira sem palavras-chave.
@@ -735,7 +741,7 @@ export const emailsDeViagem = createServerFn({ method: "GET" })
 
       const limiteSolicitado =
         data.automatico
-          ? Math.max(5, Math.min(Math.floor(data.limite ?? 10), 10))
+          ? Math.max(1, Math.min(Math.floor(data.limite ?? 3), 10))
           : Math.max(1, Math.min(Math.floor(data.limite ?? 100), 1000));
 
       const LIMITE_PAGINA_GMAIL = 500;
