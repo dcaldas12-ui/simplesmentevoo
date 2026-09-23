@@ -19,6 +19,23 @@ export type AnaliseDocumentoAnexo = {
   data: string;
 };
 
+export type AnaliseDocumentoPassageiro = {
+  nome: string;
+  apelido: string;
+};
+
+export type AnaliseDocumentoViagem = {
+  titulo: string;
+  origem: string;
+  destino: string;
+  dataInicio: string;
+  dataFim: string;
+  numeroPassageiros?: number | null;
+  passageiros?: AnaliseDocumentoPassageiro[] | null;
+};
+
+export type ModoAnaliseDocumento = "viagens" | "todos";
+
 export type AnaliseDocumentoInput = {
   /** Nome do ficheiro ou assunto do email. */
   nome: string;
@@ -37,6 +54,16 @@ export type AnaliseDocumentoInput = {
    * O email e todos os anexos são tratados pela IA como um único conjunto.
    */
   anexos?: AnaliseDocumentoAnexo[] | null;
+
+  /**
+   * Modo de procura. No modo "viagens", usa as viagens existentes como
+   * contexto temporal e semântico. No modo "todos", analisa a comunicação
+   * sem esse filtro temporal.
+   */
+  modoAnalise?: ModoAnaliseDocumento;
+
+  /** Viagens existentes usadas como contexto no modo personalizado. */
+  viagens?: AnaliseDocumentoViagem[] | null;
 };
 
 export type EstadoExtracao =
@@ -82,6 +109,9 @@ export type AnaliseDocumentoResultado = {
 
   /** Campos mínimos em falta na ficha principal. */
   camposEmFalta: string[];
+
+  /** Nomes dos anexos que a IA considerou materialmente relevantes. */
+  anexosRelevantes: string[];
 
   /** true quando a análise foi feita por IA; false quando houve fallback/erro. */
   porIa: boolean;
@@ -278,12 +308,106 @@ function validar(data: unknown): AnaliseDocumentoInput {
     }
   }
 
+  const modoAnalise: ModoAnaliseDocumento =
+    d["modoAnalise"] === "viagens"
+      ? "viagens"
+      : "todos";
+
+  const viagensEntrada = Array.isArray(
+    d["viagens"],
+  )
+    ? d["viagens"]
+    : [];
+
+  const viagens: AnaliseDocumentoViagem[] = [];
+
+  for (const valor of viagensEntrada.slice(0, 20)) {
+    if (!valor || typeof valor !== "object") {
+      continue;
+    }
+
+    const viagem = valor as Record<string, unknown>;
+    const titulo = limparTexto(viagem["titulo"], 200);
+    const origem = limparTexto(viagem["origem"], 120);
+    const destino = limparTexto(viagem["destino"], 120);
+    const dataInicio = limparTexto(viagem["dataInicio"], 20);
+    const dataFim = limparTexto(viagem["dataFim"], 20);
+
+    if (
+      !titulo ||
+      !origem ||
+      !destino ||
+      !/^\d{4}-\d{2}-\d{2}$/.test(dataInicio) ||
+      !/^\d{4}-\d{2}-\d{2}$/.test(dataFim)
+    ) {
+      continue;
+    }
+
+    const numeroPassageirosBruto =
+      viagem["numeroPassageiros"];
+    const numeroPassageiros =
+      typeof numeroPassageirosBruto === "number" &&
+      Number.isFinite(numeroPassageirosBruto) &&
+      numeroPassageirosBruto >= 1
+        ? Math.floor(numeroPassageirosBruto)
+        : null;
+
+    const passageirosEntrada = Array.isArray(
+      viagem["passageiros"],
+    )
+      ? viagem["passageiros"]
+      : [];
+
+    const passageiros = passageirosEntrada
+      .slice(0, 20)
+      .map((passageiro) => {
+        if (!passageiro || typeof passageiro !== "object") {
+          return null;
+        }
+
+        const p = passageiro as Record<string, unknown>;
+        const nomePassageiro = limparTexto(
+          p["nome"],
+          100,
+        );
+        const apelido = limparTexto(
+          p["apelido"],
+          100,
+        );
+
+        if (!nomePassageiro && !apelido) {
+          return null;
+        }
+
+        return {
+          nome: nomePassageiro,
+          apelido,
+        };
+      })
+      .filter(
+        (passageiro): passageiro is AnaliseDocumentoPassageiro =>
+          passageiro !== null,
+      );
+
+    viagens.push({
+      titulo,
+      origem,
+      destino,
+      dataInicio,
+      dataFim,
+      numeroPassageiros,
+      passageiros,
+    });
+  }
+
   return {
     nome,
     texto,
     imagem,
     pdf,
     anexos,
+    modoAnalise,
+    viagens,
   };
 }
 
@@ -1147,6 +1271,14 @@ const ESQUEMA = {
       description:
         "Explicação curta e factual da decisão.",
     },
+    anexosRelevantes: {
+      type: "array",
+      description:
+        "Nomes exatos dos anexos que contêm informação de viagem concreta e materialmente útil. Ignora imagens de assinatura, logos, elementos decorativos e outros anexos sem valor de viagem.",
+      items: {
+        type: "string",
+      },
+    },
     entidades: {
       type: "array",
       description:
@@ -1164,18 +1296,165 @@ const ESQUEMA = {
   required: [
     "relevante",
     "motivoRelevancia",
+    "anexosRelevantes",
     "entidades",
   ],
 } as const;
+
+function limparAnexosRelevantes(
+  bruto: unknown,
+  input: AnaliseDocumentoInput,
+): string[] {
+  if (!Array.isArray(bruto)) {
+    return [];
+  }
+
+  const anexos = input.anexos ?? [];
+  const porNomeNormalizado = new Map<string, string>();
+
+  for (const anexo of anexos) {
+    const nome = anexo.nome.trim();
+    if (nome) {
+      porNomeNormalizado.set(
+        normalizarTexto(nome),
+        nome,
+      );
+    }
+  }
+
+  const resultado: string[] = [];
+  const vistos = new Set<string>();
+
+  for (const valor of bruto.slice(0, 8)) {
+    const nome = limparTexto(valor, 200);
+    if (!nome) {
+      continue;
+    }
+
+    const canonico =
+      porNomeNormalizado.get(
+        normalizarTexto(nome),
+      );
+
+    if (!canonico) {
+      continue;
+    }
+
+    const chave = normalizarTexto(canonico);
+    if (vistos.has(chave)) {
+      continue;
+    }
+
+    vistos.add(chave);
+    resultado.push(canonico);
+  }
+
+  return resultado;
+}
+
+function nomeAnexoIgnorado(nome: string): boolean {
+  const normalizado = normalizarTexto(nome);
+
+  return /(\bimage\d*\b|\bspacer\b|\bsignature\b|\bassinatura\b|\blogo\b|\btracking\b|\bfacebook\b|\binstagram\b|\bfooter\b)/i.test(
+    normalizado,
+  );
+}
+
+function deslocarDataIso(
+  data: string,
+  dias: number,
+): string {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(data)) {
+    return data;
+  }
+
+  const valor = new Date(`${data}T00:00:00Z`);
+  if (Number.isNaN(valor.getTime())) {
+    return data;
+  }
+
+  valor.setUTCDate(valor.getUTCDate() + dias);
+  return valor.toISOString().slice(0, 10);
+}
+
+function contextoViagensParaPrompt(
+  input: AnaliseDocumentoInput,
+): string {
+  const viagens = input.viagens ?? [];
+
+  if (input.modoAnalise !== "viagens") {
+    return "Modo de análise: todos os emails. Não existe filtro temporal por viagem.";
+  }
+
+  if (viagens.length === 0) {
+    return [
+      "Modo de análise: procurar relação com as viagens do utilizador.",
+      "Não foram fornecidas viagens válidas como contexto. Neste caso, não atribuas uma comunicação a uma viagem inexistente; avalia apenas se existe informação concreta de viagem.",
+    ].join("\n");
+  }
+
+  const linhas = [
+    "Modo de análise: procurar informação relacionada com as viagens existentes do utilizador.",
+    "As datas são o principal eixo de relevância. Para cada viagem, considera como janela de análise a data de início menos 2 dias até à data de fim mais 2 dias.",
+    "Uma reserva, serviço, bilhete ou documento com apenas parte do intervalo dentro dessa janela pode ser relevante. Não é necessário que o serviço cubra toda a viagem.",
+    "Origem e destino da viagem são pistas complementares e nunca são uma condição obrigatória por si só.",
+    "Se uma comunicação concreta estiver claramente fora de todas as janelas temporais das viagens, considera-a irrelevante neste modo, mesmo que seja relacionada com viagens.",
+    "Quando não existir uma data clara no conteúdo, usa nomes de passageiros, locais, fornecedor e outros indícios explícitos apenas como contexto complementar; não inventes uma associação.",
+    "VIAGENS EXISTENTES:",
+  ];
+
+  for (const viagem of viagens) {
+    const janelaInicio = deslocarDataIso(
+      viagem.dataInicio,
+      -2,
+    );
+    const janelaFim = deslocarDataIso(
+      viagem.dataFim,
+      2,
+    );
+
+    const passageiros = (
+      viagem.passageiros ?? []
+    )
+      .map((passageiro) =>
+        `${passageiro.nome} ${passageiro.apelido}`.trim(),
+      )
+      .filter(Boolean);
+
+    linhas.push(
+      [
+        `- Título: ${viagem.titulo}`,
+        `  Origem: ${viagem.origem}`,
+        `  Destino: ${viagem.destino}`,
+        `  Período da viagem: ${viagem.dataInicio} a ${viagem.dataFim}`,
+        `  Janela de análise: ${janelaInicio} a ${janelaFim}`,
+        viagem.numeroPassageiros
+          ? `  Número de passageiros: ${viagem.numeroPassageiros}`
+          : "  Número de passageiros: não indicado",
+        passageiros.length > 0
+          ? `  Passageiros identificados: ${passageiros.join(", ")}`
+          : "  Passageiros identificados: nenhum nome indicado",
+      ].join("\n"),
+    );
+  }
+
+  return linhas.join("\n");
+}
 
 function textoParaPrompt(
   input: AnaliseDocumentoInput,
 ): string {
   return [
+    contextoViagensParaPrompt(input),
     `Assunto/nome: ${input.nome}`,
     input.texto
       ? `Conteúdo textual:\n${input.texto}`
       : "",
+    input.anexos && input.anexos.length > 0
+      ? `Anexos disponíveis: ${input.anexos
+          .map((anexo) => anexo.nome)
+          .join(", ")}`
+      : "Anexos disponíveis: nenhum",
     `Data de hoje: ${new Date()
       .toISOString()
       .slice(0, 10)}`,
@@ -1293,43 +1572,45 @@ function criarPrompt(
     "",
     "Analisa este conjunto de informação para a aplicação de viagens ViatOrbis.",
     "",
-    "O conteúdo textual e todas as imagens/PDFs anexados pertencem ao mesmo contexto. Lê-os em conjunto e cruza a informação entre eles.",
+    "O email e todos os anexos fornecidos pertencem ao mesmo contexto. Lê o conteúdo textual e os anexos em conjunto e cruza a informação entre eles antes de decidir.",
     "",
     "OBJETIVO PRINCIPAL",
-    "Decide primeiro se existe uma comunicação concreta relacionada com uma viagem, reserva, bilhete, transporte, alojamento ou outro serviço/documento específico do utilizador.",
+    "Decide se existe informação concreta, específica e potencialmente útil para uma viagem do utilizador.",
     "",
-    "Usa relevante=true quando o conteúdo representar ou comunicar uma operação concreta, por exemplo: reserva, confirmação, bilhete, cartão de embarque, voucher, alteração, cancelamento, recibo/comprovativo ligado a uma compra, ou instruções operacionais de uma reserva/viagem específica.",
+    "Considera relevantes comunicações como reservas, confirmações, bilhetes, cartões de embarque, vouchers, alterações, cancelamentos, recibos/comprovativos ligados a uma compra e instruções operacionais de um serviço ou viagem específica.",
     "",
-    "Usa relevante=false para newsletters, publicidade, campanhas, descontos, ofertas genéricas, inspiração, artigos, conteúdo editorial, recomendações genéricas ou mensagens comerciais sem uma operação/serviço concreto.",
+    "Considera irrelevantes newsletters, publicidade, campanhas, descontos, ofertas genéricas, inspiração, conteúdo editorial, recomendações genéricas e mensagens comerciais que não correspondam a uma operação ou serviço concreto.",
     "",
-    "Não classifiques como relevante apenas porque aparecem palavras como hotel, flight, travel, booking, destination, aeroporto, viagem ou turismo.",
+    "Não marques como relevante apenas porque aparecem palavras como hotel, flight, travel, booking, destination, aeroporto, viagem ou turismo.",
+    "",
+    input.modoAnalise === "viagens"
+      ? "No modo personalizado, a relação com as viagens existentes deve respeitar as janelas temporais indicadas no contexto. A data é o principal eixo de decisão; a origem/destino e os passageiros são pistas complementares."
+      : "No modo de análise de todos os emails, não uses as datas das viagens existentes como filtro e procura comunicações concretas de viagem em qualquer período.",
+    "",
+    "IMPORTANTE SOBRE INTERVALOS",
+    "Não procures apenas acontecimentos que atravessem toda a viagem. Uma viagem de 10 a 20 de agosto pode ter um hotel de 10 a 12, outro de 12 a 16 e outro de 16 a 20; cada serviço deve poder ser identificado como entidade própria quando existir material suficiente.",
+    "Um serviço que intersecte apenas uma parte da janela de análise pode ser relevante. Um serviço claramente fora de todas as janelas do contexto não deve ser sugerido no modo personalizado.",
+    "",
+    "ANEXOS",
+    "Analisa também visualmente e estruturalmente os PDFs e imagens fornecidos. Decide individualmente quais os anexos que contêm informação concreta de viagem materialmente útil.",
+    "Na saída anexosRelevantes, usa apenas os nomes exatos dos anexos fornecidos. Não inventes nomes.",
+    "Ignora anexos que sejam apenas assinaturas, logótipos, elementos decorativos, separadores, imagens de tracking ou outros elementos sem informação útil de viagem, mesmo que estejam tecnicamente anexados ao email. Um nome como image001.jpg, por exemplo, não deve ser marcado como relevante só por existir.",
+    "Se o email contiver informação concreta mas nenhum anexo tiver valor próprio, relevante pode ser true e anexosRelevantes deve ser uma lista vazia.",
     "",
     "ENTIDADES",
-    "Extrai todas as entidades de viagem distintas e materialmente úteis encontradas no conjunto. Se o mesmo serviço aparecer no email e num anexo, junta a informação numa única entidade em vez de criar duplicados.",
-    "",
-    "Um email pode conter mais de uma entidade. Por exemplo, uma confirmação de viagem pode conter voo de ida e voo de regresso; uma reserva pode ter transporte e hotel; uma alteração pode referir um serviço existente. Cria uma entidade separada apenas quando representar um item de viagem distinto.",
-    "",
-    "Para transporte usa categoria=transporte e usa subcategoria para distinguir o tipo, como autocarro, comboio, ferry, barco, metro, aluguer de carro ou outro subtipo concreto.",
+    "Extrai todas as entidades de viagem distintas e materialmente úteis encontradas no conjunto email + anexos. Se o mesmo serviço aparecer no email e num anexo, junta a informação numa única entidade em vez de criar duplicados.",
+    "Um email pode conter mais de uma entidade. Por exemplo, uma confirmação pode conter voo de ida e voo de regresso; uma reserva pode combinar transporte e hotel; uma alteração pode referir um serviço já existente.",
     "",
     "EXTRAÇÃO",
     "Extrai apenas informação efetivamente presente no texto ou legível nas imagens/PDFs.",
-    "",
     "Nunca inventes cidades, aeroportos, datas, horas, passageiros, referências, códigos, preços ou outros dados.",
-    "",
-    "Não deduzas uma rota apenas a partir de um número de voo, de uma companhia aérea, de uma cidade mencionada noutra parte do email ou de conhecimento externo. A origem e o destino só devem ser preenchidos quando estiverem indicados ou claramente legíveis no material fornecido.",
-    "",
+    "Não deduzas uma rota apenas a partir de um número de voo, de uma companhia aérea, de uma cidade mencionada noutra parte do email ou de conhecimento externo.",
     "Não transformes uma data sem hora numa hora inventada. Quando só a data estiver disponível, usa AAAA-MM-DD.",
-    "",
     "Para voos procura, quando existirem: passageiro, companhia, número do voo, origem, destino, partida, chegada, embarque, terminal, porta, assento, grupo, bagagem e referência/PNR.",
-    "",
     "Para hotéis procura, quando existirem: fornecedor, hóspede, nome do alojamento, morada, check-in, check-out, referência, quarto/tipologia, condições e contacto.",
-    "",
     "Para transportes procura, quando existirem: operador, fornecedor, passageiro, origem, destino, partida, chegada, referência, lugar e subtipo do transporte.",
-    "",
     "Para transfers procura, quando existirem: fornecedor, operador, passageiro, recolha/origem, destino, data/hora, referência, morada e contacto.",
-    "",
     "Para bilhetes/atividades procura, quando existirem: entidade/fornecedor, titular, local/evento, data/hora, fim, referência, código, condições e contacto.",
-    "",
     "Para documentos ou informação operacional procura a informação concreta que possa ser útil numa viagem específica.",
     "",
     "POR CONFIRMAR",
@@ -1338,6 +1619,15 @@ function criarPrompt(
     "SAÍDA",
     "Responde apenas com JSON válido de acordo com o esquema fornecido. Não uses markdown nem texto fora do JSON.",
   ].join("\n");
+}
+
+function anexosRelevantesFallback(
+  input: AnaliseDocumentoInput,
+): string[] {
+  return (input.anexos ?? [])
+    .filter((anexo) => !nomeAnexoIgnorado(anexo.nome))
+    .map((anexo) => anexo.nome)
+    .slice(0, 8);
 }
 
 function resultadoFallback(
@@ -1380,6 +1670,9 @@ function resultadoFallback(
       semantica.estado,
     camposEmFalta:
       semantica.camposEmFalta,
+    anexosRelevantes: relevante
+      ? anexosRelevantesFallback(data)
+      : [],
     porIa: false,
     nota: mensagem,
   };
@@ -1533,6 +1826,12 @@ export const analisarDocumento =
                   )
                 : "";
 
+            const anexosRelevantes =
+              limparAnexosRelevantes(
+                dadosIa["anexosRelevantes"],
+                data,
+              );
+
             const itens =
               relevante
                 ? combinarItensComFichaRaiz(
@@ -1565,6 +1864,7 @@ export const analisarDocumento =
               itens,
               estadoExtracao,
               camposEmFalta,
+              anexosRelevantes,
               porIa: true,
               nota: relevante
                 ? itens.length > 1
