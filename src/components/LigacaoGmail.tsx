@@ -44,6 +44,8 @@ import { supabase } from "@/integrations/supabase/client";
 const CONNECTOR_ID = "google_mail";
 const GMAIL_OAUTH_STORAGE_KEY = "viatorbis:gmail-oauth-result";
 const GMAIL_AUTOMACAO_EVENT = "viatorbis:gmail-auto-change";
+const GMAIL_PESQUISA_VIAGENS_HISTORICO_DIAS = 180;
+const GMAIL_PESQUISA_VIAGENS_MARGEM_FIM_DIAS = 2;
 
 type OAuthStorageResult =
   | {
@@ -1316,6 +1318,92 @@ export function LigacaoGmail() {
     });
   }
 
+  function deslocarDataPesquisa(
+    valor: string,
+    dias: number,
+  ): string | null {
+    const correspondencia = valor.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+
+    if (!correspondencia) {
+      return null;
+    }
+
+    const data = new Date(
+      Date.UTC(
+        Number(correspondencia[1]),
+        Number(correspondencia[2]) - 1,
+        Number(correspondencia[3]),
+      ),
+    );
+
+    if (Number.isNaN(data.getTime())) {
+      return null;
+    }
+
+    data.setUTCDate(data.getUTCDate() + dias);
+    return data.toISOString().slice(0, 10);
+  }
+
+  function prepararIntervalosPesquisaGmail(
+    lista: ViagemEscolha[],
+  ): Array<{ inicio: string; fim: string }> {
+    const intervalos = lista.flatMap((viagem) => {
+      const dataInicio = viagem.data_inicio?.trim() ?? "";
+      const dataFim = viagem.data_fim?.trim() ?? "";
+
+      if (
+        !/^\d{4}-\d{2}-\d{2}$/.test(dataInicio) ||
+        !/^\d{4}-\d{2}-\d{2}$/.test(dataFim)
+      ) {
+        return [];
+      }
+
+      const inicio = deslocarDataPesquisa(
+        dataInicio,
+        -GMAIL_PESQUISA_VIAGENS_HISTORICO_DIAS,
+      );
+      const fim = deslocarDataPesquisa(
+        dataFim,
+        GMAIL_PESQUISA_VIAGENS_MARGEM_FIM_DIAS,
+      );
+
+      if (!inicio || !fim || inicio > fim) {
+        return [];
+      }
+
+      return [{ inicio, fim }];
+    });
+
+    const ordenados = [...intervalos].sort((a, b) =>
+      a.inicio.localeCompare(b.inicio),
+    );
+
+    const fundidos: Array<{ inicio: string; fim: string }> = [];
+
+    for (const intervalo of ordenados) {
+      const anterior = fundidos[fundidos.length - 1];
+
+      if (!anterior) {
+        fundidos.push({ ...intervalo });
+        continue;
+      }
+
+      const fimAnterior = deslocarDataPesquisa(anterior.fim, 1);
+
+      if (fimAnterior && intervalo.inicio <= fimAnterior) {
+        if (intervalo.fim > anterior.fim) {
+          anterior.fim = intervalo.fim;
+        }
+        continue;
+      }
+
+      fundidos.push({ ...intervalo });
+    }
+
+    return fundidos;
+  }
+
+
   async function ligar() {
   /*
    * Limpamos qualquer resultado OAuth antigo antes de começar.
@@ -1505,7 +1593,18 @@ export function LigacaoGmail() {
         return;
       }
 
-      const emails = await procurarEmails();
+      const intervalosPesquisa =
+        modo === "viagens"
+          ? prepararIntervalosPesquisaGmail(viagens)
+          : [];
+
+      const emails = await procurarEmails({
+        data: {
+          modo,
+          intervalos: intervalosPesquisa,
+          limite: 100,
+        },
+      });
 
       if (emails.length === 0) {
         toast.info("Não encontrámos candidatos para analisar.");
@@ -2774,9 +2873,10 @@ export function LigacaoGmail() {
             </div>
           ) : (
             <p className="mt-2 text-xs text-muted-foreground">
-              O modo personalizado usa as suas viagens e uma margem de ±2 dias
-              em torno de cada período. O modo "Analisar todos os emails" faz
-              uma pesquisa sem esse filtro temporal.
+              O modo personalizado pesquisa desde 180 dias antes de cada viagem
+              até 2 dias depois do fim, usando as datas como principal filtro. O
+              modo "Analisar todos os emails" faz uma pesquisa sem esse filtro
+              temporal.
             </p>
           )}
         </>
