@@ -679,13 +679,99 @@ export const emailsDeViagem = createServerFn({ method: "GET" })
         return `{${partes.join(" ")}}`;
       }
 
+      type IntervaloUnix = {
+        inicio: number;
+        fim: number;
+      };
+
+      const DURACAO_BLOCO_PESQUISA_MS = 31 * 24 * 60 * 60 * 1000;
+
+      function intervalosUnixParaPesquisaHistorica(
+        intervalos: Array<{ inicio: string; fim: string }>,
+      ): IntervaloUnix[] {
+        const intervalosValidos = intervalos
+          .map((intervalo) => {
+            const inicio = timestampUnixSegundos(intervalo.inicio);
+            const fimBase = timestampUnixSegundos(intervalo.fim);
+
+            if (
+              inicio === null ||
+              fimBase === null ||
+              fimBase < inicio
+            ) {
+              return null;
+            }
+
+            /*
+             * Trabalhamos internamente com `fim` exclusivo. Isto permite
+             * dividir a janela em blocos sem perder o último segundo/dia.
+             */
+            const fimTemApenasData = /^\d{4}-\d{2}-\d{2}$/.test(
+              intervalo.fim,
+            );
+
+            const fim =
+              fimTemApenasData
+                ? fimBase + 24 * 60 * 60
+                : fimBase + 1;
+
+            return {
+              inicio: Math.max(0, inicio),
+              fim,
+            };
+          })
+          .filter((intervalo): intervalo is IntervaloUnix => Boolean(intervalo));
+
+        intervalosValidos.sort((a, b) => a.inicio - b.inicio);
+
+        /*
+         * As viagens podem gerar janelas sobrepostas. Unimo-las antes de
+         * dividir em blocos para não pesquisar o mesmo período várias vezes.
+         */
+        const intervalosUnidos: IntervaloUnix[] = [];
+
+        for (const intervalo of intervalosValidos) {
+          const anterior = intervalosUnidos[intervalosUnidos.length - 1];
+
+          if (!anterior || intervalo.inicio > anterior.fim) {
+            intervalosUnidos.push({ ...intervalo });
+            continue;
+          }
+
+          anterior.fim = Math.max(anterior.fim, intervalo.fim);
+        }
+
+        return intervalosUnidos.flatMap((intervalo) => {
+          const blocos: IntervaloUnix[] = [];
+          let inicio = intervalo.inicio;
+
+          while (inicio < intervalo.fim) {
+            const fim = Math.min(
+              intervalo.fim,
+              inicio + DURACAO_BLOCO_PESQUISA_MS,
+            );
+
+            blocos.push({
+              inicio,
+              fim,
+            });
+
+            inicio = fim;
+          }
+
+          return blocos;
+        });
+      }
+
       /*
        * Existem dois modos manuais distintos e a deteção automática pode
        * receber os mesmos intervalos das viagens:
        *
-       * 1. `viagens`: o Gmail é usado para localizar mensagens dentro dos
-       *    intervalos das viagens. O conteúdo decide depois se são ou não
-       *    relevantes.
+       * 1. `viagens`: o Gmail é usado para localizar mensagens dentro das
+       *    janelas temporais das viagens. Na pesquisa histórica, cada janela
+       *    é dividida em blocos de cerca de 31 dias. Isto evita que os emails
+       *    mais recentes ocupem todo o limite e impede que reservas antigas
+       *    fiquem sem ser consideradas.
        *
        * 2. `todos`: não existe limite temporal nem pré-filtro por palavras.
        *    A pesquisa pode percorrer a caixa Gmail e a classificação final
@@ -732,11 +818,21 @@ export const emailsDeViagem = createServerFn({ method: "GET" })
        * a partir dessas janelas; quando não existem, usamos os últimos 7 dias
        * como fallback para a rotina periódica.
        *
-       * Nos modos manuais: `viagens` usa os intervalos das viagens e `todos`
-       * pesquisa a caixa inteira sem palavras-chave.
+       * Nos modos manuais:
+       * - `viagens` pesquisa historicamente por blocos temporais, mantendo um
+       *   limite global de candidatos e distribuindo-o pelos blocos.
+       * - `todos` pesquisa a caixa inteira sem palavras-chave.
        */
-      const consultaCompleta = filtroData;
+      const pesquisaHistorica =
+        !data.automatico &&
+        data.modo === "viagens" &&
+        data.intervalos.length > 0;
 
+      const blocosHistoricos = pesquisaHistorica
+        ? intervalosUnixParaPesquisaHistorica(data.intervalos)
+        : [];
+
+      const consultaCompleta = filtroData;
       const consulta = encodeURIComponent(consultaCompleta);
 
       const limiteSolicitado =
@@ -746,92 +842,164 @@ export const emailsDeViagem = createServerFn({ method: "GET" })
 
       const LIMITE_PAGINA_GMAIL = 500;
 
+      const quotasHistoricas =
+        blocosHistoricos.length > 0
+          ? blocosHistoricos.map((_, indice) => {
+              const base = Math.floor(
+                limiteSolicitado / blocosHistoricos.length,
+              );
+              const resto =
+                limiteSolicitado % blocosHistoricos.length;
+
+              return base + (indice < resto ? 1 : 0);
+            })
+          : [];
+
       console.info("Gmail: pesquisa de mensagens", {
         automatico: data.automatico === true,
         modo: data.modo,
-        consulta: consultaCompleta || "(caixa Gmail inteira)",
+        consulta: pesquisaHistorica
+          ? `${blocosHistoricos.length} bloco(s) históricos`
+          : consultaCompleta || "(caixa Gmail inteira)",
         limite: limiteSolicitado,
         intervalos: data.intervalos.length,
+        pesquisaHistorica,
+        quotasHistoricas: quotasHistoricas.length > 0
+          ? quotasHistoricas
+          : null,
       });
 
       /*
-       * O Gmail devolve no máximo 500 mensagens por página. Percorremos tantas
-       * páginas quantas forem necessárias para atingir o limite desta ronda.
-       * Assim, 100 mensagens já não significa "as primeiras 100" de uma única
-       * página quando o filtro tiver paginação.
+       * No modo histórico por viagens não usamos apenas os primeiros N
+       * resultados da janela completa. Pesquisamos cada bloco temporal
+       * separadamente e atribuímos uma pequena quota a cada bloco.
+       *
+       * Assim, numa viagem com vários meses de histórico, um bloco recente
+       * cheio de emails irrelevantes não impede que outros blocos mais antigos
+       * também contribuam candidatos para a análise semântica.
        */
+      const consultasPesquisa = pesquisaHistorica
+        ? blocosHistoricos
+            .map((bloco, indice) => ({
+              consulta: `after:${Math.max(0, bloco.inicio - 1)} before:${bloco.fim}`,
+              limite: quotasHistoricas[indice] ?? 0,
+            }))
+            .filter((pesquisa) => pesquisa.limite > 0)
+        : [
+            {
+              consulta: consultaCompleta,
+              limite: limiteSolicitado,
+            },
+          ];
+
       const ids: string[] = [];
-      let pageToken: string | null = null;
+      const idsVistos = new Set<string>();
 
-      do {
-        const tokenQuery = pageToken
-          ? `&pageToken=${encodeURIComponent(pageToken)}`
-          : "";
-        const maxResults = Math.min(
-          LIMITE_PAGINA_GMAIL,
-          limiteSolicitado - ids.length,
-        );
+      for (const pesquisa of consultasPesquisa) {
+        let pageToken: string | null = null;
+        let totalNovosNesteBloco = 0;
+        const consultaDaPesquisa = pesquisa.consulta;
+        const limiteDaPesquisa = pesquisa.limite;
+        const consultaCodificada = encodeURIComponent(consultaDaPesquisa);
 
-        if (maxResults <= 0) {
-          break;
-        }
+        do {
+          const tokenQuery = pageToken
+            ? `&pageToken=${encodeURIComponent(pageToken)}`
+            : "";
 
-        const lista = await callAsAppUser({
-          gatewayBaseUrl: GATEWAY_BASE_URL,
-          connectionAPIKey: chave,
-          connectorId: CONNECTOR_ID,
-          path:
-            `/gmail/v1/users/me/messages?maxResults=${maxResults}` +
-            `&includeSpamTrash=false${consultaCompleta ? `&q=${consulta}` : ""}` +
-            tokenQuery,
-        });
-
-        if (!lista.ok) {
-          let detalhe = "";
-
-          try {
-            detalhe = await lista.text();
-          } catch {
-            detalhe = "";
-          }
-
-          console.error("Gmail: falha ao listar mensagens", {
-            status: lista.status,
-            statusText: lista.statusText,
-            detalhe,
-          });
-
-          throw new Error(
-            `Não foi possível ler os emails. HTTP ${lista.status}${
-              lista.statusText ? ` ${lista.statusText}` : ""
-            }${detalhe ? ` — ${detalhe}` : ""}`,
-          );
-        }
-
-        const pagina = (await lista.json()) as {
-          messages?: Mensagem[];
-          nextPageToken?: string;
-        };
-
-        for (const mensagem of pagina.messages ?? []) {
-          const id = mensagem.id;
-
-          if (id && !ids.includes(id)) {
-            ids.push(id);
-          }
-
-          if (ids.length >= limiteSolicitado) {
+          if (
+            (pesquisaHistorica &&
+              totalNovosNesteBloco >= limiteDaPesquisa) ||
+            (!pesquisaHistorica && ids.length >= limiteSolicitado)
+          ) {
             break;
           }
-        }
 
-        pageToken =
-          ids.length < limiteSolicitado && pagina.nextPageToken
-            ? pagina.nextPageToken
-            : null;
-      } while (pageToken);
+          const maxResultadosDaPagina = Math.min(
+            LIMITE_PAGINA_GMAIL,
+            pesquisaHistorica
+              ? limiteDaPesquisa - totalNovosNesteBloco
+              : limiteSolicitado - ids.length,
+          );
+
+          if (maxResultadosDaPagina <= 0) {
+            break;
+          }
+
+          const lista = await callAsAppUser({
+            gatewayBaseUrl: GATEWAY_BASE_URL,
+            connectionAPIKey: chave,
+            connectorId: CONNECTOR_ID,
+            path:
+              `/gmail/v1/users/me/messages?maxResults=${maxResultadosDaPagina}` +
+              `&includeSpamTrash=false${consultaDaPesquisa ? `&q=${consultaCodificada}` : ""}` +
+              tokenQuery,
+          });
+
+          if (!lista.ok) {
+            let detalhe = "";
+
+            try {
+              detalhe = await lista.text();
+            } catch {
+              detalhe = "";
+            }
+
+            console.error("Gmail: falha ao listar mensagens", {
+              status: lista.status,
+              statusText: lista.statusText,
+              detalhe,
+              consulta: consultaDaPesquisa,
+            });
+
+            throw new Error(
+              `Não foi possível ler os emails. HTTP ${lista.status}${
+                lista.statusText ? ` ${lista.statusText}` : ""
+              }${detalhe ? ` — ${detalhe}` : ""}`,
+            );
+          }
+
+          const pagina = (await lista.json()) as {
+            messages?: Mensagem[];
+            nextPageToken?: string;
+          };
+
+          for (const mensagem of pagina.messages ?? []) {
+            const id = mensagem.id;
+
+            if (!id || idsVistos.has(id)) {
+              continue;
+            }
+
+            idsVistos.add(id);
+            ids.push(id);
+            totalNovosNesteBloco += 1;
+
+            if (
+              (pesquisaHistorica &&
+                totalNovosNesteBloco >= limiteDaPesquisa) ||
+              (!pesquisaHistorica && ids.length >= limiteSolicitado)
+            ) {
+              break;
+            }
+          }
+
+          pageToken =
+            (pesquisaHistorica
+              ? totalNovosNesteBloco < limiteDaPesquisa
+              : ids.length < limiteSolicitado) &&
+            pagina.nextPageToken
+              ? pagina.nextPageToken
+              : null;
+        } while (pageToken);
+
+        if (ids.length >= limiteSolicitado) {
+          break;
+        }
+      }
 
       const resultados: Array<{
+
         id: string;
         assunto: string;
         texto: string;
