@@ -255,6 +255,21 @@ function esperarConclusao(popup: Window) {
   });
 }
 
+type GmailPesquisaInfo = {
+  modo: "viagens" | "todos";
+  periodo_inicio: string | null;
+  periodo_fim: string | null;
+  blocos_consultados: number;
+  blocos_completos: number;
+  mensagens_listadas: number;
+  mensagens_metadados: number;
+  mensagens_selecionadas: number;
+  candidatos_devolvidos: number;
+  pesquisa_completa: boolean;
+  limite_candidatos: number;
+  candidatos_novos?: number;
+};
+
 type EmailEncontrado = {
   id: string;
   assunto: string;
@@ -262,6 +277,8 @@ type EmailEncontrado = {
   remetente_email: string | null;
   recebido_em: string | null;
   anexos: GmailAnexo[];
+  pesquisa?: GmailPesquisaInfo;
+  pesquisaApenas?: boolean;
 };
 
 type ResultadoAnalise = {
@@ -560,6 +577,22 @@ function formatarData(data: string | null): string | null {
   }
 
   return dataLimpa;
+}
+
+function formatarDataPeriodo(data: string | null): string | null {
+  if (!data?.trim()) {
+    return null;
+  }
+
+  const tentativa = new Date(`${data.trim()}T00:00:00Z`);
+
+  if (Number.isNaN(tentativa.getTime())) {
+    return data.trim();
+  }
+
+  return new Intl.DateTimeFormat("pt-PT", {
+    dateStyle: "medium",
+  }).format(tentativa);
 }
 
 function normalizarValorVoo(valor: string | null): string {
@@ -1221,6 +1254,8 @@ export function LigacaoGmail() {
 
   const [analises, setAnalises] = useState<ResultadoAnalise[]>([]);
   const [ignorados, setIgnorados] = useState<string[]>([]);
+  const [ultimaPesquisa, setUltimaPesquisa] =
+    useState<GmailPesquisaInfo | null>(null);
   const [descobertasAutomaticas, setDescobertasAutomaticas] = useState<
     DescobertaAutomatica[]
   >([]);
@@ -1582,6 +1617,7 @@ export function LigacaoGmail() {
     setErro(null);
     setAnalises([]);
     setIgnorados([]);
+    setUltimaPesquisa(null);
 
     try {
       const viagensParaIa = prepararViagensParaIa(viagens);
@@ -1602,17 +1638,37 @@ export function LigacaoGmail() {
         data: {
           modo,
           intervalos: intervalosPesquisa,
-          limite: 100,
+          limite: modo === "viagens" ? 100 : 100,
+          incluirInfoPesquisa: true,
         },
       });
 
-      if (emails.length === 0) {
-        toast.info("Não encontrámos candidatos para analisar.");
+      const pesquisaInfo = emails.find((email) => email.pesquisa)?.pesquisa;
+      const emailsPesquisaveis = emails.filter(
+        (email) => !email.pesquisaApenas && Boolean(email.id),
+      );
+
+      if (pesquisaInfo) {
+        setUltimaPesquisa(pesquisaInfo);
+
+        toast.info(
+          pesquisaInfo.modo === "viagens"
+            ? `Pesquisa Gmail concluída: ${pesquisaInfo.mensagens_listadas} mensagens encontradas no período; ${pesquisaInfo.mensagens_selecionadas} selecionadas para análise detalhada.`
+            : `Pesquisa Gmail concluída: ${pesquisaInfo.mensagens_listadas} mensagens consultadas; ${pesquisaInfo.mensagens_selecionadas} selecionadas para análise detalhada.`,
+        );
+      }
+
+      if (emailsPesquisaveis.length === 0) {
+        toast.info(
+          pesquisaInfo?.modo === "viagens"
+            ? "A pesquisa terminou sem encontrar novos candidatos para analisar."
+            : "Não encontrámos candidatos para analisar.",
+        );
         return;
       }
 
       const emailsUnicos = Array.from(
-        new Map(emails.map((email) => [email.id, email])).values(),
+        new Map(emailsPesquisaveis.map((email) => [email.id, email])).values(),
       );
 
       const { data: processados, error: erroProcessados } = await supabase
@@ -1647,6 +1703,13 @@ export function LigacaoGmail() {
             processado.relevante === true)
         );
       });
+
+      if (pesquisaInfo) {
+        setUltimaPesquisa({
+          ...pesquisaInfo,
+          candidatos_novos: candidatos.length,
+        });
+      }
 
       if (candidatos.length === 0) {
         toast.info(
@@ -2759,6 +2822,69 @@ export function LigacaoGmail() {
                       ? "Estamos a procurar comunicações concretas de viagem em toda a pesquisa Gmail."
                       : "Estamos a cruzar os emails e anexos com as viagens existentes, usando as datas como principal filtro."}
                   </p>
+                </div>
+              </div>
+            </div>
+          ) : null}
+
+          {ultimaPesquisa ? (
+            <div className="mt-5 rounded-xl border border-border bg-card p-4">
+              <div className="flex items-start gap-3">
+                <Mail className="mt-0.5 size-4 shrink-0 text-primary" />
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold">
+                    Resultado da pesquisa Gmail
+                  </p>
+
+                  <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                    {ultimaPesquisa.periodo_inicio &&
+                    ultimaPesquisa.periodo_fim ? (
+                      <>
+                        Período pesquisado:{" "}
+                        <span className="font-medium text-foreground">
+                          {formatarDataPeriodo(ultimaPesquisa.periodo_inicio)}{" "}
+                          — {formatarDataPeriodo(ultimaPesquisa.periodo_fim)}
+                        </span>
+                        .{" "}
+                      </>
+                    ) : null}
+                    Foram consultadas{" "}
+                    <span className="font-medium text-foreground">
+                      {ultimaPesquisa.mensagens_listadas}
+                    </span>{" "}
+                    mensagens
+                    {ultimaPesquisa.blocos_consultados > 1
+                      ? ` em ${ultimaPesquisa.blocos_consultados} blocos`
+                      : ""}
+                    . Foram avaliados metadados de{" "}
+                    <span className="font-medium text-foreground">
+                      {ultimaPesquisa.mensagens_metadados}
+                    </span>{" "}
+                    mensagens e{" "}
+                    <span className="font-medium text-foreground">
+                      {ultimaPesquisa.mensagens_selecionadas}
+                    </span>{" "}
+                    foram selecionadas para leitura detalhada.
+                    {ultimaPesquisa.candidatos_novos !== undefined ? (
+                      <>
+                        {" "}
+                        Destas,{" "}
+                        <span className="font-medium text-foreground">
+                          {ultimaPesquisa.candidatos_novos}
+                        </span>{" "}
+                        chegaram à análise como novas ou pendentes.
+                      </>
+                    ) : null}
+                  </p>
+
+                  {!ultimaPesquisa.pesquisa_completa ? (
+                    <p className="mt-2 text-xs leading-relaxed text-amber-700">
+                      A pesquisa atingiu o limite de mensagens definido para
+                      um ou mais blocos. Isto significa que o período foi
+                      percorrido até esse limite, não necessariamente até à
+                      última mensagem existente.
+                    </p>
+                  ) : null}
                 </div>
               </div>
             </div>

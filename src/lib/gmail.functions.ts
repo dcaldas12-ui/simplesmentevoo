@@ -551,6 +551,23 @@ async function extrairAnexosGmail(
  * O limite é controlado pelo chamador e serve apenas para controlar quantos
  * candidatos são devolvidos em cada ronda.
  */
+
+
+type GmailPesquisaInfo = {
+  modo: "viagens" | "todos";
+  periodo_inicio: string | null;
+  periodo_fim: string | null;
+  blocos_consultados: number;
+  blocos_completos: number;
+  mensagens_listadas: number;
+  mensagens_metadados: number;
+  mensagens_selecionadas: number;
+  candidatos_devolvidos: number;
+  pesquisa_completa: boolean;
+  limite_candidatos: number;
+  candidatos_novos?: number;
+};
+
 export const emailsDeViagem = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .inputValidator(
@@ -560,6 +577,7 @@ export const emailsDeViagem = createServerFn({ method: "GET" })
       automatico?: boolean | null;
       modo?: "viagens" | "todos" | null;
       intervalos?: Array<{ inicio?: unknown; fim?: unknown }> | null;
+      incluirInfoPesquisa?: boolean | null;
     }) => ({
       desde:
         typeof input?.desde === "string" && input.desde.trim()
@@ -595,6 +613,7 @@ export const emailsDeViagem = createServerFn({ method: "GET" })
             .filter((intervalo) => intervalo.inicio && intervalo.fim)
             .slice(0, 100)
         : [],
+      incluirInfoPesquisa: input?.incluirInfoPesquisa === true,
     }),
   )
   .handler(
@@ -609,6 +628,8 @@ export const emailsDeViagem = createServerFn({ method: "GET" })
         remetente_email: string | null;
         recebido_em: string | null;
         anexos: GmailAnexo[];
+        pesquisa?: GmailPesquisaInfo;
+        pesquisaApenas?: boolean;
       }>
     > => {
       const { getConnectionKeyForUser } = await import(
@@ -624,6 +645,11 @@ export const emailsDeViagem = createServerFn({ method: "GET" })
         throw new Error("Gmail não está ligado nesta conta.");
       }
 
+      // Criamos uma variável explicitamente não nula para usar nas funções
+      // internas. O TypeScript não mantém o narrowing de `chave` quando ela é
+      // capturada por closures assíncronas.
+      const connectionAPIKey: string = chave;
+
       const { callAsAppUser } = await import(
         "@/integrations/lovable/appUserConnector"
       );
@@ -636,6 +662,10 @@ export const emailsDeViagem = createServerFn({ method: "GET" })
         }
 
         return Math.floor(instante.getTime() / 1000);
+      }
+
+      function dataIso(valor: number): string {
+        return new Date(valor * 1000).toISOString().slice(0, 10);
       }
 
       function filtroPorIntervalos(
@@ -684,7 +714,23 @@ export const emailsDeViagem = createServerFn({ method: "GET" })
         fim: number;
       };
 
+      type MensagemMetadado = {
+        id: string;
+        assunto: string;
+        remetente_email: string | null;
+        recebido_em: string | null;
+        snippet: string;
+        bloco: number;
+      };
+
       const DURACAO_BLOCO_PESQUISA_MS = 31 * 24 * 60 * 60 * 1000;
+      const MAX_IDS_HISTORICOS_POR_BLOCO = 2000;
+      const MAX_CANDIDATOS_HISTORICOS = 60;
+      const MAX_METADADOS_HISTORICOS_POR_BLOCO = 30;
+      const MIN_CANDIDATOS_HISTORICOS_POR_BLOCO = 2;
+      const TAMANHO_LOTE_METADADOS = 5;
+      const TAMANHO_LOTE_LEITURA = 5;
+      const LIMITE_PAGINA_GMAIL = 500;
 
       function intervalosUnixParaPesquisaHistorica(
         intervalos: Array<{ inicio: string; fim: string }>,
@@ -710,17 +756,19 @@ export const emailsDeViagem = createServerFn({ method: "GET" })
               intervalo.fim,
             );
 
-            const fim =
-              fimTemApenasData
-                ? fimBase + 24 * 60 * 60
-                : fimBase + 1;
+            const fim = fimTemApenasData
+              ? fimBase + 24 * 60 * 60
+              : fimBase + 1;
 
             return {
               inicio: Math.max(0, inicio),
               fim,
             };
           })
-          .filter((intervalo): intervalo is IntervaloUnix => Boolean(intervalo));
+          .filter(
+            (intervalo): intervalo is IntervaloUnix =>
+              Boolean(intervalo),
+          );
 
         intervalosValidos.sort((a, b) => a.inicio - b.inicio);
 
@@ -763,176 +811,173 @@ export const emailsDeViagem = createServerFn({ method: "GET" })
         });
       }
 
-      /*
-       * Existem dois modos manuais distintos e a deteção automática pode
-       * receber os mesmos intervalos das viagens:
-       *
-       * 1. `viagens`: o Gmail é usado para localizar mensagens dentro das
-       *    janelas temporais das viagens. Na pesquisa histórica, cada janela
-       *    é dividida em blocos de cerca de 31 dias. Isto evita que os emails
-       *    mais recentes ocupem todo o limite e impede que reservas antigas
-       *    fiquem sem ser consideradas.
-       *
-       * 2. `todos`: não existe limite temporal nem pré-filtro por palavras.
-       *    A pesquisa pode percorrer a caixa Gmail e a classificação final
-       *    pertence à IA.
-       *
-       * Na deteção automática, quando o chamador fornece `intervalos`, esses
-       * intervalos têm prioridade sobre a janela fixa de 7 dias. Assim, o
-       * AppShell pode procurar diretamente nas janelas das viagens existentes.
-       *
-       * Mantemos `newer_than:7d` apenas como fallback de segurança quando a
-       * deteção automática não recebe intervalos válidos.
-       */
-      let filtroData = "";
-
-      if (data.automatico && data.intervalos.length > 0) {
-        filtroData = filtroPorIntervalos(data.intervalos);
-      } else if (data.automatico) {
-        filtroData = "newer_than:7d";
-      } else if (data.modo === "viagens" && data.intervalos.length > 0) {
-        filtroData = filtroPorIntervalos(data.intervalos);
-      } else if (data.modo === "viagens") {
-        filtroData = data.desde
-          ? (() => {
-              const timestamp = timestampUnixSegundos(data.desde ?? "");
-              return timestamp === null
-                ? "newer_than:365d"
-                : `after:${Math.max(0, timestamp - 1)}`;
-            })()
-          : "newer_than:365d";
-      } else if (data.desde) {
-        const timestamp = timestampUnixSegundos(data.desde);
-        filtroData =
-          timestamp === null
-            ? ""
-            : `after:${Math.max(0, timestamp - 1)}`;
+      function extrairCabecalho(
+        headers: Array<{ name?: string; value?: string }>,
+        nome: string,
+      ): string {
+        return (
+          headers.find(
+            (header) =>
+              header.name?.toLowerCase() === nome.toLowerCase(),
+          )?.value?.trim() ?? ""
+        );
       }
 
-      /*
-       * A deteção automática não usa uma expressão grande de palavras-chave.
-       * A análise semântica posterior decide se cada email é realmente uma
-       * comunicação de viagem.
-       *
-       * Quando existem intervalos de viagem, o filtro temporal é construído
-       * a partir dessas janelas; quando não existem, usamos os últimos 7 dias
-       * como fallback para a rotina periódica.
-       *
-       * Nos modos manuais:
-       * - `viagens` pesquisa historicamente por blocos temporais, mantendo um
-       *   limite global de candidatos e distribuindo-o pelos blocos.
-       * - `todos` pesquisa a caixa inteira sem palavras-chave.
-       */
-      const pesquisaHistorica =
-        !data.automatico &&
-        data.modo === "viagens" &&
-        data.intervalos.length > 0;
+      function emailDoRemetente(valor: string): string | null {
+        return (
+          valor.match(/<([^>]+)>/)?.[1]?.trim() ||
+          (valor.includes("@") ? valor : null)
+        );
+      }
 
-      const blocosHistoricos = pesquisaHistorica
-        ? intervalosUnixParaPesquisaHistorica(data.intervalos)
-        : [];
+      function scoreMetadado(metadado: MensagemMetadado): number {
+        const normalizar = (valor: string) =>
+          valor
+            .normalize("NFD")
+            .replace(/[\u0300-\u036f]/g, "")
+            .toLowerCase();
 
-      const consultaCompleta = filtroData;
-      const consulta = encodeURIComponent(consultaCompleta);
+        const assunto = normalizar(metadado.assunto);
+        const snippet = normalizar(metadado.snippet);
+        const remetente = normalizar(metadado.remetente_email ?? "");
 
-      const limiteSolicitado =
-        data.automatico
-          ? Math.max(1, Math.min(Math.floor(data.limite ?? 3), 10))
-          : Math.max(1, Math.min(Math.floor(data.limite ?? 100), 1000));
+        const termos: Array<[string, number]> = [
+          ["booking confirmation", 8],
+          ["booking", 7],
+          ["reservation", 7],
+          ["reserva", 7],
+          ["confirmacao", 7],
+          ["confirmation", 7],
+          ["voucher", 6],
+          ["boarding pass", 6],
+          ["cartao de embarque", 6],
+          ["ticket", 5],
+          ["bilhete", 5],
+          ["flight", 5],
+          ["voo", 5],
+          ["hotel", 5],
+          ["alojamento", 5],
+          ["check-in", 4],
+          ["check-out", 4],
+          ["itinerary", 4],
+          ["itinerario", 4],
+          ["transfer", 4],
+          ["train", 4],
+          ["comboio", 4],
+          ["bus", 3],
+          ["autocarro", 3],
+          ["ferry", 3],
+          ["rental", 3],
+          ["car hire", 3],
+          ["tour", 2],
+          ["museum", 2],
+          ["museu", 2],
+          ["concert", 2],
+          ["concerto", 2],
+        ];
 
-      const LIMITE_PAGINA_GMAIL = 500;
+        let pontuacao = 0;
 
-      const quotasHistoricas =
-        blocosHistoricos.length > 0
-          ? blocosHistoricos.map((_, indice) => {
-              const base = Math.floor(
-                limiteSolicitado / blocosHistoricos.length,
-              );
-              const resto =
-                limiteSolicitado % blocosHistoricos.length;
+        for (const [termo, pontos] of termos) {
+          if (assunto.includes(termo)) {
+            pontuacao += pontos;
+          }
 
-              return base + (indice < resto ? 1 : 0);
-            })
-          : [];
+          if (snippet.includes(termo)) {
+            pontuacao += Math.max(1, Math.floor(pontos / 2));
+          }
 
-      console.info("Gmail: pesquisa de mensagens", {
-        automatico: data.automatico === true,
-        modo: data.modo,
-        consulta: pesquisaHistorica
-          ? `${blocosHistoricos.length} bloco(s) históricos`
-          : consultaCompleta || "(caixa Gmail inteira)",
-        limite: limiteSolicitado,
-        intervalos: data.intervalos.length,
-        pesquisaHistorica,
-        quotasHistoricas: quotasHistoricas.length > 0
-          ? quotasHistoricas
-          : null,
-      });
+          if (remetente.includes(termo)) {
+            pontuacao += Math.max(1, Math.floor(pontos / 2));
+          }
+        }
 
-      /*
-       * No modo histórico por viagens não usamos apenas os primeiros N
-       * resultados da janela completa. Pesquisamos cada bloco temporal
-       * separadamente e atribuímos uma pequena quota a cada bloco.
-       *
-       * Assim, numa viagem com vários meses de histórico, um bloco recente
-       * cheio de emails irrelevantes não impede que outros blocos mais antigos
-       * também contribuam candidatos para a análise semântica.
-       */
-      const consultasPesquisa = pesquisaHistorica
-        ? blocosHistoricos
-            .map((bloco, indice) => ({
-              consulta: `after:${Math.max(0, bloco.inicio - 1)} before:${bloco.fim}`,
-              limite: quotasHistoricas[indice] ?? 0,
-            }))
-            .filter((pesquisa) => pesquisa.limite > 0)
-        : [
-            {
-              consulta: consultaCompleta,
-              limite: limiteSolicitado,
-            },
-          ];
+        if (metadado.assunto.trim()) {
+          pontuacao += 1;
+        }
 
-      const ids: string[] = [];
-      const idsVistos = new Set<string>();
+        if (metadado.snippet.trim()) {
+          pontuacao += 1;
+        }
 
-      for (const pesquisa of consultasPesquisa) {
+        return pontuacao;
+      }
+
+      function selecionarIdsRepresentativos(
+        ids: string[],
+        limite: number,
+      ): string[] {
+        if (ids.length <= limite) {
+          return [...ids];
+        }
+
+        const selecionados = new Set<string>();
+
+        const adicionar = (id: string | undefined) => {
+          if (id) {
+            selecionados.add(id);
+          }
+        };
+
+        const extremos = Math.min(
+          Math.floor(limite / 3),
+          Math.max(1, Math.floor(ids.length / 10)),
+        );
+
+        for (let i = 0; i < extremos; i += 1) {
+          adicionar(ids[i]);
+          adicionar(ids[ids.length - 1 - i]);
+        }
+
+        let indice = 0;
+        while (selecionados.size < limite && indice < ids.length) {
+          const posicao = Math.floor(
+            (indice * (ids.length - 1)) /
+              Math.max(1, limite - 1),
+          );
+
+          adicionar(ids[posicao]);
+          indice += 1;
+        }
+
+        return Array.from(selecionados).slice(0, limite);
+      }
+
+      async function listarIds(
+        consulta: string,
+        limite: number,
+      ): Promise<{
+        ids: string[];
+        completo: boolean;
+      }> {
+        const ids: string[] = [];
+        const idsLocais = new Set<string>();
         let pageToken: string | null = null;
-        let totalNovosNesteBloco = 0;
-        const consultaDaPesquisa = pesquisa.consulta;
-        const limiteDaPesquisa = pesquisa.limite;
-        const consultaCodificada = encodeURIComponent(consultaDaPesquisa);
+        let completo = true;
 
         do {
+          const maxResults = Math.min(
+            LIMITE_PAGINA_GMAIL,
+            limite - ids.length,
+          );
+
+          if (maxResults <= 0) {
+            completo = false;
+            break;
+          }
+
           const tokenQuery = pageToken
             ? `&pageToken=${encodeURIComponent(pageToken)}`
             : "";
-
-          if (
-            (pesquisaHistorica &&
-              totalNovosNesteBloco >= limiteDaPesquisa) ||
-            (!pesquisaHistorica && ids.length >= limiteSolicitado)
-          ) {
-            break;
-          }
-
-          const maxResultadosDaPagina = Math.min(
-            LIMITE_PAGINA_GMAIL,
-            pesquisaHistorica
-              ? limiteDaPesquisa - totalNovosNesteBloco
-              : limiteSolicitado - ids.length,
-          );
-
-          if (maxResultadosDaPagina <= 0) {
-            break;
-          }
+          const consultaCodificada = encodeURIComponent(consulta);
 
           const lista = await callAsAppUser({
             gatewayBaseUrl: GATEWAY_BASE_URL,
-            connectionAPIKey: chave,
+            connectionAPIKey,
             connectorId: CONNECTOR_ID,
             path:
-              `/gmail/v1/users/me/messages?maxResults=${maxResultadosDaPagina}` +
-              `&includeSpamTrash=false${consultaDaPesquisa ? `&q=${consultaCodificada}` : ""}` +
+              `/gmail/v1/users/me/messages?maxResults=${maxResults}` +
+              `&includeSpamTrash=false${consulta ? `&q=${consultaCodificada}` : ""}` +
               tokenQuery,
           });
 
@@ -949,7 +994,7 @@ export const emailsDeViagem = createServerFn({ method: "GET" })
               status: lista.status,
               statusText: lista.statusText,
               detalhe,
-              consulta: consultaDaPesquisa,
+              consulta,
             });
 
             throw new Error(
@@ -967,52 +1012,400 @@ export const emailsDeViagem = createServerFn({ method: "GET" })
           for (const mensagem of pagina.messages ?? []) {
             const id = mensagem.id;
 
-            if (!id || idsVistos.has(id)) {
+            if (!id || idsLocais.has(id)) {
               continue;
             }
 
-            idsVistos.add(id);
+            idsLocais.add(id);
             ids.push(id);
-            totalNovosNesteBloco += 1;
 
-            if (
-              (pesquisaHistorica &&
-                totalNovosNesteBloco >= limiteDaPesquisa) ||
-              (!pesquisaHistorica && ids.length >= limiteSolicitado)
-            ) {
+            if (ids.length >= limite) {
               break;
             }
           }
 
-          pageToken =
-            (pesquisaHistorica
-              ? totalNovosNesteBloco < limiteDaPesquisa
-              : ids.length < limiteSolicitado) &&
-            pagina.nextPageToken
-              ? pagina.nextPageToken
-              : null;
+          if (ids.length >= limite) {
+            completo = !pagina.nextPageToken;
+            break;
+          }
+
+          pageToken = pagina.nextPageToken ?? null;
         } while (pageToken);
 
-        if (ids.length >= limiteSolicitado) {
-          break;
-        }
+        return {
+          ids,
+          completo,
+        };
       }
 
-      const resultados: Array<{
+      async function obterMetadados(
+        ids: string[],
+        bloco: number,
+      ): Promise<MensagemMetadado[]> {
+        const resultados: MensagemMetadado[] = [];
 
+        for (
+          let inicioLote = 0;
+          inicioLote < ids.length;
+          inicioLote += TAMANHO_LOTE_METADADOS
+        ) {
+          const loteIds = ids.slice(
+            inicioLote,
+            inicioLote + TAMANHO_LOTE_METADADOS,
+          );
+
+          const loteResultados = await Promise.all(
+            loteIds.map(async (id) => {
+              const res = await callAsAppUser({
+                gatewayBaseUrl: GATEWAY_BASE_URL,
+                connectionAPIKey,
+                connectorId: CONNECTOR_ID,
+                path:
+                  `/gmail/v1/users/me/messages/${encodeURIComponent(id)}` +
+                  `?format=metadata&metadataHeaders=Subject` +
+                  `&metadataHeaders=From&metadataHeaders=Date`,
+              });
+
+              if (!res.ok) {
+                let detalhe = "";
+
+                try {
+                  detalhe = await res.text();
+                } catch {
+                  detalhe = "";
+                }
+
+                console.warn(
+                  "Gmail: não foi possível ler os metadados da mensagem",
+                  {
+                    id,
+                    bloco,
+                    status: res.status,
+                    statusText: res.statusText,
+                    detalhe,
+                  },
+                );
+
+                if (res.status === 403 || res.status === 429) {
+                  throw new Error(
+                    `Gmail atingiu um limite de utilização (HTTP ${res.status})${
+                      detalhe ? ` — ${detalhe}` : ""
+                    }. Aguarde alguns instantes antes de tentar novamente.`,
+                  );
+                }
+
+                return null;
+              }
+
+              const msg = (await res.json()) as {
+                id?: string;
+                snippet?: string;
+                internalDate?: string;
+                payload?: {
+                  headers?: Array<{
+                    name?: string;
+                    value?: string;
+                  }>;
+                };
+              };
+
+              const headers = msg.payload?.headers ?? [];
+              const assunto = extrairCabecalho(headers, "subject");
+              const remetenteBruto = extrairCabecalho(headers, "from");
+              const remetente_email = emailDoRemetente(remetenteBruto);
+              const dataCabecalho = extrairCabecalho(headers, "date");
+              const dataInterna = msg.internalDate
+                ? new Date(Number(msg.internalDate))
+                : null;
+              const dataRececao =
+                dataInterna && !Number.isNaN(dataInterna.getTime())
+                  ? dataInterna
+                  : dataCabecalho
+                    ? new Date(dataCabecalho)
+                    : null;
+
+              return {
+                id,
+                assunto,
+                remetente_email,
+                recebido_em:
+                  dataRececao && !Number.isNaN(dataRececao.getTime())
+                    ? dataRececao.toISOString()
+                    : null,
+                snippet: msg.snippet ?? "",
+                bloco,
+              };
+            }),
+          );
+
+          for (const resultado of loteResultados) {
+            if (resultado) {
+              resultados.push(resultado);
+            }
+          }
+        }
+
+        return resultados;
+      }
+
+      const pesquisaHistorica =
+        !data.automatico &&
+        data.modo === "viagens" &&
+        data.intervalos.length > 0;
+
+      const blocosHistoricos = pesquisaHistorica
+        ? intervalosUnixParaPesquisaHistorica(data.intervalos)
+        : [];
+
+      const filtroData =
+        data.automatico && data.intervalos.length > 0
+          ? filtroPorIntervalos(data.intervalos)
+          : data.automatico
+            ? "newer_than:7d"
+            : data.modo === "viagens" && data.intervalos.length > 0
+              ? filtroPorIntervalos(data.intervalos)
+              : data.modo === "viagens"
+                ? data.desde
+                  ? (() => {
+                      const timestamp = timestampUnixSegundos(
+                        data.desde ?? "",
+                      );
+                      return timestamp === null
+                        ? "newer_than:365d"
+                        : `after:${Math.max(0, timestamp - 1)}`;
+                    })()
+                  : "newer_than:365d"
+                : data.desde
+                  ? (() => {
+                      const timestamp = timestampUnixSegundos(data.desde ?? "");
+                      return timestamp === null
+                        ? ""
+                        : `after:${Math.max(0, timestamp - 1)}`;
+                    })()
+                  : "";
+
+      const limiteSolicitado = data.automatico
+        ? Math.max(1, Math.min(Math.floor(data.limite ?? 3), 10))
+        : Math.max(1, Math.min(Math.floor(data.limite ?? 100), 1000));
+
+      const limiteHistorico = Math.min(
+        limiteSolicitado,
+        MAX_CANDIDATOS_HISTORICOS,
+      );
+
+      const ids: string[] = [];
+      const idsVistos = new Set<string>();
+
+      let mensagensListadas = 0;
+      let blocosCompletos = 0;
+      let mensagensMetadados = 0;
+      let mensagensSelecionadas = 0;
+      let pesquisaCompleta = true;
+
+      const metadadosHistoricos: MensagemMetadado[] = [];
+
+      if (pesquisaHistorica) {
+        for (let indice = 0; indice < blocosHistoricos.length; indice += 1) {
+          const bloco = blocosHistoricos[indice];
+
+          if (!bloco) {
+            continue;
+          }
+
+          const consultaBloco =
+            `after:${Math.max(0, bloco.inicio - 1)} before:${bloco.fim}`;
+
+          const lista = await listarIds(
+            consultaBloco,
+            MAX_IDS_HISTORICOS_POR_BLOCO,
+          );
+
+          mensagensListadas += lista.ids.length;
+          if (lista.completo) {
+            blocosCompletos += 1;
+          } else {
+            pesquisaCompleta = false;
+          }
+
+          const idsRepresentativos = selecionarIdsRepresentativos(
+            lista.ids,
+            MAX_METADADOS_HISTORICOS_POR_BLOCO,
+          );
+
+          const metadados = await obterMetadados(
+            idsRepresentativos,
+            indice,
+          );
+
+          mensagensMetadados += metadados.length;
+          metadadosHistoricos.push(...metadados);
+        }
+      } else {
+        const lista = await listarIds(filtroData, limiteSolicitado);
+
+        mensagensListadas = lista.ids.length;
+        pesquisaCompleta = lista.completo;
+        if (lista.completo) {
+          blocosCompletos = 1;
+        }
+
+        for (const id of lista.ids) {
+          if (!idsVistos.has(id)) {
+            idsVistos.add(id);
+            ids.push(id);
+          }
+        }
+
+        mensagensSelecionadas = ids.length;
+      }
+
+      if (pesquisaHistorica) {
+        const porBloco = new Map<number, MensagemMetadado[]>();
+
+        for (const metadado of metadadosHistoricos) {
+          const lista = porBloco.get(metadado.bloco) ?? [];
+          lista.push(metadado);
+          porBloco.set(metadado.bloco, lista);
+        }
+
+        for (const lista of porBloco.values()) {
+          lista.sort((a, b) => {
+            const scoreA = scoreMetadado(a);
+            const scoreB = scoreMetadado(b);
+
+            if (scoreB !== scoreA) {
+              return scoreB - scoreA;
+            }
+
+            return (b.recebido_em ?? "").localeCompare(
+              a.recebido_em ?? "",
+            );
+          });
+        }
+
+        const selecionadosMetadados: MensagemMetadado[] = [];
+        const idsSelecionados = new Set<string>();
+
+        /*
+         * Primeiro garantimos cobertura temporal: cada bloco contribui com
+         * pelo menos dois candidatos sempre que existirem metadados nesse bloco.
+         */
+        for (const [bloco, lista] of porBloco.entries()) {
+          const quantidade = Math.min(
+            MIN_CANDIDATOS_HISTORICOS_POR_BLOCO,
+            limiteHistorico - selecionadosMetadados.length,
+          );
+
+          for (let indice = 0; indice < quantidade; indice += 1) {
+            const metadado = lista[indice];
+
+            if (!metadado || idsSelecionados.has(metadado.id)) {
+              continue;
+            }
+
+            idsSelecionados.add(metadado.id);
+            selecionadosMetadados.push(metadado);
+          }
+
+          if (selecionadosMetadados.length >= limiteHistorico) {
+            break;
+          }
+        }
+
+        const restantes = [...metadadosHistoricos]
+          .filter((metadado) => !idsSelecionados.has(metadado.id))
+          .sort((a, b) => {
+            const scoreA = scoreMetadado(a);
+            const scoreB = scoreMetadado(b);
+
+            if (scoreB !== scoreA) {
+              return scoreB - scoreA;
+            }
+
+            return (b.recebido_em ?? "").localeCompare(
+              a.recebido_em ?? "",
+            );
+          });
+
+        for (const metadado of restantes) {
+          if (selecionadosMetadados.length >= limiteHistorico) {
+            break;
+          }
+
+          if (idsSelecionados.has(metadado.id)) {
+            continue;
+          }
+
+          idsSelecionados.add(metadado.id);
+          selecionadosMetadados.push(metadado);
+        }
+
+        for (const metadado of selecionadosMetadados) {
+          if (!idsVistos.has(metadado.id)) {
+            idsVistos.add(metadado.id);
+            ids.push(metadado.id);
+          }
+        }
+
+        mensagensSelecionadas = ids.length;
+      }
+
+      const datasInicio = data.intervalos
+        .map((intervalo) => timestampUnixSegundos(intervalo.inicio))
+        .filter((valor): valor is number => valor !== null);
+
+      const datasFim = data.intervalos
+        .map((intervalo) => timestampUnixSegundos(intervalo.fim))
+        .filter((valor): valor is number => valor !== null);
+
+      const periodoInicio =
+        datasInicio.length > 0
+          ? dataIso(Math.min(...datasInicio))
+          : null;
+
+      const periodoFim =
+        datasFim.length > 0
+          ? dataIso(Math.max(...datasFim))
+          : null;
+
+      const pesquisaInfo: GmailPesquisaInfo = {
+        modo: data.modo,
+        periodo_inicio: periodoInicio,
+        periodo_fim: periodoFim,
+        blocos_consultados: pesquisaHistorica
+          ? blocosHistoricos.length
+          : 1,
+        blocos_completos:
+          pesquisaHistorica || filtroData
+            ? blocosCompletos
+            : 0,
+        mensagens_listadas: mensagensListadas,
+        mensagens_metadados: mensagensMetadados,
+        mensagens_selecionadas: mensagensSelecionadas,
+        candidatos_devolvidos: 0,
+        pesquisa_completa: pesquisaCompleta,
+        limite_candidatos: pesquisaHistorica
+          ? limiteHistorico
+          : limiteSolicitado,
+      };
+
+      console.info("Gmail: resultado da pesquisa", pesquisaInfo);
+
+      /*
+       * Ler o conteúdo completo apenas dos candidatos finais.
+       * A pesquisa histórica usa metadados e cobertura temporal para evitar
+       * descarregar centenas de mensagens completas de uma só vez.
+       */
+      const resultados: Array<{
         id: string;
         assunto: string;
         texto: string;
         remetente_email: string | null;
         recebido_em: string | null;
         anexos: GmailAnexo[];
+        pesquisa?: GmailPesquisaInfo;
+        pesquisaApenas?: boolean;
       }> = [];
-
-      /*
-       * Ler o conteúdo completo em pequenos lotes reduz bastante o tempo total
-       * da pesquisa sem criar uma rajada grande de pedidos ao Gmail.
-       */
-      const TAMANHO_LOTE_LEITURA = 5;
 
       for (
         let inicioLote = 0;
@@ -1075,15 +1468,11 @@ export const emailsDeViagem = createServerFn({ method: "GET" })
             const headers = msg.payload?.headers ?? [];
 
             const valorCabecalho = (nome: string) =>
-              headers.find(
-                (h) => h.name?.toLowerCase() === nome.toLowerCase(),
-              )?.value?.trim() ?? "";
+              extrairCabecalho(headers, nome);
 
             const assunto = valorCabecalho("subject");
             const remetenteBruto = valorCabecalho("from");
-            const remetente_email =
-              remetenteBruto.match(/<([^>]+)>/)?.[1]?.trim() ||
-              (remetenteBruto.includes("@") ? remetenteBruto : null);
+            const remetente_email = emailDoRemetente(remetenteBruto);
 
             const dataCabecalho = valorCabecalho("date");
             const dataInterna = msg.internalDate
@@ -1095,6 +1484,7 @@ export const emailsDeViagem = createServerFn({ method: "GET" })
                 : dataCabecalho
                   ? new Date(dataCabecalho)
                   : null;
+
             const recebido_em =
               dataRececao && !Number.isNaN(dataRececao.getTime())
                 ? dataRececao.toISOString()
@@ -1140,6 +1530,32 @@ export const emailsDeViagem = createServerFn({ method: "GET" })
         }
       }
 
-      return resultados;
+      pesquisaInfo.candidatos_devolvidos = resultados.length;
+
+      const pesquisaDecorada = resultados.map((resultado) => ({
+        ...resultado,
+        pesquisa: pesquisaInfo,
+      }));
+
+      if (
+        pesquisaDecorada.length === 0 &&
+        data.incluirInfoPesquisa &&
+        !data.automatico
+      ) {
+        return [
+          {
+            id: "__pesquisa__",
+            assunto: "",
+            texto: "",
+            remetente_email: null,
+            recebido_em: null,
+            anexos: [],
+            pesquisa: pesquisaInfo,
+            pesquisaApenas: true,
+          },
+        ];
+      }
+
+      return pesquisaDecorada;
     },
   );
