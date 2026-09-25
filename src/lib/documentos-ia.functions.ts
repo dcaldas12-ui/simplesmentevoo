@@ -1462,10 +1462,10 @@ function contextoViagensParaPrompt(
 
   const linhas = [
     "Modo de análise: procurar informação relacionada com as viagens existentes do utilizador.",
-    "As datas são o principal eixo de relevância. Para cada viagem, considera como janela de análise a data de início menos 2 dias até à data de fim mais 2 dias.",
+    "As datas do serviço ou atividade encontradas no conteúdo são uma pista principal para relacionar uma comunicação com uma viagem, mas não são um filtro rígido.",
     "Uma reserva, serviço, bilhete ou documento com apenas parte do intervalo dentro dessa janela pode ser relevante. Não é necessário que o serviço cubra toda a viagem.",
     "Origem e destino da viagem são pistas complementares e nunca são uma condição obrigatória por si só.",
-    "Se uma comunicação concreta estiver claramente fora de todas as janelas temporais das viagens, considera-a irrelevante neste modo, mesmo que seja relacionada com viagens.",
+    "Nunca uses a data em que o email foi recebido como se fosse a data do serviço. Uma reserva pode ter sido feita semanas ou meses antes da viagem. Uma comunicação concreta pode continuar a ser relevante mesmo quando foi recebida muito antes das datas da viagem.",
     "Quando não existir uma data clara no conteúdo, usa nomes de passageiros, locais, fornecedor e outros indícios explícitos apenas como contexto complementar; não inventes uma associação.",
     "VIAGENS EXISTENTES:",
   ];
@@ -1651,7 +1651,7 @@ function criarPrompt(
     "Não marques como relevante apenas porque aparecem palavras como hotel, flight, travel, booking, destination, aeroporto, viagem ou turismo.",
     "",
     input.modoAnalise === "viagens"
-      ? "No modo personalizado, a relação com as viagens existentes deve respeitar as janelas temporais indicadas no contexto. A data é o principal eixo de decisão; a origem/destino e os passageiros são pistas complementares."
+      ? "No modo personalizado, usa as viagens existentes como contexto para a associação. Não excluas um email apenas porque foi recebido muito antes ou muito depois da viagem: considera sobretudo as datas do serviço encontradas no conteúdo, a identificação dos viajantes, locais, fornecedores e outros indícios concretos."
       : "No modo de análise de todos os emails, não uses as datas das viagens existentes como filtro e procura comunicações concretas de viagem em qualquer período.",
     "",
     "IMPORTANTE SOBRE INTERVALOS",
@@ -2011,3 +2011,381 @@ export const analisarDocumento =
         );
       },
     );
+
+export type TriagemEmailInput = {
+  id: string;
+  assunto: string;
+  texto: string;
+  remetente_email?: string | null;
+  recebido_em?: string | null;
+  anexosNomes?: string[] | null;
+};
+
+export type TriagemEmailResultado = {
+  id: string;
+  relevante: boolean;
+  motivoRelevancia: string;
+};
+
+export type TriagemEmailsInput = {
+  modoAnalise: ModoAnaliseDocumento;
+  viagens?: AnaliseDocumentoViagem[] | null;
+  emails: TriagemEmailInput[];
+};
+
+function validarTriagemEmails(input: unknown): TriagemEmailsInput {
+  const d = (input ?? {}) as Record<string, unknown>;
+  const modoAnalise: ModoAnaliseDocumento =
+    d["modoAnalise"] === "viagens" ? "viagens" : "todos";
+
+  const viagens = (Array.isArray(d["viagens"]) ? d["viagens"] : [])
+    .slice(0, 20)
+    .flatMap((valor) => {
+      if (!valor || typeof valor !== "object") {
+        return [];
+      }
+
+      const v = valor as Record<string, unknown>;
+      const titulo = limparTexto(v["titulo"], 200);
+      const origem = limparTexto(v["origem"], 120);
+      const destino = limparTexto(v["destino"], 120);
+      const dataInicio = limparTexto(v["dataInicio"], 20);
+      const dataFim = limparTexto(v["dataFim"], 20);
+
+      if (
+        !titulo ||
+        !origem ||
+        !destino ||
+        !/^\d{4}-\d{2}-\d{2}$/.test(dataInicio) ||
+        !/^\d{4}-\d{2}-\d{2}$/.test(dataFim)
+      ) {
+        return [];
+      }
+
+      const passageiros = Array.isArray(v["passageiros"])
+        ? v["passageiros"].slice(0, 20).flatMap((p) => {
+            if (!p || typeof p !== "object") {
+              return [];
+            }
+            const passageiro = p as Record<string, unknown>;
+            const nome = limparTexto(passageiro["nome"], 100);
+            const apelido = limparTexto(passageiro["apelido"], 100);
+            return nome || apelido ? [{ nome, apelido }] : [];
+          })
+        : [];
+
+      const numeroPassageirosBruto = v["numeroPassageiros"];
+      const numeroPassageiros =
+        typeof numeroPassageirosBruto === "number" &&
+        Number.isFinite(numeroPassageirosBruto) &&
+        numeroPassageirosBruto >= 1
+          ? Math.floor(numeroPassageirosBruto)
+          : null;
+
+      return [{
+        titulo,
+        origem,
+        destino,
+        dataInicio,
+        dataFim,
+        numeroPassageiros,
+        passageiros,
+      }];
+    });
+
+  const emails = (Array.isArray(d["emails"]) ? d["emails"] : [])
+    .slice(0, 60)
+    .flatMap((valor) => {
+      if (!valor || typeof valor !== "object") {
+        return [];
+      }
+
+      const email = valor as Record<string, unknown>;
+      const id = limparTexto(email["id"], 300);
+      if (!id) {
+        return [];
+      }
+
+      return [{
+        id,
+        assunto: limparTexto(email["assunto"], 500),
+        texto:
+          typeof email["texto"] === "string"
+            ? email["texto"].slice(0, 30000)
+            : "",
+        remetente_email:
+          typeof email["remetente_email"] === "string"
+            ? email["remetente_email"].trim().slice(0, 320)
+            : null,
+        recebido_em:
+          typeof email["recebido_em"] === "string"
+            ? email["recebido_em"].trim().slice(0, 60)
+            : null,
+        anexosNomes: Array.isArray(email["anexosNomes"])
+          ? email["anexosNomes"]
+              .filter((nome): nome is string => typeof nome === "string")
+              .map((nome) => nome.trim())
+              .filter(Boolean)
+              .slice(0, 12)
+          : [],
+      }];
+    });
+
+  if (emails.length === 0) {
+    throw new Error("Não existem emails para fazer a triagem.");
+  }
+
+  return { modoAnalise, viagens, emails };
+}
+
+function trechoParaTriagem(texto: string): string {
+  const limpo = texto.trim();
+  if (limpo.length <= 10_000) {
+    return limpo;
+  }
+  return `${limpo.slice(0, 7_500)}\n[... conteúdo intermédio omitido para triagem ...]\n${limpo.slice(-2_500)}`;
+}
+
+function contextoTriagemViagens(viagens: AnaliseDocumentoViagem[]): string {
+  if (viagens.length === 0) {
+    return "Não há viagens existentes fornecidas como contexto. Classifica pela existência de informação concreta de viagem.";
+  }
+
+  const linhas = [
+    "VIAGENS EXISTENTES DO UTILIZADOR (contexto, não filtro do Gmail):",
+    "Uma confirmação pode ter sido recebida meses antes da viagem. A data de receção do email nunca deve ser tratada como data do serviço.",
+  ];
+
+  for (const viagem of viagens) {
+    const passageiros = (viagem.passageiros ?? [])
+      .map((passageiro) => `${passageiro.nome} ${passageiro.apelido}`.trim())
+      .filter(Boolean);
+
+    linhas.push(
+      [
+        `- ${viagem.titulo}`,
+        `  Origem: ${viagem.origem}`,
+        `  Destino: ${viagem.destino}`,
+        `  Datas da viagem: ${viagem.dataInicio} a ${viagem.dataFim}`,
+        viagem.numeroPassageiros
+          ? `  Passageiros: ${viagem.numeroPassageiros}`
+          : "  Passageiros: não indicado",
+        passageiros.length > 0
+          ? `  Nomes: ${passageiros.join(", ")}`
+          : "  Nomes: não indicados",
+      ].join("\n"),
+    );
+  }
+
+  return linhas.join("\n");
+}
+
+const ESQUEMA_TRIAGEM = {
+  type: "object",
+  properties: {
+    resultados: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          id: {
+            type: "string",
+            description: "ID exato do email fornecido no lote.",
+          },
+          relevante: {
+            type: "boolean",
+            description: "true apenas quando o email contém informação concreta e específica de viagem.",
+          },
+          motivoRelevancia: {
+            type: "string",
+            description: "Explicação curta da decisão de triagem.",
+          },
+        },
+        required: ["id", "relevante", "motivoRelevancia"],
+      },
+    },
+  },
+  required: ["resultados"],
+} as const;
+
+function criarPromptTriagemEmails(input: TriagemEmailsInput): string {
+  const partes = [
+    "És o motor de triagem de emails do ViatOrbis.",
+    "Tens de analisar TODOS os emails deste lote. Não escolhas uma amostra e não omitas emails.",
+    "A triagem serve para decidir quais emails merecem uma segunda leitura profunda com o conteúdo completo e os anexos.",
+    "",
+    input.modoAnalise === "viagens"
+      ? contextoTriagemViagens(input.viagens ?? [])
+      : "MODO: analisar todos os emails sem usar viagens existentes como filtro.",
+    "",
+    "RELEVANTE = existe comunicação concreta, específica e potencialmente útil de uma viagem/serviço do utilizador.",
+    "Exemplos: confirmação ou alteração de reserva, bilhete, cartão de embarque, hotel reservado, aluguer de carro, comboio/autocarro/ferry, transfer, voucher, atividade/evento comprado ou reservado, recibo ligado a uma operação de viagem, instruções operacionais de um serviço específico.",
+    "",
+    "IRRELEVANTE = newsletter, publicidade, campanha, desconto, oferta genérica, conteúdo editorial, inspiração, recomendações genéricas ou email comercial sem uma operação/serviço concreto associado ao utilizador.",
+    "",
+    "Não consideres o email relevante apenas porque contém palavras como travel, hotel, flight, tourism, booking ou destination.",
+    "A data de receção do email NÃO é a data da viagem. Uma reserva para setembro pode ter sido recebida em janeiro. Usa datas do serviço quando existirem e cruza-as com as viagens como contexto.",
+    "No modo de viagens, a relação com uma viagem é uma ajuda para a decisão, não um filtro que permita eliminar uma mensagem antes de a compreender.",
+    "No modo de viagens, uma comunicação transacional concreta de viagem pode avançar para análise profunda mesmo quando a associação a uma viagem específica ainda não é clara na triagem. Não exijas que a relação com a viagem fique provada nesta primeira fase.",
+    "Uma reserva, bilhete, voucher, recibo ou outra comunicação operacional concreta pode ter sido recebida muito antes da viagem. Não uses a data de receção como critério de exclusão.",
+    "Quando um email menciona uma reserva/documento em anexo, considera o nome do anexo como pista. Não assumas o conteúdo do anexo sem o veres.",
+    "",
+    "EMAILS DO LOTE:",
+  ];
+
+  input.emails.forEach((email, indice) => {
+    partes.push(
+      [
+        `EMAIL ${indice + 1}`,
+        `ID: ${email.id}`,
+        `Assunto: ${email.assunto || "(sem assunto)"}`,
+        `Remetente: ${email.remetente_email || "(desconhecido)"}`,
+        `Recebido em: ${email.recebido_em || "(desconhecido)"}`,
+        `Anexos: ${email.anexosNomes?.join(", ") || "nenhum"}`,
+        `Conteúdo:\n${trechoParaTriagem(email.texto) || "(sem conteúdo textual)"}`,
+      ].join("\n"),
+    );
+  });
+
+  partes.push(
+    "",
+    "Responde com uma decisão para TODOS os IDs fornecidos. Usa exatamente os IDs recebidos. Não inventes IDs. Responde apenas com JSON válido de acordo com o esquema.",
+  );
+
+  return partes.join("\n\n");
+}
+
+export const analisarEmailsEmLote = createServerFn({ method: "POST" })
+  .inputValidator(validarTriagemEmails)
+  .handler(
+    async ({ data }: { data: TriagemEmailsInput }): Promise<{
+      resultados: TriagemEmailResultado[];
+      porIa: boolean;
+    }> => {
+      const apiKey = process.env["GEMINI_API_KEY"];
+
+      if (!apiKey) {
+        throw new Error("A IA não está disponível para a triagem de emails.");
+      }
+
+      const maxTentativas = 2;
+      let ultimoErro: unknown = null;
+
+      for (let tentativa = 1; tentativa <= maxTentativas; tentativa += 1) {
+        try {
+          await aguardarTurnoGemini();
+
+          const resposta = await fetch(
+            "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent",
+            {
+              method: "POST",
+              headers: {
+                "x-goog-api-key": apiKey,
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({
+                systemInstruction: {
+                  parts: [
+                    {
+                      text:
+                        "Analisa emails para o ViatOrbis com grande precisão. A prioridade é distinguir comunicação concreta de viagem de newsletters e publicidade. Nunca inventes informação. Analisa todos os itens do lote.",
+                    },
+                  ],
+                },
+                contents: [
+                  {
+                    role: "user",
+                    parts: [{ text: criarPromptTriagemEmails(data) }],
+                  },
+                ],
+                generationConfig: {
+                  temperature: 0,
+                  maxOutputTokens: 4000,
+                  responseMimeType: "application/json",
+                  responseSchema: ESQUEMA_TRIAGEM,
+                },
+              }),
+            },
+          );
+
+          const corpo = await resposta.text();
+
+          if (!resposta.ok) {
+            if (resposta.status === 429 && tentativa < maxTentativas) {
+              await esperar(obterEsperaRetryAfter(resposta) ?? 10_000);
+              continue;
+            }
+
+            throw new Error(
+              `A API Gemini devolveu ${resposta.status}: ${corpo.slice(0, 500)}`,
+            );
+          }
+
+          let json: unknown;
+          try {
+            json = JSON.parse(corpo);
+          } catch {
+            throw new Error("A API Gemini devolveu uma resposta que não é JSON válido.");
+          }
+
+          const dados = extrairDadosEstruturadosDaResposta(json);
+          const bruto = Array.isArray(dados["resultados"]) ? dados["resultados"] : [];
+          const idsEntrada = new Set(data.emails.map((email) => email.id));
+          const vistos = new Set<string>();
+          const resultados: TriagemEmailResultado[] = [];
+
+          for (const item of bruto) {
+            if (!item || typeof item !== "object") {
+              continue;
+            }
+
+            const valor = item as Record<string, unknown>;
+            const id = limparTexto(valor["id"], 300);
+
+            if (!id || !idsEntrada.has(id) || vistos.has(id)) {
+              continue;
+            }
+
+            vistos.add(id);
+            const relevante = valor["relevante"] === true;
+            const motivo = limparTexto(valor["motivoRelevancia"], 500);
+
+            resultados.push({
+              id,
+              relevante,
+              motivoRelevancia:
+                motivo ||
+                (relevante
+                  ? "Foi identificada comunicação concreta de viagem."
+                  : "Não foi identificada comunicação concreta de viagem."),
+            });
+          }
+
+          if (resultados.length !== data.emails.length) {
+            throw new Error(
+              `A IA não devolveu uma decisão para todos os ${data.emails.length} emails do lote. Foram devolvidas ${resultados.length} decisões.`,
+            );
+          }
+
+          return { resultados, porIa: true };
+        } catch (erro) {
+          ultimoErro = erro;
+
+          if (tentativa >= maxTentativas) {
+            break;
+          }
+
+          const mensagem = erro instanceof Error ? erro.message : String(erro);
+          const espera = mensagem.includes("429") ? 10_000 : 1000 * tentativa;
+          await esperar(espera);
+        }
+      }
+
+      throw new Error(
+        `A triagem Gmail por IA não foi concluída: ${
+          ultimoErro instanceof Error ? ultimoErro.message : String(ultimoErro)
+        }`,
+      );
+    },
+  );
+

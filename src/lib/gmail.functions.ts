@@ -316,6 +316,24 @@ function extrairPartes(payload: GmailParte): string {
     .slice(0, 30000);
 }
 
+function extrairCabecalho(
+  headers: Array<{ name?: string; value?: string }>,
+  nome: string,
+): string {
+  return (
+    headers.find(
+      (header) => header.name?.toLowerCase() === nome.toLowerCase(),
+    )?.value?.trim() ?? ""
+  );
+}
+
+function emailDoRemetente(valor: string): string | null {
+  return (
+    valor.match(/<([^>]+)>/)?.[1]?.trim() ||
+    (valor.includes("@") ? valor : null)
+  );
+}
+
 const MAX_ANEXOS_GMAIL = 6;
 
 /*
@@ -366,6 +384,35 @@ function percorrerAnexos(
   visitar(payload);
 
   return encontrados;
+}
+
+/** Nomes dos anexos disponíveis sem descarregar o conteúdo binário. */
+function extrairNomesAnexos(payload: GmailParte): string[] {
+  const nomes: string[] = [];
+  const vistos = new Set<string>();
+
+  function visitar(parte: GmailParte) {
+    const nome = parte.filename?.trim() ?? "";
+
+    if (nome) {
+      const chave = nome
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .toLowerCase();
+
+      if (!vistos.has(chave)) {
+        vistos.add(chave);
+        nomes.push(nome);
+      }
+    }
+
+    for (const subparte of parte.parts ?? []) {
+      visitar(subparte);
+    }
+  }
+
+  visitar(payload);
+  return nomes.slice(0, 12);
 }
 
 function converterBase64UrlParaDataUrl(
@@ -1799,3 +1846,301 @@ export const emailsDeViagem = createServerFn({ method: "GET" })
       return pesquisaDecorada;
     },
   );
+
+/**
+ * Novo motor de leitura do Gmail.
+ *
+ * Não faz amostragem nem pesquisa por palavras de viagem. Em chamadas normais
+ * percorre o mailbox por paginação e entrega o conteúdo textual de cada email
+ * para a triagem da IA. Os anexos só são descarregados quando uma mensagem já
+ * foi identificada como candidata e precisa de análise profunda.
+ *
+ * Quando `ids` é fornecido, a função lê exatamente essas mensagens.
+ */
+export type GmailEmail = {
+  id: string;
+  assunto: string;
+  texto: string;
+  remetente_email: string | null;
+  recebido_em: string | null;
+  anexos: GmailAnexo[];
+  anexosNomes: string[];
+};
+
+export type GmailLoteResposta = {
+  emails: GmailEmail[];
+  nextPageToken: string | null;
+  pesquisa: {
+    modo: "viagens" | "todos";
+    automatico: boolean;
+    mensagens_listadas: number;
+    mensagens_lidas: number;
+    pagina_completa: boolean;
+  };
+};
+
+export const obterLoteEmailsGmail = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator(
+    (input?: {
+      desde?: string | null;
+      limite?: number | null;
+      automatico?: boolean | null;
+      modo?: "viagens" | "todos" | null;
+      pageToken?: string | null;
+      ids?: string[] | null;
+      incluirAnexos?: boolean | null;
+    }) => ({
+      desde:
+        typeof input?.desde === "string" && input.desde.trim()
+          ? input.desde.trim()
+          : null,
+      limite:
+        typeof input?.limite === "number" && Number.isFinite(input.limite)
+          ? Math.max(1, Math.min(Math.floor(input.limite), 50))
+          : 50,
+      automatico: input?.automatico === true,
+      modo:
+        input?.modo === "viagens" || input?.modo === "todos"
+          ? input.modo
+          : "todos",
+      pageToken:
+        typeof input?.pageToken === "string" && input.pageToken.trim()
+          ? input.pageToken.trim()
+          : null,
+      ids: Array.isArray(input?.ids)
+        ? input.ids
+            .filter((id): id is string => typeof id === "string" && Boolean(id.trim()))
+            .map((id) => id.trim())
+            .filter((id, index, todos) => todos.indexOf(id) === index)
+            .slice(0, 50)
+        : [],
+      incluirAnexos: input?.incluirAnexos === true,
+    }),
+  )
+  .handler(
+    async ({ data, context }): Promise<GmailLoteResposta> => {
+      const { getConnectionKeyForUser } = await import(
+        "@/server/appUserConnections.server"
+      );
+
+      const chave = await getConnectionKeyForUser(
+        context.userId,
+        CONNECTOR_ID,
+      );
+
+      if (!chave) {
+        throw new Error("Gmail não está ligado nesta conta.");
+      }
+
+      const connectionAPIKey: string = chave;
+
+      const { callAsAppUser } = await import(
+        "@/integrations/lovable/appUserConnector"
+      );
+
+      function dataRecebida(msg: {
+        internalDate?: string;
+        payload?: { headers?: Array<{ name?: string; value?: string }> };
+      }): string | null {
+        const headers = msg.payload?.headers ?? [];
+        const dataCabecalho =
+          headers.find((header) => header.name?.toLowerCase() === "date")?.value?.trim() ?? "";
+        const dataInterna = msg.internalDate
+          ? new Date(Number(msg.internalDate))
+          : null;
+        const data =
+          dataInterna && !Number.isNaN(dataInterna.getTime())
+            ? dataInterna
+            : dataCabecalho
+              ? new Date(dataCabecalho)
+              : null;
+
+        return data && !Number.isNaN(data.getTime())
+          ? data.toISOString()
+          : null;
+      }
+
+      async function obterEmail(id: string): Promise<GmailEmail | null> {
+        const resposta = await callAsAppUser({
+          gatewayBaseUrl: GATEWAY_BASE_URL,
+          connectionAPIKey,
+          connectorId: CONNECTOR_ID,
+          path:
+            `/gmail/v1/users/me/messages/${encodeURIComponent(id)}` +
+            `?format=full`,
+        });
+
+        if (!resposta.ok) {
+          let detalhe = "";
+
+          try {
+            detalhe = await resposta.text();
+          } catch {
+            detalhe = "";
+          }
+
+          console.warn("Gmail: não foi possível ler a mensagem", {
+            id,
+            status: resposta.status,
+            statusText: resposta.statusText,
+            detalhe,
+          });
+
+          if (
+            resposta.status === 401 ||
+            resposta.status === 403 ||
+            resposta.status === 429
+          ) {
+            throw new Error(
+              `Gmail não permitiu a leitura da mensagem (HTTP ${resposta.status})${
+                detalhe ? ` — ${detalhe}` : ""
+              }.`,
+            );
+          }
+
+          return null;
+        }
+
+        const mensagem = (await resposta.json()) as {
+          id?: string;
+          snippet?: string;
+          internalDate?: string;
+          payload?: GmailParte & {
+            headers?: Array<{ name?: string; value?: string }>;
+          };
+        };
+
+        const payload = mensagem.payload;
+        const headers = payload?.headers ?? [];
+        const assunto = extrairCabecalho(headers, "subject");
+        const remetente = extrairCabecalho(headers, "from");
+        const remetente_email = emailDoRemetente(remetente);
+        const corpo = payload ? extrairPartes(payload) : "";
+        const texto = [
+          assunto,
+          corpo,
+          !corpo ? mensagem.snippet ?? "" : "",
+        ]
+          .filter(Boolean)
+          .join("\n\n")
+          .slice(0, 30000);
+        const anexosNomes = payload ? extrairNomesAnexos(payload) : [];
+        const anexos =
+          data.incluirAnexos && payload
+            ? await extrairAnexosGmail(
+                payload,
+                id,
+                callAsAppUser,
+                connectionAPIKey,
+              )
+            : [];
+
+        return {
+          id: mensagem.id ?? id,
+          assunto,
+          texto,
+          remetente_email,
+          recebido_em: dataRecebida(mensagem),
+          anexos,
+          anexosNomes,
+        };
+      }
+
+      let ids: string[] = [];
+      let nextPageToken: string | null = null;
+
+      if (data.ids.length > 0) {
+        ids = data.ids;
+      } else {
+        const params = new URLSearchParams();
+        params.set("maxResults", String(data.limite));
+        params.set("includeSpamTrash", "false");
+
+        let consulta = "";
+
+        if (data.automatico) {
+          if (data.desde) {
+            const instante = new Date(data.desde);
+
+            if (!Number.isNaN(instante.getTime())) {
+              const unix = Math.floor(instante.getTime() / 1000);
+              consulta = `after:${Math.max(0, unix - 1)}`;
+            }
+          }
+
+          // Na primeira execução, sem `desde`, percorremos a caixa de correio.
+          // Depois da primeira ronda, `desde` passa a limitar a pesquisa aos emails novos.
+
+        }
+
+        if (consulta) {
+          params.set("q", consulta);
+        }
+
+        if (data.pageToken) {
+          params.set("pageToken", data.pageToken);
+        }
+
+        const resposta = await callAsAppUser({
+          gatewayBaseUrl: GATEWAY_BASE_URL,
+          connectionAPIKey,
+          connectorId: CONNECTOR_ID,
+          path: `/gmail/v1/users/me/messages?${params.toString()}`,
+        });
+
+        if (!resposta.ok) {
+          let detalhe = "";
+
+          try {
+            detalhe = await resposta.text();
+          } catch {
+            detalhe = "";
+          }
+
+          throw new Error(
+            `Não foi possível listar os emails do Gmail. HTTP ${resposta.status}${
+              resposta.statusText ? ` ${resposta.statusText}` : ""
+            }${detalhe ? ` — ${detalhe}` : ""}`,
+          );
+        }
+
+        const lista = (await resposta.json()) as {
+          messages?: Mensagem[];
+          nextPageToken?: string;
+        };
+
+        ids = (lista.messages ?? [])
+          .map((mensagem) => mensagem.id)
+          .filter((id): id is string => Boolean(id));
+
+        nextPageToken = lista.nextPageToken ?? null;
+      }
+
+      const emails: GmailEmail[] = [];
+
+      for (let inicio = 0; inicio < ids.length; inicio += 10) {
+        const loteIds = ids.slice(inicio, inicio + 10);
+        const lote = await Promise.all(loteIds.map((id) => obterEmail(id)));
+
+        for (const email of lote) {
+          if (email) {
+            emails.push(email);
+          }
+        }
+      }
+
+      return {
+        emails,
+        nextPageToken,
+        pesquisa: {
+          modo: data.modo,
+          automatico: data.automatico,
+          mensagens_listadas: ids.length,
+          mensagens_lidas: emails.length,
+          pagina_completa: !nextPageToken,
+        },
+      };
+    },
+  );
+

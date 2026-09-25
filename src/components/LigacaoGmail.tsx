@@ -33,19 +33,22 @@ import { useSession } from "@/lib/auth";
 import {
   concluirLigacaoGmail,
   desligarGmail,
-  emailsDeViagem,
+  obterLoteEmailsGmail,
+  type GmailLoteResposta,
   estadoGmail,
   iniciarLigacaoGmail,
   type GmailAnexo,
 } from "@/lib/gmail.functions";
-import { analisarDocumento, type AnaliseDocumentoViagem } from "@/lib/documentos-ia.functions";
+import {
+  analisarDocumento,
+  analisarEmailsEmLote,
+  type AnaliseDocumentoViagem,
+} from "@/lib/documentos-ia.functions";
 import { supabase } from "@/integrations/supabase/client";
 
 const CONNECTOR_ID = "google_mail";
 const GMAIL_OAUTH_STORAGE_KEY = "viatorbis:gmail-oauth-result";
 const GMAIL_AUTOMACAO_EVENT = "viatorbis:gmail-auto-change";
-const GMAIL_PESQUISA_VIAGENS_HISTORICO_DIAS = 180;
-const GMAIL_PESQUISA_VIAGENS_MARGEM_FIM_DIAS = 2;
 
 type OAuthStorageResult =
   | {
@@ -257,17 +260,12 @@ function esperarConclusao(popup: Window) {
 
 type GmailPesquisaInfo = {
   modo: "viagens" | "todos";
-  periodo_inicio: string | null;
-  periodo_fim: string | null;
-  blocos_consultados: number;
-  blocos_completos: number;
-  mensagens_listadas: number;
-  mensagens_metadados: number;
-  mensagens_selecionadas: number;
-  candidatos_devolvidos: number;
+  automatico: boolean;
+  paginas_consultadas: number;
+  mensagens_consultadas: number;
+  mensagens_analisadas_ia: number;
+  candidatos_ia: number;
   pesquisa_completa: boolean;
-  limite_candidatos: number;
-  candidatos_novos?: number;
 };
 
 type EmailEncontrado = {
@@ -277,6 +275,7 @@ type EmailEncontrado = {
   remetente_email: string | null;
   recebido_em: string | null;
   anexos: GmailAnexo[];
+  anexosNomes: string[];
   pesquisa?: GmailPesquisaInfo;
   pesquisaApenas?: boolean;
 };
@@ -577,22 +576,6 @@ function formatarData(data: string | null): string | null {
   }
 
   return dataLimpa;
-}
-
-function formatarDataPeriodo(data: string | null): string | null {
-  if (!data?.trim()) {
-    return null;
-  }
-
-  const tentativa = new Date(`${data.trim()}T00:00:00Z`);
-
-  if (Number.isNaN(tentativa.getTime())) {
-    return data.trim();
-  }
-
-  return new Intl.DateTimeFormat("pt-PT", {
-    dateStyle: "medium",
-  }).format(tentativa);
 }
 
 function normalizarValorVoo(valor: string | null): string {
@@ -1242,7 +1225,8 @@ export function LigacaoGmail() {
   const iniciar = useServerFn(iniciarLigacaoGmail);
   const concluir = useServerFn(concluirLigacaoGmail);
   const desligar = useServerFn(desligarGmail);
-  const procurarEmails = useServerFn(emailsDeViagem);
+  const procurarLoteGmail = useServerFn(obterLoteEmailsGmail);
+  const analisarLote = useServerFn(analisarEmailsEmLote);
   const analisar = useServerFn(analisarDocumento);
 
   const [ocupado, setOcupado] = useState(false);
@@ -1351,91 +1335,6 @@ export function LigacaoGmail() {
         },
       ];
     });
-  }
-
-  function deslocarDataPesquisa(
-    valor: string,
-    dias: number,
-  ): string | null {
-    const correspondencia = valor.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-
-    if (!correspondencia) {
-      return null;
-    }
-
-    const data = new Date(
-      Date.UTC(
-        Number(correspondencia[1]),
-        Number(correspondencia[2]) - 1,
-        Number(correspondencia[3]),
-      ),
-    );
-
-    if (Number.isNaN(data.getTime())) {
-      return null;
-    }
-
-    data.setUTCDate(data.getUTCDate() + dias);
-    return data.toISOString().slice(0, 10);
-  }
-
-  function prepararIntervalosPesquisaGmail(
-    lista: ViagemEscolha[],
-  ): Array<{ inicio: string; fim: string }> {
-    const intervalos = lista.flatMap((viagem) => {
-      const dataInicio = viagem.data_inicio?.trim() ?? "";
-      const dataFim = viagem.data_fim?.trim() ?? "";
-
-      if (
-        !/^\d{4}-\d{2}-\d{2}$/.test(dataInicio) ||
-        !/^\d{4}-\d{2}-\d{2}$/.test(dataFim)
-      ) {
-        return [];
-      }
-
-      const inicio = deslocarDataPesquisa(
-        dataInicio,
-        -GMAIL_PESQUISA_VIAGENS_HISTORICO_DIAS,
-      );
-      const fim = deslocarDataPesquisa(
-        dataFim,
-        GMAIL_PESQUISA_VIAGENS_MARGEM_FIM_DIAS,
-      );
-
-      if (!inicio || !fim || inicio > fim) {
-        return [];
-      }
-
-      return [{ inicio, fim }];
-    });
-
-    const ordenados = [...intervalos].sort((a, b) =>
-      a.inicio.localeCompare(b.inicio),
-    );
-
-    const fundidos: Array<{ inicio: string; fim: string }> = [];
-
-    for (const intervalo of ordenados) {
-      const anterior = fundidos[fundidos.length - 1];
-
-      if (!anterior) {
-        fundidos.push({ ...intervalo });
-        continue;
-      }
-
-      const fimAnterior = deslocarDataPesquisa(anterior.fim, 1);
-
-      if (fimAnterior && intervalo.inicio <= fimAnterior) {
-        if (intervalo.fim > anterior.fim) {
-          anterior.fim = intervalo.fim;
-        }
-        continue;
-      }
-
-      fundidos.push({ ...intervalo });
-    }
-
-    return fundidos;
   }
 
 
@@ -1621,6 +1520,7 @@ export function LigacaoGmail() {
 
     try {
       const viagensParaIa = prepararViagensParaIa(viagens);
+      const userId = session?.user.id;
 
       if (modo === "viagens" && viagensParaIa.length === 0) {
         toast.error(
@@ -1629,237 +1529,190 @@ export function LigacaoGmail() {
         return;
       }
 
-      const intervalosPesquisa =
-        modo === "viagens"
-          ? prepararIntervalosPesquisaGmail(viagens)
-          : [];
-
-      const emails = await procurarEmails({
-        data: {
-          modo,
-          intervalos: intervalosPesquisa,
-          limite: modo === "viagens" ? 100 : 100,
-          incluirInfoPesquisa: true,
-        },
-      });
-
-      const pesquisaInfo = emails.find((email) => email.pesquisa)?.pesquisa;
-      const emailsPesquisaveis = emails.filter(
-        (email) => !email.pesquisaApenas && Boolean(email.id),
-      );
-
-      if (pesquisaInfo) {
-        setUltimaPesquisa(pesquisaInfo);
-
-        toast.info(
-          pesquisaInfo.modo === "viagens"
-            ? `Pesquisa Gmail concluída: ${pesquisaInfo.mensagens_listadas} mensagens encontradas no período; ${pesquisaInfo.mensagens_selecionadas} selecionadas para análise detalhada.`
-            : `Pesquisa Gmail concluída: ${pesquisaInfo.mensagens_listadas} mensagens consultadas; ${pesquisaInfo.mensagens_selecionadas} selecionadas para análise detalhada.`,
-        );
+      if (!userId) {
+        throw new Error("Entre na sua conta para procurar informação no Gmail.");
       }
-
-      if (emailsPesquisaveis.length === 0) {
-        toast.info(
-          pesquisaInfo?.modo === "viagens"
-            ? "A pesquisa terminou sem encontrar novos candidatos para analisar."
-            : "Não encontrámos candidatos para analisar.",
-        );
-        return;
-      }
-
-      const emailsUnicos = Array.from(
-        new Map(emailsPesquisaveis.map((email) => [email.id, email])).values(),
-      );
-
-      const { data: processados, error: erroProcessados } = await supabase
-        .from("emails_gmail_processados" as any)
-        .select("gmail_message_id, relevante, estado, ficha")
-        .eq("user_id", session?.user.id)
-        .in(
-          "gmail_message_id",
-          emailsUnicos.map((email) => email.id),
-        );
-
-      if (erroProcessados) {
-        console.error(
-          "Erro ao verificar emails Gmail já processados na pesquisa manual:",
-          erroProcessados,
-        );
-        throw erroProcessados;
-      }
-
-      const processadosPorId = new Map<string, GmailProcessado>(
-        ((processados ?? []) as unknown as GmailProcessado[]).map(
-          (item) => [item.gmail_message_id, item],
-        ),
-      );
-
-      const candidatos = emailsUnicos.filter((email) => {
-        const processado = processadosPorId.get(email.id);
-
-        return (
-          !processado ||
-          (processado.estado === "pendente" &&
-            processado.relevante === true)
-        );
-      });
-
-      if (pesquisaInfo) {
-        setUltimaPesquisa({
-          ...pesquisaInfo,
-          candidatos_novos: candidatos.length,
-        });
-      }
-
-      if (candidatos.length === 0) {
-        toast.info(
-          "Não encontrámos novas informações de viagem. Os emails já tratados não voltam a ser importados.",
-        );
-        return;
-      }
-
-      toast.info(
-        `${candidatos.length} candidato${
-          candidatos.length === 1 ? "" : "s"
-        } novo${
-          candidatos.length === 1 ? "" : "s"
-        } ou pendente${
-          candidatos.length === 1 ? "" : "s"
-        } encontrado${candidatos.length === 1 ? "" : "s"}. A analisar…`,
-      );
 
       const resultadosRelevantes: ResultadoAnalise[] = [];
-      const TAMANHO_LOTE = 3;
+      let pageToken: string | null = null;
+      let paginasConsultadas = 0;
+      let mensagensConsultadas = 0;
+      let mensagensAnalisadasIa = 0;
+      let candidatosIa = 0;
 
-      for (
-        let inicio = 0;
-        inicio < candidatos.length;
-        inicio += TAMANHO_LOTE
-      ) {
-        const lote = candidatos.slice(inicio, inicio + TAMANHO_LOTE);
+      do {
+        const pagina: GmailLoteResposta = await procurarLoteGmail({
+          data: {
+            modo,
+            automatico: false,
+            desde: null,
+            limite: 50,
+            pageToken,
+            incluirAnexos: false,
+          },
+        });
 
-        const analisados = await Promise.all(
-          lote.map(async (email) => {
-            const textoCompleto =
-              `${email.assunto}\n\n${email.texto}`.trim();
+        paginasConsultadas += 1;
+        mensagensConsultadas += pagina.emails.length;
 
-            try {
-              const resultado = await analisar({
-                data: {
-                  nome: email.assunto || "Email Gmail",
-                  texto: textoCompleto,
-                  anexos: email.anexos,
-                  modoAnalise: modo,
-                  viagens:
-                    modo === "viagens"
-                      ? viagensParaIa
-                      : [],
-                },
-              });
+        const atualizarPesquisa = (completa: boolean) => {
+          setUltimaPesquisa({
+            modo,
+            automatico: false,
+            paginas_consultadas: paginasConsultadas,
+            mensagens_consultadas: mensagensConsultadas,
+            mensagens_analisadas_ia: mensagensAnalisadasIa,
+            candidatos_ia: candidatosIa,
+            pesquisa_completa: completa,
+          });
+        };
 
-              const ficha =
-                resultado && typeof resultado === "object"
-                  ? (resultado as { ficha?: unknown }).ficha
-                  : null;
+        atualizarPesquisa(!pagina.nextPageToken);
 
-              if (resultado?.relevante === true) {
-                const { error: erroGuardarManual } = await supabase
-                  .from("emails_gmail_processados" as any)
-                  .upsert(
-                    {
-                      user_id: session?.user.id,
-                      gmail_message_id: email.id,
-                      relevante: true,
-                      categoria: valorDaFicha(ficha, "categoria"),
-                      referencia: valorDaFicha(ficha, "referencia"),
-                      assunto: email.assunto || null,
-                      ficha: ficha ?? null,
-                      estado: "pendente",
-                      analisado_em: new Date().toISOString(),
-                    },
-                    {
-                      onConflict:
-                        "user_id,gmail_message_id",
-                    },
-                  );
+        if (pagina.emails.length === 0) {
+          pageToken = pagina.nextPageToken;
+          continue;
+        }
 
-                if (erroGuardarManual) {
-                  console.error(
-                    "Erro ao guardar email Gmail analisado manualmente:",
-                    erroGuardarManual,
-                  );
-                } else {
-                  processadosPorId.set(email.id, {
-                    gmail_message_id: email.id,
-                    relevante: true,
-                    estado: "pendente",
-                    ficha: ficha ?? null,
-                  });
-                }
+        const triagem = await analisarLote({
+          data: {
+            modoAnalise: modo,
+            viagens: modo === "viagens" ? viagensParaIa : [],
+            emails: pagina.emails,
+          },
+        });
 
-                return {
-                  email,
-                  estado: "analisado" as const,
-                  resultado,
-                };
-              }
+        mensagensAnalisadasIa += pagina.emails.length;
 
-              const { error: erroGuardarIrrelevante } = await supabase
-                .from("emails_gmail_processados" as any)
-                .upsert(
-                  {
-                    user_id: session?.user.id,
-                    gmail_message_id: email.id,
-                    relevante: false,
-                    categoria: null,
-                    referencia: null,
-                    assunto: email.assunto || null,
-                    ficha: null,
-                    estado: "processado",
-                    analisado_em: new Date().toISOString(),
-                  },
-                  {
-                    onConflict:
-                      "user_id,gmail_message_id",
-                  },
-                );
-
-              if (erroGuardarIrrelevante) {
-                console.error(
-                  "Erro ao registar email Gmail irrelevante analisado manualmente:",
-                  erroGuardarIrrelevante,
-                );
-              }
-
-              processadosPorId.set(email.id, {
-                gmail_message_id: email.id,
-                relevante: false,
-                estado: "processado",
-                ficha: null,
-              });
-            } catch (e) {
-              console.error(
-                "Erro ao analisar email Gmail:",
-                e instanceof Error ? e.message : e,
-              );
-            }
-
-            return null;
-          }),
+        const mapaTriagem = new Map(
+          triagem.resultados.map((resultado) => [resultado.id, resultado]),
         );
 
-        for (const resultado of analisados) {
-          if (resultado) {
-            resultadosRelevantes.push(resultado);
+        const candidatos = pagina.emails.filter(
+          (email) => mapaTriagem.get(email.id)?.relevante === true,
+        );
+        candidatosIa += candidatos.length;
+
+        const candidatosIds = candidatos.map((email) => email.id);
+        const emailsComAnexos: EmailEncontrado[] = [];
+
+        for (let inicio = 0; inicio < candidatosIds.length; inicio += 5) {
+          const idsDoLote = candidatosIds.slice(inicio, inicio + 5);
+          const respostaComAnexos = await procurarLoteGmail({
+            data: {
+              modo,
+              automatico: false,
+              desde: null,
+              limite: idsDoLote.length,
+              ids: idsDoLote,
+              incluirAnexos: true,
+            },
+          });
+
+          emailsComAnexos.push(...respostaComAnexos.emails);
+        }
+
+        const completosPorId = new Map(
+          emailsComAnexos.map((email) => [email.id, email]),
+        );
+
+        const irrelevantes = pagina.emails
+          .filter((email) => mapaTriagem.get(email.id)?.relevante !== true)
+          .map((email) => ({
+            user_id: userId,
+            gmail_message_id: email.id,
+            relevante: false,
+            categoria: null,
+            referencia: null,
+            assunto: email.assunto || null,
+            ficha: null,
+            estado: "processado",
+            analisado_em: new Date().toISOString(),
+          }));
+
+        if (irrelevantes.length > 0) {
+          const { error } = await supabase
+            .from("emails_gmail_processados" as any)
+            .upsert(irrelevantes, {
+              onConflict: "user_id,gmail_message_id",
+            });
+
+          if (error) {
+            console.error("Erro ao guardar emails Gmail irrelevantes:", error);
           }
         }
 
-        setAnalises([...resultadosRelevantes]);
-      }
+        for (const candidato of candidatos) {
+          const email = completosPorId.get(candidato.id);
+          if (!email) {
+            continue;
+          }
+
+          try {
+            const resultado = await analisar({
+              data: {
+                nome: email.assunto || "Email Gmail",
+                texto: `${email.assunto}
+
+${email.texto}`.trim(),
+                anexos: email.anexos,
+                modoAnalise: modo,
+                viagens: modo === "viagens" ? viagensParaIa : [],
+              },
+            });
+
+            const ficha =
+              resultado && typeof resultado === "object"
+                ? (resultado as { ficha?: unknown }).ficha
+                : null;
+            const relevante = resultado?.relevante === true;
+
+            const { error: erroGuardar } = await supabase
+              .from("emails_gmail_processados" as any)
+              .upsert(
+                {
+                  user_id: userId,
+                  gmail_message_id: email.id,
+                  relevante,
+                  categoria: valorDaFicha(ficha, "categoria"),
+                  referencia: valorDaFicha(ficha, "referencia"),
+                  assunto: email.assunto || null,
+                  ficha: ficha ?? null,
+                  estado: relevante ? "pendente" : "processado",
+                  analisado_em: new Date().toISOString(),
+                },
+                {
+                  onConflict: "user_id,gmail_message_id",
+                },
+              );
+
+            if (erroGuardar) {
+              console.error("Erro ao guardar email Gmail analisado:", erroGuardar);
+            }
+
+            if (relevante) {
+              resultadosRelevantes.push({
+                email,
+                estado: "analisado",
+                resultado,
+              });
+              setAnalises([...resultadosRelevantes]);
+            }
+          } catch (erro) {
+            console.error(
+              "Erro ao analisar email Gmail em profundidade:",
+              erro instanceof Error ? erro.message : erro,
+            );
+          }
+        }
+
+        pageToken = pagina.nextPageToken;
+        atualizarPesquisa(!pageToken);
+      } while (pageToken);
 
       toast.success(
         resultadosRelevantes.length === 0
-          ? "Análise concluída. Não encontrámos elementos de viagem relevantes."
+          ? `Análise concluída. A IA verificou ${mensagensAnalisadasIa} emails e não encontrou elementos de viagem relevantes.`
           : resultadosRelevantes.length === 1
             ? "Análise concluída. Encontrámos 1 elemento de viagem relevante."
             : `Análise concluída. Encontrámos ${resultadosRelevantes.length} elementos de viagem relevantes.`,
@@ -1946,10 +1799,19 @@ export function LigacaoGmail() {
     }
 
     try {
-      const emailsAtuais = await procurarEmails();
-      return (
-        emailsAtuais.find((candidato) => candidato.id === email.id) ?? email
-      );
+      const emailsAtuais = await procurarLoteGmail({
+        data: {
+          ids: [email.id],
+          limite: 1,
+          incluirAnexos: true,
+          modo: "todos",
+          automatico: false,
+          desde: null,
+          pageToken: null,
+        },
+      });
+
+      return emailsAtuais.emails.find((candidato) => candidato.id === email.id) ?? email;
     } catch (erro) {
       console.warn(
         "Não foi possível recuperar os dados completos do email Gmail antes de o guardar:",
@@ -2663,6 +2525,7 @@ export function LigacaoGmail() {
         remetente_email: null,
         recebido_em: null,
         anexos: [],
+        anexosNomes: [],
       },
       estado: "analisado",
       resultado: {
@@ -2819,8 +2682,8 @@ export function LigacaoGmail() {
 
                   <p className="mt-0.5 text-xs text-muted-foreground">
                     {modoAProcurar === "todos"
-                      ? "Estamos a procurar comunicações concretas de viagem em toda a pesquisa Gmail."
-                      : "Estamos a cruzar os emails e anexos com as viagens existentes, usando as datas como principal filtro."}
+                      ? "A IA está a verificar a caixa de correio inteira em lotes e a separar comunicações concretas de newsletters e publicidade."
+                      : "Estamos a usar as viagens existentes como contexto para a IA decidir quais os emails que contêm informação concreta de viagem."}
                   </p>
                 </div>
               </div>
@@ -2833,58 +2696,32 @@ export function LigacaoGmail() {
                 <Mail className="mt-0.5 size-4 shrink-0 text-primary" />
                 <div className="min-w-0">
                   <p className="text-sm font-semibold">
-                    Resultado da pesquisa Gmail
+                    Análise do Gmail
                   </p>
-
                   <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                    {ultimaPesquisa.periodo_inicio &&
-                    ultimaPesquisa.periodo_fim ? (
-                      <>
-                        Período pesquisado:{" "}
-                        <span className="font-medium text-foreground">
-                          {formatarDataPeriodo(ultimaPesquisa.periodo_inicio)}{" "}
-                          — {formatarDataPeriodo(ultimaPesquisa.periodo_fim)}
-                        </span>
-                        .{" "}
-                      </>
-                    ) : null}
-                    Foram consultadas{" "}
+                    A IA já verificou{" "}
                     <span className="font-medium text-foreground">
-                      {ultimaPesquisa.mensagens_listadas}
+                      {ultimaPesquisa.mensagens_analisadas_ia}
                     </span>{" "}
-                    mensagens
-                    {ultimaPesquisa.blocos_consultados > 1
-                      ? ` em ${ultimaPesquisa.blocos_consultados} blocos`
-                      : ""}
-                    . Foram avaliados metadados de{" "}
+                    emails em{" "}
                     <span className="font-medium text-foreground">
-                      {ultimaPesquisa.mensagens_metadados}
+                      {ultimaPesquisa.paginas_consultadas}
                     </span>{" "}
-                    mensagens e{" "}
+                    lotes e identificou{" "}
                     <span className="font-medium text-foreground">
-                      {ultimaPesquisa.mensagens_selecionadas}
+                      {ultimaPesquisa.candidatos_ia}
                     </span>{" "}
-                    foram selecionadas para leitura detalhada.
-                    {ultimaPesquisa.candidatos_novos !== undefined ? (
-                      <>
-                        {" "}
-                        Destas,{" "}
-                        <span className="font-medium text-foreground">
-                          {ultimaPesquisa.candidatos_novos}
-                        </span>{" "}
-                        chegaram à análise como novas ou pendentes.
-                      </>
-                    ) : null}
+                    candidatos para análise profunda.
                   </p>
-
-                  {!ultimaPesquisa.pesquisa_completa ? (
-                    <p className="mt-2 text-xs leading-relaxed text-amber-700">
-                      A pesquisa atingiu o limite de mensagens definido para
-                      um ou mais blocos. Isto significa que o período foi
-                      percorrido até esse limite, não necessariamente até à
-                      última mensagem existente.
+                  {ultimaPesquisa.pesquisa_completa ? (
+                    <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+                      A caixa de correio foi percorrida até ao fim deste ciclo de pesquisa.
                     </p>
-                  ) : null}
+                  ) : (
+                    <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+                      A análise continua pelas páginas seguintes da caixa de correio.
+                    </p>
+                  )}
                 </div>
               </div>
             </div>
@@ -2999,10 +2836,11 @@ export function LigacaoGmail() {
             </div>
           ) : (
             <p className="mt-2 text-xs text-muted-foreground">
-              O modo personalizado pesquisa desde 180 dias antes de cada viagem
-              até 2 dias depois do fim, usando as datas como principal filtro. O
-              modo "Analisar todos os emails" faz uma pesquisa sem esse filtro
-              temporal.
+              Os três modos percorrem a caixa de correio pelo mesmo motor. O
+              modo personalizado fornece as viagens existentes à IA como contexto;
+              a deteção automática percorre apenas os emails novos desde a última
+              ronda. Os anexos só são descarregados depois de a triagem identificar
+              um email como potencialmente relevante.
             </p>
           )}
         </>
