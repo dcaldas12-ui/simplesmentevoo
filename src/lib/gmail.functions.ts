@@ -721,16 +721,88 @@ export const emailsDeViagem = createServerFn({ method: "GET" })
         recebido_em: string | null;
         snippet: string;
         bloco: number;
+        grupo: string;
+      };
+
+      type ConsultaCandidatoHistorico = {
+        id: string;
+        consulta: string;
+        candidatosPorGrupo: number;
       };
 
       const DURACAO_BLOCO_PESQUISA_MS = 31 * 24 * 60 * 60 * 1000;
+
+      /*
+       * Mantemos a pesquisa ampla apenas como referência de cobertura do
+       * período. Para encontrar reservas antigas de forma mais fiável,
+       * fazemos também pesquisas dirigidas no índice do Gmail.
+       */
       const MAX_IDS_HISTORICOS_POR_BLOCO = 2000;
+      const MAX_IDS_POR_CONSULTA_CANDIDATO = 250;
+
       const MAX_CANDIDATOS_HISTORICOS = 60;
       const MAX_METADADOS_HISTORICOS_POR_BLOCO = 30;
       const MIN_CANDIDATOS_HISTORICOS_POR_BLOCO = 2;
+
+      const CANDIDATOS_POR_GRUPO_HISTORICO = 4;
+      const CANDIDATOS_GERAIS_HISTORICO = 6;
+
       const TAMANHO_LOTE_METADADOS = 5;
       const TAMANHO_LOTE_LEITURA = 5;
       const LIMITE_PAGINA_GMAIL = 500;
+
+      /*
+       * Estas pesquisas não decidem que um email é relevante.
+       * Servem apenas para criar um conjunto de candidatos mais inteligente
+       * antes da leitura completa pela IA.
+       *
+       * A consulta "geral" mantém uma amostra de emails que não usem nenhuma
+       * das palavras abaixo, evitando transformar as palavras-chave num filtro
+       * obrigatório.
+       */
+      const CONSULTAS_CANDIDATOS_HISTORICOS: ConsultaCandidatoHistorico[] = [
+        {
+          id: "reserva",
+          consulta:
+            '{booking reservation "booking confirmation" "reservation confirmation" confirmation "booking reference" "reservation number" "confirmation number" voucher itinerary "your booking" "your trip" reserva confirmacao}',
+          candidatosPorGrupo: CANDIDATOS_POR_GRUPO_HISTORICO,
+        },
+        {
+          id: "transporte",
+          consulta:
+            '{flight flights "boarding pass" ticket "e-ticket" "train ticket" "bus ticket" ferry transfer voo bilhete comboio autocarro}',
+          candidatosPorGrupo: CANDIDATOS_POR_GRUPO_HISTORICO,
+        },
+        {
+          id: "alojamento",
+          consulta:
+            '{hotel hotels accommodation alojamento "check-in" "check-out" "your stay" "guest reservation" "room reservation"}',
+          candidatosPorGrupo: CANDIDATOS_POR_GRUPO_HISTORICO,
+        },
+        {
+          id: "atividades",
+          consulta:
+            '{tour tours museum museums museu concert concerto event events attraction attractions "skip the line" excursion excursions}',
+          candidatosPorGrupo: CANDIDATOS_POR_GRUPO_HISTORICO,
+        },
+        {
+          id: "fornecedores",
+          consulta:
+            '{"booking.com" airbnb expedia hotels.com hostelworld trip.com vrbo ryanair easyjet wizzair vueling "tap air portugal" iberia "air europa" flixbus omio trainline}',
+          candidatosPorGrupo: CANDIDATOS_POR_GRUPO_HISTORICO,
+        },
+        {
+          id: "anexos",
+          consulta:
+            'has:attachment {pdf voucher ticket booking reservation confirmation itinerary receipt invoice}',
+          candidatosPorGrupo: CANDIDATOS_POR_GRUPO_HISTORICO,
+        },
+        {
+          id: "geral",
+          consulta: "",
+          candidatosPorGrupo: CANDIDATOS_GERAIS_HISTORICO,
+        },
+      ];
 
       function intervalosUnixParaPesquisaHistorica(
         intervalos: Array<{ inicio: string; fim: string }>,
@@ -834,7 +906,7 @@ export const emailsDeViagem = createServerFn({ method: "GET" })
         const normalizar = (valor: string) =>
           valor
             .normalize("NFD")
-            .replace(/[\u0300-\u036f]/g, "")
+            .replace(/[\\u0300-\\u036f]/g, "")
             .toLowerCase();
 
         const assunto = normalizar(metadado.assunto);
@@ -842,38 +914,84 @@ export const emailsDeViagem = createServerFn({ method: "GET" })
         const remetente = normalizar(metadado.remetente_email ?? "");
 
         const termos: Array<[string, number]> = [
-          ["booking confirmation", 8],
-          ["booking", 7],
-          ["reservation", 7],
-          ["reserva", 7],
-          ["confirmacao", 7],
-          ["confirmation", 7],
-          ["voucher", 6],
-          ["boarding pass", 6],
-          ["cartao de embarque", 6],
+          ["booking confirmation", 10],
+          ["reservation confirmation", 10],
+          ["confirmation number", 9],
+          ["booking reference", 9],
+          ["reservation number", 9],
+          ["booking", 8],
+          ["reservation", 8],
+          ["reserva", 8],
+          ["confirmacao", 8],
+          ["confirmation", 8],
+          ["voucher", 7],
+          ["boarding pass", 7],
+          ["cartao de embarque", 7],
+          ["itinerary", 6],
+          ["itinerario", 6],
+          ["e-ticket", 6],
           ["ticket", 5],
           ["bilhete", 5],
           ["flight", 5],
           ["voo", 5],
           ["hotel", 5],
+          ["hotels", 5],
+          ["accommodation", 5],
           ["alojamento", 5],
-          ["check-in", 4],
-          ["check-out", 4],
-          ["itinerary", 4],
-          ["itinerario", 4],
+          ["check-in", 5],
+          ["check-out", 5],
+          ["your stay", 5],
           ["transfer", 4],
           ["train", 4],
           ["comboio", 4],
-          ["bus", 3],
-          ["autocarro", 3],
-          ["ferry", 3],
-          ["rental", 3],
-          ["car hire", 3],
-          ["tour", 2],
-          ["museum", 2],
-          ["museu", 2],
-          ["concert", 2],
-          ["concerto", 2],
+          ["bus", 4],
+          ["autocarro", 4],
+          ["ferry", 4],
+          ["rental", 4],
+          ["car hire", 4],
+          ["tour", 3],
+          ["museum", 3],
+          ["museu", 3],
+          ["concert", 3],
+          ["concerto", 3],
+          ["event", 2],
+          ["attraction", 2],
+          ["receipt", 2],
+          ["invoice", 2],
+        ];
+
+        const sinaisPromocionais: Array<[string, number]> = [
+          ["newsletter", -8],
+          ["unsubscribe", -8],
+          ["marketing", -6],
+          ["promocao", -5],
+          ["promotional", -5],
+          ["promotion", -5],
+          ["oferta", -4],
+          ["offers", -4],
+          ["discount", -4],
+          ["sale", -4],
+        ];
+
+        const remetentesConhecidos: Array<[string, number]> = [
+          ["booking.com", 5],
+          ["airbnb", 5],
+          ["expedia", 5],
+          ["hotels.com", 5],
+          ["hostelworld", 5],
+          ["trip.com", 5],
+          ["vrbo", 5],
+          ["ryanair", 5],
+          ["easyjet", 5],
+          ["wizzair", 5],
+          ["wizz air", 5],
+          ["vueling", 5],
+          ["tap", 4],
+          ["iberia", 5],
+          ["air europa", 5],
+          ["flixbus", 5],
+          ["omio", 5],
+          ["trainline", 5],
         ];
 
         let pontuacao = 0;
@@ -889,6 +1007,22 @@ export const emailsDeViagem = createServerFn({ method: "GET" })
 
           if (remetente.includes(termo)) {
             pontuacao += Math.max(1, Math.floor(pontos / 2));
+          }
+        }
+
+        for (const [termo, pontos] of sinaisPromocionais) {
+          if (assunto.includes(termo)) {
+            pontuacao += pontos;
+          }
+
+          if (snippet.includes(termo)) {
+            pontuacao += Math.max(-2, Math.floor(pontos / 2));
+          }
+        }
+
+        for (const [termo, pontos] of remetentesConhecidos) {
+          if (remetente.includes(termo)) {
+            pontuacao += pontos;
           }
         }
 
@@ -1041,6 +1175,7 @@ export const emailsDeViagem = createServerFn({ method: "GET" })
       async function obterMetadados(
         ids: string[],
         bloco: number,
+        grupo: string,
       ): Promise<MensagemMetadado[]> {
         const resultados: MensagemMetadado[] = [];
 
@@ -1134,6 +1269,7 @@ export const emailsDeViagem = createServerFn({ method: "GET" })
                     : null,
                 snippet: msg.snippet ?? "",
                 bloco,
+                grupo,
               };
             }),
           );
@@ -1215,30 +1351,134 @@ export const emailsDeViagem = createServerFn({ method: "GET" })
           const consultaBloco =
             `after:${Math.max(0, bloco.inicio - 1)} before:${bloco.fim}`;
 
-          const lista = await listarIds(
+          /*
+           * Fazemos primeiro uma leitura ampla do bloco. Ela serve para medir
+           * a cobertura temporal e fornece uma amostra "geral".
+           * Não usamos esta lista isoladamente para escolher os candidatos,
+           * porque uma reserva antiga pode ficar demasiado longe no resultado.
+           */
+          const listaGeral = await listarIds(
             consultaBloco,
             MAX_IDS_HISTORICOS_POR_BLOCO,
           );
 
-          mensagensListadas += lista.ids.length;
-          if (lista.completo) {
+          const idsListadosNoBloco = new Set<string>(listaGeral.ids);
+
+          if (listaGeral.completo) {
             blocosCompletos += 1;
           } else {
             pesquisaCompleta = false;
           }
 
-          const idsRepresentativos = selecionarIdsRepresentativos(
-            lista.ids,
-            MAX_METADADOS_HISTORICOS_POR_BLOCO,
-          );
+          /*
+           * Pesquisas dirigidas usam o índice de pesquisa do Gmail, incluindo
+           * o conteúdo indexado da mensagem. Assim, uma confirmação recebida
+           * meses antes da viagem pode ser encontrada mesmo que existam
+           * centenas de newsletters no mesmo mês.
+           */
+          const idsPorGrupo = new Map<string, string[]>();
 
-          const metadados = await obterMetadados(
-            idsRepresentativos,
-            indice,
-          );
+          for (const grupo of CONSULTAS_CANDIDATOS_HISTORICOS) {
+            const consultaGrupo = grupo.consulta
+              ? `${consultaBloco} ${grupo.consulta}`
+              : consultaBloco;
 
-          mensagensMetadados += metadados.length;
-          metadadosHistoricos.push(...metadados);
+            const listaGrupo = await listarIds(
+              consultaGrupo,
+              MAX_IDS_POR_CONSULTA_CANDIDATO,
+            );
+
+            const idsGrupo: string[] = [];
+            const idsGrupoVistos = new Set<string>();
+
+            for (const id of listaGrupo.ids) {
+              idsListadosNoBloco.add(id);
+
+              if (idsGrupoVistos.has(id)) {
+                continue;
+              }
+
+              idsGrupoVistos.add(id);
+              idsGrupo.push(id);
+            }
+
+            idsPorGrupo.set(grupo.id, idsGrupo);
+          }
+
+          /*
+           * A estatística "mensagens listadas" conta mensagens únicas
+           * encontradas pelo conjunto das consultas deste bloco.
+           */
+          mensagensListadas += idsListadosNoBloco.size;
+
+          /*
+           * Selecionamos uma pequena amostra de cada tipo de candidato.
+           * Isto é deliberado: não queremos que dezenas de newsletters sobre
+           * "hotel" eliminem uma reserva de voo ou um voucher de outra área.
+           */
+          const idsMetadadosBloco: string[] = [];
+          const idsMetadadosVistos = new Set<string>();
+          const grupoPorId = new Map<string, string>();
+
+          for (const grupo of CONSULTAS_CANDIDATOS_HISTORICOS) {
+            const idsGrupo = idsPorGrupo.get(grupo.id) ?? [];
+
+            const idsRepresentativos = selecionarIdsRepresentativos(
+              idsGrupo,
+              grupo.candidatosPorGrupo,
+            );
+
+            for (const id of idsRepresentativos) {
+              if (idsMetadadosVistos.has(id)) {
+                continue;
+              }
+
+              idsMetadadosVistos.add(id);
+              idsMetadadosBloco.push(id);
+
+              if (!grupoPorId.has(id)) {
+                grupoPorId.set(id, grupo.id);
+              }
+            }
+          }
+
+          /*
+           * A configuração normal produz 30 candidatos por bloco:
+           * 6 da amostra geral + 6 grupos dirigidos x 4 candidatos.
+           */
+          const idsParaMetadados =
+            idsMetadadosBloco.length <= MAX_METADADOS_HISTORICOS_POR_BLOCO
+              ? idsMetadadosBloco
+              : idsMetadadosBloco.slice(
+                  0,
+                  MAX_METADADOS_HISTORICOS_POR_BLOCO,
+                );
+
+          /*
+           * IDs repetidos entre pesquisas diferentes já foram eliminados.
+           * Mesmo assim agrupamos as chamadas para conservar o contexto do
+           * tipo de pesquisa que encontrou cada candidato.
+           */
+          const metadadosPorGrupo = new Map<string, string[]>();
+
+          for (const id of idsParaMetadados) {
+            const grupo = grupoPorId.get(id) ?? "geral";
+            const lista = metadadosPorGrupo.get(grupo) ?? [];
+
+            lista.push(id);
+            metadadosPorGrupo.set(grupo, lista);
+          }
+
+          for (const [grupo, idsGrupo] of metadadosPorGrupo.entries()) {
+            const metadados = await obterMetadados(
+              idsGrupo,
+              indice,
+              grupo,
+            );
+
+            mensagensMetadados += metadados.length;
+            metadadosHistoricos.push(...metadados);
+          }
         }
       } else {
         const lista = await listarIds(filtroData, limiteSolicitado);
